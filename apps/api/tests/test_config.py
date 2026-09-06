@@ -8,6 +8,8 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.config import (
+    KNOWN_PLACEHOLDER_SESSION_SECRETS,
+    MIN_SESSION_SECRET_LENGTH,
     PLACEHOLDER_SESSION_SECRET,
     REPO_ROOT,
     Settings,
@@ -16,7 +18,7 @@ from app.core.config import (
 
 
 def test_repo_root_is_the_monorepo_root() -> None:
-    """`parents[4]` must land on the directory holding BUILD_BIBLE.md."""
+    """Repo-root discovery must land on the directory holding BUILD_BIBLE.md."""
     assert (REPO_ROOT / "BUILD_BIBLE.md").exists()
     assert (REPO_ROOT / "apps" / "api").is_dir()
 
@@ -42,8 +44,48 @@ def test_empty_session_secret_is_rejected() -> None:
 
 
 def test_placeholder_secret_is_rejected_outside_local_environments() -> None:
-    with pytest.raises(ValidationError, match="still the placeholder value"):
+    with pytest.raises(ValidationError, match="still a placeholder value"):
         Settings(app_env="production", demo_session_secret=PLACEHOLDER_SESSION_SECRET)
+
+
+@pytest.mark.parametrize("placeholder", sorted(KNOWN_PLACEHOLDER_SESSION_SECRETS))
+def test_every_known_placeholder_secret_is_rejected(placeholder: str) -> None:
+    """Guarding only the code default is not enough.
+
+    What actually gets deployed is whatever `.env.example` shipped, because the
+    README tells you to copy that file. Any secret committed to this repository is
+    a public secret, so each one has to be refused by name.
+    """
+    with pytest.raises(ValidationError, match="still a placeholder value"):
+        Settings(app_env="production", demo_session_secret=placeholder)
+
+
+def test_env_example_session_secret_is_a_known_placeholder() -> None:
+    """The shipped template must be one of the values the guard actually refuses.
+
+    This is the regression that made the guard decorative: config.py refused its own
+    default while `.env.example` shipped a different string, so copying the template
+    verbatim sailed straight past the check.
+    """
+    env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    shipped = [
+        line.split("=", 1)[1].strip()
+        for line in env_example.splitlines()
+        if line.startswith("DEMO_SESSION_SECRET=")
+    ]
+    assert shipped, "DEMO_SESSION_SECRET is not documented in .env.example"
+    assert set(shipped) <= KNOWN_PLACEHOLDER_SESSION_SECRETS
+
+
+def test_short_secret_is_rejected_outside_local_environments() -> None:
+    """Catches the placeholders we did not think of. itsdangerous will sign with anything."""
+    with pytest.raises(ValidationError, match="at least"):
+        Settings(app_env="production", demo_session_secret="x" * (MIN_SESSION_SECRET_LENGTH - 1))
+
+
+def test_long_unknown_secret_is_accepted_outside_local_environments() -> None:
+    settings = Settings(app_env="production", demo_session_secret="k" * MIN_SESSION_SECRET_LENGTH)
+    assert settings.is_local is False
 
 
 def test_placeholder_secret_is_allowed_locally() -> None:

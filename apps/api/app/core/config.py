@@ -84,10 +84,10 @@ PLACEHOLDER_SESSION_SECRET: Final[str] = "naddp-local-demo-secret-change-me"  # 
 KNOWN_PLACEHOLDER_SESSION_SECRETS: Final[frozenset[str]] = frozenset(
     {
         PLACEHOLDER_SESSION_SECRET,
-        "change-me-to-a-long-random-string",  # noqa: S105 - the .env.example value
-        "change-me",  # noqa: S105
-        "changeme",  # noqa: S105
-        "secret",  # noqa: S105
+        "change-me-to-a-long-random-string",
+        "change-me",
+        "changeme",
+        "secret",
     }
 )
 
@@ -187,8 +187,7 @@ class Settings(BaseSettings):
         secret = self.demo_session_secret.strip()
         if not secret:
             msg = (
-                "DEMO_SESSION_SECRET must not be empty: the demo session cookie "
-                "is signed with it."
+                "DEMO_SESSION_SECRET must not be empty: the demo session cookie is signed with it."
             )
             raise ValueError(msg)
         if self.app_env in LOCAL_APP_ENVS:
@@ -198,7 +197,7 @@ class Settings(BaseSettings):
                 f"DEMO_SESSION_SECRET is still a placeholder value while "
                 f"APP_ENV={self.app_env!r}. It is committed to the repository, so "
                 "anyone can forge a demo session cookie. Generate a real secret: "
-                "python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+                'python -c "import secrets; print(secrets.token_urlsafe(48))"'
             )
             raise ValueError(msg)
         if len(secret) < MIN_SESSION_SECRET_LENGTH:
@@ -206,7 +205,7 @@ class Settings(BaseSettings):
                 f"DEMO_SESSION_SECRET is {len(secret)} characters while "
                 f"APP_ENV={self.app_env!r}; at least {MIN_SESSION_SECRET_LENGTH} are "
                 "required outside a local environment. Generate one: "
-                "python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+                'python -c "import secrets; print(secrets.token_urlsafe(48))"'
             )
             raise ValueError(msg)
         return self

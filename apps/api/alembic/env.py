@@ -9,9 +9,9 @@ from __future__ import annotations
 from logging.config import fileConfig
 from typing import Any, Literal
 
-from alembic import context
 from sqlalchemy import Connection, create_engine, pool
 
+from alembic import context
 from app.core.config import get_settings
 
 try:
