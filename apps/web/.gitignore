@@ -1,0 +1,25 @@
+# Next.js
+/.next/
+/out/
+next-env.d.ts
+
+# Dependencies
+/node_modules/
+/.pnpm-store/
+
+# Environment (only .env.example is ever committed)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build + tooling output
+*.tsbuildinfo
+/coverage/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,252 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * ==========================================================================
+ *  NADDP design tokens - "diplomatic calm"
+ * ==========================================================================
+ *
+ *  Intent: a command centre a career diplomat can read for eight hours without
+ *  fatigue. Deep navy carries authority and hierarchy; colour is spent only
+ *  where it encodes meaning:
+ *
+ *      primary     (deep navy)    structure, navigation, the app's own voice
+ *      success     (deep green)   a confirmed, completed or approved outcome
+ *      warning     (dark amber)   awaiting human approval - the trust signal
+ *      destructive (deep red)     genuine risk only; never decoration
+ *      demo        (bright amber) the DEMO / SYNTHETIC badge, and nothing else
+ *
+ *  Colour is never the sole carrier of meaning (WCAG 1.4.1): every state also
+ *  carries an icon and a text label.
+ *
+ * --------------------------------------------------------------------------
+ *  MEASURED CONTRAST (WCAG 2.2, computed from these exact HSL values)
+ *
+ *  Text pairs, AA needs 4.5:1 for body text            LIGHT     DARK
+ *    foreground     on background                      15.44     15.85
+ *    foreground     on card                            16.57     14.87
+ *    muted-fg       on background                       6.66      8.01
+ *    muted-fg       on card                             7.15      7.51
+ *    muted-fg       on muted                            6.37      6.48
+ *    primary        on card                            12.28      8.11
+ *    primary-fg     on primary                         11.73      8.28
+ *    secondary-fg   on secondary                       12.15     12.48
+ *    accent-fg      on accent                          11.58     11.20
+ *    destructive    on card                             7.57      5.55
+ *    destructive-fg on destructive                      7.57      5.67
+ *    success        on card                             7.53      9.28
+ *    success-fg     on success                          7.53      9.48
+ *    warning        on card                             7.08      9.76
+ *    warning-fg     on warning                          7.08      9.98
+ *    demo-fg        on demo                             7.45      8.55
+ *
+ *  Non-text UI pairs, AA needs 3:1 (SC 1.4.11)         LIGHT     DARK
+ *    input (control boundary) on card                   3.45      3.25
+ *    input (control boundary) on background             3.21      3.47
+ *    ring  (focus indicator)  on background             7.89      7.10
+ *    ring  (focus indicator)  on card                   8.46      6.65
+ *    chart-1..5               on card                  >=5.22    >=6.46
+ *    demo-border              on card                   5.76        n/a
+ *
+ *  --border is intentionally low-contrast (~1.4:1). It draws decorative
+ *  separators and card outlines only. Anything that identifies an interactive
+ *  control uses --input or --ring, both of which clear 3:1. In dark mode the
+ *  demo surface itself is 9.17:1 against the card, so its border is decorative.
+ * ==========================================================================
+ */
+
+@layer base {
+  :root {
+    --background: 210 30% 97%;
+    --foreground: 215 38% 13%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 215 38% 13%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 38% 13%;
+
+    --primary: 212 62% 22%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 28% 93%;
+    --secondary-foreground: 215 38% 18%;
+
+    --muted: 210 28% 95%;
+    --muted-foreground: 215 20% 36%;
+
+    --accent: 210 30% 91%;
+    --accent-foreground: 215 38% 18%;
+
+    --destructive: 0 68% 38%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 162 72% 22%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 30 92% 28%;
+    --warning-foreground: 0 0% 100%;
+
+    --demo: 38 96% 52%;
+    --demo-foreground: 30 100% 12%;
+    --demo-border: 30 92% 32%;
+
+    --border: 214 22% 85%;
+    --input: 214 20% 56%;
+    --ring: 212 62% 32%;
+
+    --chart-1: 212 62% 32%;
+    --chart-2: 173 58% 30%;
+    --chart-3: 28 82% 36%;
+    --chart-4: 266 42% 44%;
+    --chart-5: 340 56% 40%;
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 215 42% 8%;
+    --foreground: 210 26% 93%;
+
+    --card: 215 36% 11%;
+    --card-foreground: 210 26% 93%;
+
+    --popover: 215 36% 11%;
+    --popover-foreground: 210 26% 93%;
+
+    --primary: 205 80% 68%;
+    --primary-foreground: 215 45% 10%;
+
+    --secondary: 215 28% 17%;
+    --secondary-foreground: 210 26% 93%;
+
+    --muted: 215 28% 16%;
+    --muted-foreground: 214 18% 68%;
+
+    --accent: 215 28% 20%;
+    --accent-foreground: 210 26% 93%;
+
+    --destructive: 0 72% 66%;
+    --destructive-foreground: 215 45% 10%;
+
+    --success: 158 58% 58%;
+    --success-foreground: 215 45% 10%;
+
+    --warning: 38 92% 62%;
+    --warning-foreground: 215 45% 10%;
+
+    --demo: 38 92% 58%;
+    --demo-foreground: 30 100% 10%;
+    --demo-border: 38 92% 58%;
+
+    --border: 215 26% 22%;
+    --input: 215 24% 44%;
+    --ring: 205 80% 60%;
+
+    --chart-1: 205 80% 68%;
+    --chart-2: 172 58% 56%;
+    --chart-3: 36 90% 62%;
+    --chart-4: 266 70% 74%;
+    --chart-5: 342 76% 70%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    /* Anchor jumps from the skip link must clear the sticky top bar. */
+    scroll-padding-top: 4.5rem;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    text-rendering: optimizeLegibility;
+  }
+
+  /*
+   * Focus visibility (WCAG 2.2 SC 2.4.11 Focus Not Obscured / 2.4.13 Focus
+   * Appearance). Declared globally so no component can ship without a visible
+   * indicator; the ring clears 3:1 against every surface in both themes.
+   */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  /* Tabular figures wherever a metric renders, so numeric columns do not jitter. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection {
+    background-color: hsl(var(--primary) / 0.2);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /*
+   * Synthetic-data watermark.
+   *
+   * A faint repeating diagonal wash laid across the main content region. It has
+   * to satisfy three things at once:
+   *   - survive a screenshot, so demo output cannot be laundered as real data;
+   *   - not reduce text contrast: it sits BEHIND content at ~3.5% alpha and is
+   *     drawn from --foreground so it tracks the theme. The change in surface
+   *     luminance is under 1%, so every ratio in the table above still holds;
+   *   - stay invisible to assistive technology: it is a ::before with no
+   *     content and no pointer events. The DEMO badge in the top bar carries
+   *     the same message as real text for screen-reader users.
+   */
+  .synthetic-watermark {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .synthetic-watermark::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image: repeating-linear-gradient(
+      -35deg,
+      hsl(var(--foreground) / 0.035) 0px,
+      hsl(var(--foreground) / 0.035) 1px,
+      transparent 1px,
+      transparent 13px
+    );
+  }
+
+  .synthetic-watermark > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  @media print {
+    /* Printing or PDF-exporting a demo screen must carry the warning too. */
+    .synthetic-watermark::before {
+      background-image: repeating-linear-gradient(
+        -35deg,
+        hsl(var(--foreground) / 0.09) 0px,
+        hsl(var(--foreground) / 0.09) 2px,
+        transparent 2px,
+        transparent 14px
+      );
+    }
+  }
+}
