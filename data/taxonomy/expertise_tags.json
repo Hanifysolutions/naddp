@@ -1,0 +1,272 @@
+{
+  "version": "1.0.0",
+  "updated": "2026-09-06",
+  "name": "expertise_tags",
+  "description": "Diaspora expertise taxonomy. Each tag names a capability a diaspora professional can offer to the bilateral relationship, and maps to exactly one code in sectors.json. Tags describe capability, not job title - a tag should answer 'what could this person be asked to do'. Codes are stable; labels may be edited.",
+  "expertise_tags": [
+    {
+      "code": "XP_LITHIUM_PROCESSING_ENG",
+      "label": "Lithium and Battery-Materials Processing Engineering",
+      "sector_code": "CM_LITHIUM",
+      "description": "Hydrometallurgical and pyrometallurgical processing of spodumene and lithium brines to battery-grade carbonate and hydroxide; plant design, flowsheet development, commissioning and operations. HERO TAG - the demo's diaspora search must return a profile carrying this tag."
+    },
+    {
+      "code": "XP_MIGRATION_PATHWAY_ACADEMIC",
+      "label": "Migration Pathway and Education Policy Research",
+      "sector_code": "ED_SKILLED_MIGRATION",
+      "description": "Academic and policy expertise in skilled-migration systems, occupation-list design, qualification recognition, student-to-skilled transition, and the labour-market and ethical-recruitment effects of migration policy. HERO TAG - paired with XP_LITHIUM_PROCESSING_ENG in the demo's dual-sector result."
+    },
+    {
+      "code": "XP_MINERAL_ECONOMICS",
+      "label": "Mineral Economics and Resource Policy",
+      "sector_code": "CRITICAL_MINERALS",
+      "description": "Commodity market analysis, resource taxation and royalty design, beneficiation policy, and the economics of domestic-processing mandates."
+    },
+    {
+      "code": "XP_GEOLOGY_EXPLORATION",
+      "label": "Exploration Geology and Resource Estimation",
+      "sector_code": "CRITICAL_MINERALS",
+      "description": "Greenfield and brownfield exploration, geophysical interpretation, drilling programmes, and resource and reserve estimation to internationally recognised reporting standards."
+    },
+    {
+      "code": "XP_METALLURGY_TESTWORK",
+      "label": "Extractive Metallurgy and Metallurgical Testwork",
+      "sector_code": "CRITICAL_MINERALS",
+      "description": "Comminution, flotation, leaching and separation testwork; scale-up from bench to pilot to plant."
+    },
+    {
+      "code": "XP_MINE_ENGINEERING",
+      "label": "Mine Engineering and Operations",
+      "sector_code": "MINING_SERVICES",
+      "description": "Open-pit and underground mine design, scheduling, ventilation, geotechnical engineering, and operational readiness."
+    },
+    {
+      "code": "XP_MINE_SAFETY_STANDARDS",
+      "label": "Mine Safety Systems and Standards",
+      "sector_code": "MINING_SERVICES",
+      "description": "Occupational health and safety systems, incident investigation, regulatory compliance and safety culture programmes for resource operations."
+    },
+    {
+      "code": "XP_ARTISANAL_MINING_FORMALISATION",
+      "label": "Artisanal Mining Formalisation",
+      "sector_code": "CM_TANTALUM_NIOBIUM",
+      "description": "Transitioning artisanal and small-scale mining into formal, traceable and safer operations: cooperative structuring, mercury reduction, and supply-chain due diligence."
+    },
+    {
+      "code": "XP_MINERALS_TRACEABILITY",
+      "label": "Minerals Traceability and Responsible Sourcing",
+      "sector_code": "ENVIRONMENT_CLIMATE",
+      "description": "Chain-of-custody systems, due-diligence frameworks and ESG assurance for mineral supply chains - increasingly a precondition of offtake agreements."
+    },
+    {
+      "code": "XP_PROJECT_FINANCE_RESOURCES",
+      "label": "Resources Project Finance",
+      "sector_code": "FINANCIAL_SERVICES",
+      "description": "Structuring and financing of mining and processing projects: offtake-backed debt, streaming, development finance and political-risk mitigation."
+    },
+    {
+      "code": "XP_TVET_CURRICULUM",
+      "label": "Technical and Vocational Curriculum Design",
+      "sector_code": "ED_VOCATIONAL_TRAINING",
+      "description": "Competency-based curriculum development, training-package adaptation, assessment design and trainer capability building for industry-linked technical training."
+    },
+    {
+      "code": "XP_QUALIFICATION_ASSESSMENT",
+      "label": "Qualification Assessment and Recognition",
+      "sector_code": "ED_QUALIFICATION_RECOGNITION",
+      "description": "Comparative qualification assessment, competency mapping and occupational licensing pathways across the two jurisdictions."
+    },
+    {
+      "code": "XP_HIGHER_ED_PARTNERSHIPS",
+      "label": "Higher Education Partnership Development",
+      "sector_code": "ED_HIGHER_EDUCATION",
+      "description": "Articulation and dual-award agreements, transnational education delivery models, quality assurance and accreditation across jurisdictions."
+    },
+    {
+      "code": "XP_RESEARCH_MANAGEMENT",
+      "label": "Research Programme Management",
+      "sector_code": "ED_RESEARCH_COLLABORATION",
+      "description": "Design and administration of joint research programmes: funding architecture, intellectual property arrangements, mobility schemes and research integrity."
+    },
+    {
+      "code": "XP_STEM_EDUCATION",
+      "label": "STEM Education and Workforce Pipeline",
+      "sector_code": "EDUCATION_SKILLS",
+      "description": "Building the upstream science and engineering pipeline: secondary and tertiary STEM pedagogy, outreach, and participation of under-represented groups."
+    },
+    {
+      "code": "XP_AGRONOMY_DRYLAND",
+      "label": "Dryland Agronomy and Crop Science",
+      "sector_code": "AG_GRAINS_PULSES",
+      "description": "Crop systems for semi-arid conditions: variety selection, conservation agriculture, soil fertility and drought resilience."
+    },
+    {
+      "code": "XP_LIVESTOCK_GENETICS",
+      "label": "Livestock Genetics and Animal Health",
+      "sector_code": "AG_LIVESTOCK_GENETICS",
+      "description": "Breeding programmes, genetic evaluation, animal health systems and rangeland livestock management."
+    },
+    {
+      "code": "XP_POSTHARVEST_COLDCHAIN",
+      "label": "Post-Harvest Systems and Cold Chain",
+      "sector_code": "AG_AGRITECH",
+      "description": "Storage, handling, processing and cold-chain design to reduce post-harvest loss and extend market reach."
+    },
+    {
+      "code": "XP_FOOD_SAFETY_STANDARDS",
+      "label": "Food Safety and Export Standards",
+      "sector_code": "AGRIBUSINESS",
+      "description": "Sanitary and phytosanitary compliance, traceability, certification and market-access requirements for agricultural exports."
+    },
+    {
+      "code": "XP_RENEWABLE_ENERGY_ENG",
+      "label": "Renewable Energy Engineering",
+      "sector_code": "EN_RENEWABLES",
+      "description": "Solar, wind, storage and hybrid system design, grid integration and mini-grid deployment - including the industrial power supply required by mineral processing."
+    },
+    {
+      "code": "XP_GAS_PROCESSING",
+      "label": "Gas Processing and Utilisation",
+      "sector_code": "EN_GAS",
+      "description": "Gas treatment, liquefaction, domestic gas-to-power and industrial gas applications."
+    },
+    {
+      "code": "XP_POWER_SYSTEMS_PLANNING",
+      "label": "Power Systems Planning and Regulation",
+      "sector_code": "ENERGY",
+      "description": "Generation and transmission planning, tariff and market design, and utility regulatory reform."
+    },
+    {
+      "code": "XP_SOFTWARE_ENGINEERING",
+      "label": "Software Engineering and Platform Architecture",
+      "sector_code": "ICT_DIGITAL",
+      "description": "Design and delivery of production software systems, cloud architecture and platform engineering."
+    },
+    {
+      "code": "XP_DATA_SCIENCE_AI",
+      "label": "Data Science and Applied AI",
+      "sector_code": "ICT_DIGITAL",
+      "description": "Applied machine learning, data engineering and analytics, including responsible-AI governance in public-sector contexts."
+    },
+    {
+      "code": "XP_CYBERSECURITY",
+      "label": "Cybersecurity and Information Assurance",
+      "sector_code": "ICT_DIGITAL",
+      "description": "Security architecture, threat detection, incident response and assurance for critical and government systems."
+    },
+    {
+      "code": "XP_DIGITAL_GOVERNMENT",
+      "label": "Digital Government and Public Service Delivery",
+      "sector_code": "ICT_DIGITAL",
+      "description": "Digital identity, service design, interoperability and public-sector platform delivery."
+    },
+    {
+      "code": "XP_FINTECH_PAYMENTS",
+      "label": "Fintech, Payments and Remittances",
+      "sector_code": "FS_FINTECH",
+      "description": "Payment systems, cross-border remittance infrastructure, digital lending and financial inclusion."
+    },
+    {
+      "code": "XP_FINANCIAL_REGULATION",
+      "label": "Financial Regulation and Compliance",
+      "sector_code": "FINANCIAL_SERVICES",
+      "description": "Prudential and conduct regulation, anti-money-laundering frameworks and cross-border compliance."
+    },
+    {
+      "code": "XP_PUBLIC_HEALTH",
+      "label": "Public Health and Health Systems",
+      "sector_code": "HEALTH_LIFE_SCIENCES",
+      "description": "Health system strengthening, epidemiology, health financing and programme evaluation."
+    },
+    {
+      "code": "XP_CLINICAL_MEDICINE",
+      "label": "Clinical Medicine and Specialist Practice",
+      "sector_code": "HEALTH_LIFE_SCIENCES",
+      "description": "Specialist clinical practice, clinical training and telemedicine collaboration."
+    },
+    {
+      "code": "XP_HEALTH_WORKFORCE",
+      "label": "Health Workforce Development and Ethical Recruitment",
+      "sector_code": "HEALTH_LIFE_SCIENCES",
+      "description": "Health workforce planning, training pipelines, and ethical international recruitment practice - the counterpart concern to any skilled-migration proposition in health."
+    },
+    {
+      "code": "XP_PHARMA_REGULATORY",
+      "label": "Pharmaceutical Manufacturing and Regulatory Affairs",
+      "sector_code": "HEALTH_LIFE_SCIENCES",
+      "description": "Local pharmaceutical manufacturing, quality systems, and medicines regulatory approval pathways."
+    },
+    {
+      "code": "XP_INFRA_PROJECT_DELIVERY",
+      "label": "Infrastructure Project Delivery",
+      "sector_code": "INFRASTRUCTURE",
+      "description": "Major project structuring, procurement, contract management and delivery assurance."
+    },
+    {
+      "code": "XP_TRANSPORT_LOGISTICS",
+      "label": "Transport and Logistics Systems",
+      "sector_code": "INFRASTRUCTURE",
+      "description": "Freight corridor design, port and rail operations, and supply-chain optimisation - the constraint that most often determines whether a resource project is bankable."
+    },
+    {
+      "code": "XP_STRUCTURAL_ENGINEERING",
+      "label": "Structural and Civil Engineering",
+      "sector_code": "INFRASTRUCTURE",
+      "description": "Design and assessment of structures, foundations and civil works in challenging ground and climate conditions."
+    },
+    {
+      "code": "XP_WATER_RESOURCES",
+      "label": "Water Resources and Catchment Management",
+      "sector_code": "WATER",
+      "description": "Hydrology, catchment planning, groundwater management and water allocation under scarcity."
+    },
+    {
+      "code": "XP_MINE_WATER_STEWARDSHIP",
+      "label": "Mine Water Stewardship and Tailings",
+      "sector_code": "WATER",
+      "description": "Mine water balance, tailings storage governance, and closure planning - a standing social-licence risk for any processing investment."
+    },
+    {
+      "code": "XP_SCREEN_PRODUCTION",
+      "label": "Screen Production and Post-Production",
+      "sector_code": "CREATIVE_INDUSTRIES",
+      "description": "Film and television production, post-production, distribution and co-production structuring."
+    },
+    {
+      "code": "XP_MUSIC_INDUSTRY",
+      "label": "Music Industry and Rights Management",
+      "sector_code": "CREATIVE_INDUSTRIES",
+      "description": "Music production, publishing, live touring and copyright and royalty administration."
+    },
+    {
+      "code": "XP_CULTURAL_DIPLOMACY",
+      "label": "Cultural Diplomacy and Creative Policy",
+      "sector_code": "CREATIVE_INDUSTRIES",
+      "description": "Cultural programme design, creative-sector policy and soft-power engagement."
+    },
+    {
+      "code": "XP_TRADE_LAW",
+      "label": "International Trade Law and Investment Treaties",
+      "sector_code": "PROFESSIONAL_SERVICES",
+      "description": "Trade agreements, investment protection, dispute resolution and cross-border transaction structuring."
+    },
+    {
+      "code": "XP_STANDARDS_CERTIFICATION",
+      "label": "Standards, Conformity and Certification",
+      "sector_code": "PROFESSIONAL_SERVICES",
+      "description": "Standards development, conformity assessment and certification systems that condition market access."
+    },
+    {
+      "code": "XP_CLIMATE_ADAPTATION",
+      "label": "Climate Adaptation and Resilience",
+      "sector_code": "ENVIRONMENT_CLIMATE",
+      "description": "Climate risk assessment, adaptation planning and resilience programming for exposed regions and assets."
+    },
+    {
+      "code": "XP_ESG_ASSURANCE",
+      "label": "ESG Assurance and Emissions Accounting",
+      "sector_code": "ENVIRONMENT_CLIMATE",
+      "description": "Emissions measurement and reporting, social impact assessment and independent ESG assurance."
+    }
+  ]
+}

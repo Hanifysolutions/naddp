@@ -1,0 +1,81 @@
+{
+  "version": "1.0.0",
+  "updated": "2026-09-06",
+  "name": "consular_case_types",
+  "description": "Consular case types available in the demo. default_sla_days is a calendar-day budget for the case from intake to resolution, and pauses while the case is in AWAITING_CITIZEN (see docs/workflows.md). classification is the zone a case of this type is created in and is never lowered automatically (ADR-0006). requires_human_determination marks case types whose resolution constitutes a consular determination and therefore may never be made autonomously by an AI system (BUILD_BIBLE.md section 6) - for those types the consular_triage Gateway purpose may only ever produce a proposal for a human to accept or reject.",
+  "sla_note": "SLA values are DEMO DEFAULTS chosen to produce a realistic ageing distribution on the consular dashboard. They are not published service standards and must be confirmed against the mission's actual commitments before any non-demo use. Tracked as Q-15 in docs/OPEN_QUESTIONS.md.",
+  "case_types": [
+    {
+      "code": "PASSPORT_RENEWAL",
+      "label": "Passport Renewal",
+      "default_sla_days": 21,
+      "classification": "CONSULAR_SENSITIVE",
+      "requires_human_determination": true,
+      "description": "Renewal of a national passport for a citizen resident in or travelling through the receiving state. Involves identity verification, biometric capture and issuance. HERO CASE TYPE - the demo's synthetic case is a passport renewal for a Nigerian student in Australia, tying the consular thread to the skilled-migration narrative.",
+      "sla_basis": "Three-week budget reflecting identity verification plus production and return of the document."
+    },
+    {
+      "code": "EMERGENCY_TRAVEL_DOCUMENT",
+      "label": "Emergency Travel Document",
+      "default_sla_days": 2,
+      "classification": "CONSULAR_SENSITIVE",
+      "requires_human_determination": true,
+      "description": "Issuance of a single-use travel document to a citizen who is stranded, whose passport has been lost or stolen, or who must travel urgently. Requires identity satisfaction on reduced evidence, which is precisely why it is a determination and not an administrative step.",
+      "sla_basis": "Urgency is the point of the product; a budget longer than 48 hours defeats it."
+    },
+    {
+      "code": "NOTARIAL_ATTESTATION",
+      "label": "Notarial Services and Document Attestation",
+      "default_sla_days": 10,
+      "classification": "CONSULAR_SENSITIVE",
+      "requires_human_determination": true,
+      "description": "Authentication and legalisation of documents, affidavits, powers of attorney and certified copies. The consular officer attests to authenticity, which is a determination carrying legal effect.",
+      "sla_basis": "Allows for appointment scheduling, verification against issuing authorities, and return of originals."
+    },
+    {
+      "code": "CITIZEN_WELFARE_CHECK",
+      "label": "Citizen Welfare Check",
+      "default_sla_days": 3,
+      "classification": "CONSULAR_SENSITIVE",
+      "requires_human_determination": true,
+      "description": "Response to a request - often from family - to establish the wellbeing and whereabouts of a citizen. Requires judgement about privacy, consent to disclose, and the appropriate level of intervention.",
+      "sla_basis": "Short budget: welfare concerns degrade quickly, and the initial contact attempt is the critical step."
+    },
+    {
+      "code": "BIRTH_REGISTRATION",
+      "label": "Birth Registration Abroad",
+      "default_sla_days": 14,
+      "classification": "CONSULAR_SENSITIVE",
+      "requires_human_determination": true,
+      "description": "Registration of the birth of a citizen's child in the receiving state, establishing civil status and the basis for citizenship documentation. A determination about entitlement, not a filing exercise.",
+      "sla_basis": "Two weeks to allow verification of parental documentation and civil-registry processing."
+    },
+    {
+      "code": "VISA_ENQUIRY_REFERRAL",
+      "label": "Visa Enquiry and Referral",
+      "default_sla_days": 5,
+      "classification": "CONSULAR_SENSITIVE",
+      "requires_human_determination": false,
+      "description": "An enquiry about entry to the receiving state. The mission does not decide the receiving state's visa matters, so no determination is made - the case is answered with accurate information and, where appropriate, referred to the competent authority. The ONLY case type in this taxonomy with requires_human_determination false, precisely because nothing is being determined.",
+      "sla_basis": "A working week to research and respond accurately; there is no external processing dependency."
+    },
+    {
+      "code": "DEATH_OF_NATIONAL_ABROAD",
+      "label": "Death of a National Abroad",
+      "default_sla_days": 1,
+      "classification": "CONSULAR_SENSITIVE",
+      "requires_human_determination": true,
+      "description": "Response to the death of a citizen in the receiving state: verification, next-of-kin notification, liaison with local authorities, and assistance with repatriation or local arrangements. Among the most sensitive matters a mission handles, and involves determinations about identity, notification and eligibility for assistance.",
+      "sla_basis": "Initial response budget of one day. Total case duration is necessarily longer and driven by external authorities; the SLA measures the mission's own responsiveness, not the whole matter."
+    },
+    {
+      "code": "DETENTION_NOTIFICATION",
+      "label": "Detention or Arrest Notification",
+      "default_sla_days": 1,
+      "classification": "CONSULAR_SENSITIVE",
+      "requires_human_determination": true,
+      "description": "Notification that a citizen has been detained or arrested, and the arrangement of consular access. Time-critical: consular access rights attach on notification and are weakened by delay. Involves determinations about the citizen's wishes regarding contact and disclosure to family.",
+      "sla_basis": "One day, reflecting the urgency of establishing consular access after notification."
+    }
+  ]
+}

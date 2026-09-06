@@ -1,0 +1,95 @@
+# NADDP API — production container image
+#
+# Build context is the REPOSITORY ROOT, not this directory:
+#   docker build -f infra/railway/Dockerfile.api -t naddp-api:local .
+#
+# Stage 1 resolves and installs dependencies with uv against the committed lockfile.
+# Stage 2 is a plain slim runtime that carries only the virtualenv and the application —
+# no uv, no compiler, no build cache, no lockfile.
+#
+# See ADR-0005 for why this is uv + Python 3.12 + a synchronous uvicorn worker.
+
+# ---------------------------------------------------------------------------
+# Stage 1 — builder
+# ---------------------------------------------------------------------------
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
+
+# UV_COMPILE_BYTECODE   pre-compile .pyc at build time, so cold start does not pay for it
+# UV_LINK_MODE=copy     hardlinks from the cache mount would dangle in the final image
+# UV_PYTHON_DOWNLOADS   fail loudly rather than silently fetching a different interpreter
+# UV_PROJECT_ENVIRONMENT install into a predictable path we can copy wholesale
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_PROJECT_ENVIRONMENT=/opt/venv
+
+WORKDIR /build
+
+# Dependency layer: manifests only, so this layer is cached until dependencies actually change.
+COPY apps/api/pyproject.toml apps/api/uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-project
+
+# Application layer: source changes invalidate only from here down.
+COPY apps/api/ ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev
+
+# ---------------------------------------------------------------------------
+# Stage 2 — runtime
+# ---------------------------------------------------------------------------
+# Same Debian release and same Python minor version as the uv image above, so the
+# interpreter the virtualenv points at exists at the same path.
+FROM python:3.12-slim-bookworm AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONFAULTHANDLER=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PATH="/opt/venv/bin:$PATH" \
+    PORT=8000
+
+# libpq is not needed: psycopg[binary] ships its own. Nothing else is added on purpose —
+# a smaller image is a smaller attack surface. Only CA certificates, for outbound TLS
+# to the Anthropic API and to a managed Postgres over SSL.
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates; \
+    rm -rf /var/lib/apt/lists/*
+
+# Non-root from here on. Fixed uid/gid so a mounted volume has predictable ownership.
+RUN groupadd --system --gid 10001 naddp \
+    && useradd --system --uid 10001 --gid naddp --create-home --home-dir /home/naddp naddp
+
+WORKDIR /app
+
+COPY --from=builder --chown=naddp:naddp /opt/venv /opt/venv
+COPY --from=builder --chown=naddp:naddp /build /app
+
+# The seed data, taxonomy and — critically — the AI Gateway's deterministic fallback
+# snapshots live outside apps/api. app.core.config discovers the repo root by looking for
+# data/demo-seed, so copying it here also pins REPO_ROOT to /app. Without this the image
+# builds fine and then serves a gateway with no fallback, which is the one failure mode
+# ADR-0002 exists to prevent.
+COPY --chown=naddp:naddp data/ /app/data/
+
+# Local object store for demo documents (see storage/README.md). On Railway this must be a
+# mounted volume to survive redeploys; without one it is ephemeral, which is acceptable for a
+# demo that is reseeded before each rehearsal.
+RUN mkdir -p /app/storage && chown -R naddp:naddp /app/storage
+VOLUME ["/app/storage"]
+
+USER naddp
+
+EXPOSE 8000
+
+# Matches railway.json's healthcheckPath. Uses the stdlib so no curl is needed in the image.
+# /health/ready, not /health: /health stays 200 with the database down by design, so probing
+# it would report a database-less instance as healthy and route live traffic to it.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import os,sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('PORT','8000')+'/health/ready', timeout=4).status == 200 else 1)"
+
+# Shell form via exec so $PORT is expanded (Railway injects it) while uvicorn still becomes PID 1
+# and receives SIGTERM directly. Migrations are NOT run here — they are a pre-deploy step
+# (railway.json preDeployCommand), so replicas never race to migrate.
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'"]

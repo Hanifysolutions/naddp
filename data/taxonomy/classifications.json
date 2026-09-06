@@ -1,0 +1,93 @@
+{
+  "version": "1.0.0",
+  "updated": "2026-09-06",
+  "name": "classifications",
+  "description": "The four NADDP data classification zones. See docs/architecture/adr/0006-classification-zones.md for the full rules. rank is the DOMINANCE order used for propagation: any aggregate, summary, AI output or evidence list takes the maximum rank of its constituent parts. min_role_rank_to_read plus compartment is the ACCESS rule; the two are deliberately separate, because CONSULAR_SENSITIVE is a compartment (need-to-know about a private individual) rather than simply a higher tier. Identifiers use underscores; BUILD_BIBLE.md section 5 writes them with hyphens as display labels only.",
+  "role_ranks": [
+    {
+      "role": "AMBASSADOR",
+      "clearance_rank": 40,
+      "compartments": [
+        "consular"
+      ],
+      "description": "Head of mission; accountable for everything the mission does."
+    },
+    {
+      "role": "DEPUTY",
+      "clearance_rank": 30,
+      "compartments": [
+        "consular"
+      ],
+      "description": "Acts for the Ambassador and needs equivalent reach."
+    },
+    {
+      "role": "CONSULAR_OFFICER",
+      "clearance_rank": 20,
+      "compartments": [
+        "consular"
+      ],
+      "description": "Working tier plus the consular compartment. Deliberately not rank 30: a consular officer's need-to-know is deep, not broad."
+    },
+    {
+      "role": "TRADE_OFFICER",
+      "clearance_rank": 20,
+      "compartments": [],
+      "description": "Full working access to trade and intelligence material; no consular need-to-know."
+    },
+    {
+      "role": "DIASPORA_OFFICER",
+      "clearance_rank": 20,
+      "compartments": [],
+      "description": "Working tier. Diaspora profiles are governed by consent rather than by the consular compartment."
+    },
+    {
+      "role": "ADMIN",
+      "clearance_rank": 10,
+      "compartments": [],
+      "description": "Platform administration and audit reading. Explicitly NOT a content super-user - separation of duties (ADR-0003)."
+    }
+  ],
+  "classifications": [
+    {
+      "code": "PUBLIC",
+      "label": "Public",
+      "display_label": "PUBLIC",
+      "rank": 0,
+      "compartment": null,
+      "min_role_rank_to_read": 0,
+      "description": "Already published, or intended for publication. Disclosure causes no harm because it has already occurred. The only zone permitted on the unauthenticated citizen surface.",
+      "example_content": "A cited public agency page underpinning an intelligence signal; published trade statistics; a public university programme description; the citizen-facing explanation of how to renew a passport."
+    },
+    {
+      "code": "MISSION_INTERNAL",
+      "label": "Mission Internal",
+      "display_label": "MISSION-INTERNAL",
+      "rank": 10,
+      "compartment": null,
+      "min_role_rank_to_read": 10,
+      "description": "Ordinary working material of the mission. Not secret, but not for publication; disclosure is embarrassing and erodes working candour. The default zone for anything a staff member authors and for any newly ingested material outside a consular context.",
+      "example_content": "A draft morning brief; internal notes on an opportunity's scoring rationale; a stakeholder contact record; a meeting agenda; the mission's own commentary on a public source."
+    },
+    {
+      "code": "CONSULAR_SENSITIVE",
+      "label": "Consular Sensitive",
+      "display_label": "CONSULAR-SENSITIVE",
+      "rank": 20,
+      "compartment": "consular",
+      "min_role_rank_to_read": 20,
+      "description": "Personal information about identifiable individuals in a consular context. Distinguished from CONFIDENTIAL not by how damaging disclosure would be in diplomatic terms, but by WHOSE interests are harmed - a private person's, who did not choose to be in the system. Requires the consular compartment in addition to rank, so seniority alone never opens a case file.",
+      "example_content": "A passport renewal case file; a welfare or detention matter; next-of-kin details; case correspondence; any document attached to a consular case."
+    },
+    {
+      "code": "CONFIDENTIAL",
+      "label": "Confidential",
+      "display_label": "CONFIDENTIAL",
+      "rank": 30,
+      "compartment": null,
+      "min_role_rank_to_read": 30,
+      "description": "Material whose disclosure would damage the bilateral relationship or a commercial party. Highest dominance rank, so anything derived from it is also CONFIDENTIAL. Officers below rank 30 who need access receive an explicit, audited per-object grant rather than a blanket clearance.",
+      "example_content": "A negotiating position on a lithium value-chain agreement; an unannounced commercial intention shared in confidence; a candid political assessment; third-party commercially-confidential information."
+    }
+  ],
+  "access_rule": "may_read(principal, zone) := (principal.clearance_rank >= zone.min_role_rank_to_read AND (zone.compartment is null OR zone.compartment in principal.compartments)) OR an explicit, audited per-object grant exists for (principal, object). Propagation uses rank alone: derived content takes max(rank) over its parts, and downgrade is always a deliberate, audited human act."
+}

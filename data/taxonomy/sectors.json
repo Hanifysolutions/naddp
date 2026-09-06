@@ -1,0 +1,176 @@
+{
+  "version": "1.0.0",
+  "updated": "2026-09-06",
+  "name": "sectors",
+  "description": "Bilateral Nigeria-Australia trade and economic sectors. Two levels: a top-level sector (parent: null) and optional sub-sectors. Signals, opportunities, stakeholders and diaspora expertise tags all classify against these codes. Codes are stable identifiers and must never be renamed; labels may be edited.",
+  "sectors": [
+    {
+      "code": "CRITICAL_MINERALS",
+      "label": "Critical Minerals",
+      "parent": null,
+      "description": "Minerals essential to energy-transition and advanced-manufacturing supply chains. Australia is a major upstream producer and processor; Nigeria holds significant under-developed deposits and is pursuing domestic beneficiation rather than raw-ore export. The primary hero-thread sector."
+    },
+    {
+      "code": "CM_LITHIUM",
+      "label": "Lithium and Battery Materials",
+      "parent": "CRITICAL_MINERALS",
+      "description": "Lithium exploration, spodumene concentration, refining to battery-grade chemicals, and downstream cathode and cell materials. Australia is the world's largest spodumene producer and is building domestic refining capacity; Nigeria has confirmed lithium-bearing pegmatites across the Central and North-Central belts and has adopted a policy of licensing conditional on local processing. HERO SECTOR."
+    },
+    {
+      "code": "CM_RARE_EARTHS",
+      "label": "Rare Earth Elements",
+      "parent": "CRITICAL_MINERALS",
+      "description": "Light and heavy rare earth exploration, separation and magnet-materials processing. Relevant to both parties' supply-chain diversification objectives."
+    },
+    {
+      "code": "CM_TANTALUM_NIOBIUM",
+      "label": "Tantalum, Niobium and Tin",
+      "parent": "CRITICAL_MINERALS",
+      "description": "Columbite-tantalite and cassiterite mining and processing, historically significant on the Jos Plateau and a live artisanal-to-formal-sector transition challenge with clear traceability and ESG implications."
+    },
+    {
+      "code": "CM_COPPER_NICKEL_COBALT",
+      "label": "Copper, Nickel and Cobalt",
+      "parent": "CRITICAL_MINERALS",
+      "description": "Base and battery metals relevant to electrification supply chains, where Australian producers and processing technology providers are internationally active."
+    },
+    {
+      "code": "EDUCATION_SKILLS",
+      "label": "Education and Skills",
+      "parent": null,
+      "description": "Education services, skills recognition and labour-mobility pathways. Australia's second-largest services export category and a long-standing element of the bilateral relationship. The second hero-thread sector."
+    },
+    {
+      "code": "ED_HIGHER_EDUCATION",
+      "label": "Higher Education",
+      "parent": "EDUCATION_SKILLS",
+      "description": "University-level study, transnational education, branch campuses, articulation agreements and scholarship programmes between Australian and Nigerian institutions."
+    },
+    {
+      "code": "ED_SKILLED_MIGRATION",
+      "label": "Skilled Migration Pathways",
+      "parent": "EDUCATION_SKILLS",
+      "description": "Migration pathways for skilled workers: occupation-list alignment, skills assessment and recognition of Nigerian qualifications, employer sponsorship, and the study-to-work-to-residence sequence. HERO SECTOR - paired with CM_LITHIUM in the demo narrative."
+    },
+    {
+      "code": "ED_VOCATIONAL_TRAINING",
+      "label": "Vocational Education and Training",
+      "parent": "EDUCATION_SKILLS",
+      "description": "Competency-based technical and vocational training, including Australian VET packages delivered in Nigeria, trainer-of-trainers programmes, and industry-linked training for the resources and processing sectors."
+    },
+    {
+      "code": "ED_RESEARCH_COLLABORATION",
+      "label": "Research Collaboration",
+      "parent": "EDUCATION_SKILLS",
+      "description": "Joint research programmes, co-supervision, mobility fellowships and shared research infrastructure, concentrated in minerals science, agriculture and public health."
+    },
+    {
+      "code": "ED_QUALIFICATION_RECOGNITION",
+      "label": "Qualification and Skills Recognition",
+      "parent": "EDUCATION_SKILLS",
+      "description": "Mutual recognition of qualifications and occupational licensing - the practical bottleneck that determines whether a training pipeline actually converts into employment."
+    },
+    {
+      "code": "AGRIBUSINESS",
+      "label": "Agribusiness and Food Systems",
+      "parent": null,
+      "description": "Agricultural production, processing, inputs and food security. Australia is a significant grain supplier to Nigeria and a source of dryland-farming technology relevant to Nigerian conditions."
+    },
+    {
+      "code": "AG_GRAINS_PULSES",
+      "label": "Grains and Pulses",
+      "parent": "AGRIBUSINESS",
+      "description": "Wheat, barley, sorghum and pulse trade, storage and milling - the largest established goods-trade channel between the two economies."
+    },
+    {
+      "code": "AG_LIVESTOCK_GENETICS",
+      "label": "Livestock and Animal Genetics",
+      "parent": "AGRIBUSINESS",
+      "description": "Breeding stock, genetics, animal health, feedlot systems and rangeland management, where Australian expertise in arid and semi-arid systems maps onto northern Nigerian conditions."
+    },
+    {
+      "code": "AG_AGRITECH",
+      "label": "Agricultural Technology",
+      "parent": "AGRIBUSINESS",
+      "description": "Precision agriculture, irrigation technology, post-harvest loss reduction, cold chain and farm-management software."
+    },
+    {
+      "code": "MINING_SERVICES",
+      "label": "Mining Equipment, Technology and Services",
+      "parent": null,
+      "description": "The METS sector: engineering, geological services, mine planning, processing technology, safety systems, environmental management and mine-site services. A major Australian export capability and the most direct commercial adjacency to Nigeria's minerals ambitions."
+    },
+    {
+      "code": "ENERGY",
+      "label": "Energy",
+      "parent": null,
+      "description": "Power generation, transmission, fuels and the energy transition."
+    },
+    {
+      "code": "EN_RENEWABLES",
+      "label": "Renewable Energy",
+      "parent": "ENERGY",
+      "description": "Utility-scale and distributed solar, wind, storage and mini-grid deployment, including the power supply question that sits underneath any mineral-processing proposition."
+    },
+    {
+      "code": "EN_GAS",
+      "label": "Natural Gas and LNG",
+      "parent": "ENERGY",
+      "description": "Gas processing, liquefaction, domestic gas-to-power and industrial gas use. Both countries are significant gas exporters and therefore both partners and competitors."
+    },
+    {
+      "code": "ICT_DIGITAL",
+      "label": "ICT and Digital Economy",
+      "parent": null,
+      "description": "Software, data infrastructure, connectivity, cybersecurity and digital government. Nigeria's technology sector is the largest in Africa by investment volume and a substantial source of the skilled diaspora."
+    },
+    {
+      "code": "FINANCIAL_SERVICES",
+      "label": "Financial Services",
+      "parent": null,
+      "description": "Banking, capital markets, insurance, pensions and trade finance, including the mining-project finance capability concentrated in Australian institutions."
+    },
+    {
+      "code": "FS_FINTECH",
+      "label": "Fintech and Payments",
+      "parent": "FINANCIAL_SERVICES",
+      "description": "Payments, remittances, digital lending and regulatory technology. Remittance corridors are directly relevant to diaspora engagement policy."
+    },
+    {
+      "code": "HEALTH_LIFE_SCIENCES",
+      "label": "Health and Life Sciences",
+      "parent": null,
+      "description": "Health systems, medical technology, pharmaceuticals, diagnostics and health workforce development - the latter closely coupled to skilled-migration policy and to ethical-recruitment concerns."
+    },
+    {
+      "code": "INFRASTRUCTURE",
+      "label": "Infrastructure, Transport and Logistics",
+      "parent": null,
+      "description": "Transport corridors, ports, rail, construction, project delivery and the logistics capability that determines whether a resources or agricultural opportunity is commercially viable."
+    },
+    {
+      "code": "WATER",
+      "label": "Water Management",
+      "parent": null,
+      "description": "Water resource management, irrigation, urban water and sanitation, desalination and catchment governance. Australian expertise in scarce-water management is directly transferable to northern Nigeria and to mine-site water stewardship."
+    },
+    {
+      "code": "CREATIVE_INDUSTRIES",
+      "label": "Creative Industries",
+      "parent": null,
+      "description": "Screen, music, publishing, fashion and design. Nigeria's screen and music sectors have global reach and are a significant soft-power and cultural-diplomacy asset."
+    },
+    {
+      "code": "PROFESSIONAL_SERVICES",
+      "label": "Professional and Business Services",
+      "parent": null,
+      "description": "Legal, accounting, standards, certification, engineering consultancy and advisory services that underpin cross-border transactions."
+    },
+    {
+      "code": "ENVIRONMENT_CLIMATE",
+      "label": "Environment and Climate",
+      "parent": null,
+      "description": "Climate adaptation, emissions measurement, land restoration, biodiversity and the environmental and social governance standards that increasingly condition access to minerals offtake agreements."
+    }
+  ]
+}
