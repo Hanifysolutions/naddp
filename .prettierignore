@@ -1,0 +1,32 @@
+# Dependencies and build output
+node_modules/
+.pnpm-store/
+.next/
+out/
+dist/
+build/
+.turbo/
+coverage/
+
+# Lockfiles and generated artefacts (see .gitattributes: linguist-generated)
+pnpm-lock.yaml
+uv.lock
+apps/api/uv.lock
+packages/contracts/src/generated/
+packages/contracts/openapi.json
+
+# Python is formatted by ruff, not prettier
+*.py
+.venv/
+__pycache__/
+
+# GNU make requires tabs — prettier must not touch it
+Makefile
+*.mk
+
+# Local object storage for demo documents
+storage/
+
+# Environment files
+.env
+.env.*

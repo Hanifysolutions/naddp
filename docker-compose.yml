@@ -1,0 +1,33 @@
+# NADDP local development stack.
+# No `version:` key — it is obsolete in Compose v2 and emits a warning.
+#
+# Host port 5433 is deliberate: 5432 is already occupied on the build machine by an
+# unrelated container. Keep this in sync with POSTGRES_PORT in .env / .env.example
+# and with DATABASE_URL (postgresql+psycopg://naddp:naddp@localhost:5433/naddp).
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: naddp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: naddp
+      POSTGRES_PASSWORD: naddp
+      POSTGRES_DB: naddp
+      # Deterministic collation so ORDER BY is identical on every demo machine.
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
+    ports:
+      - '5433:5432'
+    volumes:
+      - naddp-pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U naddp -d naddp']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  naddp-pgdata:
+    name: naddp-pgdata

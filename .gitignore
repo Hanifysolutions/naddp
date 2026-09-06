@@ -1,0 +1,93 @@
+# ---------------------------------------------------------------------------
+# NADDP — repository ignore rules
+# ---------------------------------------------------------------------------
+
+# --- Node / pnpm ---
+node_modules/
+.pnpm-store/
+.pnpm-debug.log*
+npm-debug.log*
+yarn-error.log*
+.npm/
+
+# --- Next.js / build output ---
+.next/
+out/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# --- Test / coverage ---
+coverage/
+.nyc_output/
+junit.xml
+.playwright/
+test-results/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+.eggs/
+*.egg
+
+# --- Environment files (NEVER commit real secrets) ---
+# .env.example IS committed — it is the documented template.
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+!.env.example
+
+# --- Editors / IDEs ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.claude/settings.local.json
+
+# --- OS cruft ---
+.DS_Store
+._*
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# --- Local object storage for demo documents (keep the directory, not its contents) ---
+/storage/*
+!/storage/.gitkeep
+!/storage/README.md
+
+# --- Generated OpenAPI contract output (produced by `make gen-client`) ---
+# NOTE: packages/contracts/src/generated/openapi.d.ts IS committed on purpose.
+# It is the placeholder `packages/contracts/src/index.ts` imports, so a fresh
+# clone typechecks and `next build` succeeds before the API has ever been run;
+# generation overwrites it in place. Ignoring the whole directory made every
+# fresh clone (and CI) fail on an unresolved `./generated/openapi` import.
+packages/contracts/openapi.json
+packages/contracts/src/generated/api.ts
+
+# --- Local docker / database scratch ---
+.pgdata/
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# --- Misc ---
+*.log
+.tmp/
+tmp/

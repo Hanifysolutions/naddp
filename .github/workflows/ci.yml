@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Supersede in-flight runs for the same ref — the demo repo pushes often.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CI: 'true'
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  api:
+    name: api (ruff · mypy · alembic · pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: apps/api
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: naddp
+          POSTGRES_PASSWORD: naddp
+          POSTGRES_DB: naddp
+        ports:
+          # In CI the database is reached on the standard 5432; only the local
+          # docker-compose stack remaps it to 5433 (5432 is taken on that host).
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U naddp -d naddp"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+          --health-start-period 10s
+
+    env:
+      DATABASE_URL: postgresql+psycopg://naddp:naddp@localhost:5432/naddp
+      APP_ENV: ci
+      DEMO_MODE: 'true'
+      AI_GATEWAY_LIVE: 'false'
+      AI_GATEWAY_TIMEOUT_SECONDS: '4'
+      ANTHROPIC_MODEL: claude-sonnet-5
+      # Not a secret: CI never makes a live model call (AI_GATEWAY_LIVE=false).
+      DEMO_SESSION_SECRET: ci-only-not-a-real-secret
+      STORAGE_DIR: ./storage
+      LOG_LEVEL: INFO
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+
+      - name: Pin Python 3.12
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Enable Postgres extensions
+        working-directory: ${{ github.workspace }}
+        env:
+          PGPASSWORD: naddp
+        run: |
+          psql -h localhost -p 5432 -U naddp -d naddp \
+            -v ON_ERROR_STOP=1 \
+            -f infra/postgres/init/001_extensions.sql
+
+      - name: ruff check
+        run: uv run ruff check .
+
+      - name: ruff format --check
+        run: uv run ruff format --check .
+
+      - name: mypy
+        run: uv run mypy app
+
+      - name: alembic upgrade head
+        run: uv run alembic upgrade head
+
+      - name: pytest
+        run: uv run pytest -q
+
+  web:
+    name: web (eslint · tsc · next build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The web package's `lint` script must carry --max-warnings=0 so any
+      # eslint warning fails this job.
+      - name: eslint
+        run: pnpm --filter @naddp/web lint
+
+      - name: typecheck
+        run: pnpm --filter @naddp/web typecheck
+
+      - name: build
+        run: pnpm --filter @naddp/web build

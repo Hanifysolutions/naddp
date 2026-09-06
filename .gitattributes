@@ -1,0 +1,63 @@
+# NADDP — normalise line endings across Windows / macOS / Linux / CI.
+# Everything is LF in the repository; PowerShell scripts are the one exception.
+
+* text=auto eol=lf
+
+# --- Explicit text types (belt and braces for tools that ignore text=auto) ---
+*.md          text eol=lf
+*.mdx         text eol=lf
+*.txt         text eol=lf
+*.json        text eol=lf
+*.jsonc       text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf
+*.toml        text eol=lf
+*.ini         text eol=lf
+*.cfg         text eol=lf
+*.sql         text eol=lf
+*.sh          text eol=lf
+*.js          text eol=lf
+*.cjs         text eol=lf
+*.mjs         text eol=lf
+*.jsx         text eol=lf
+*.ts          text eol=lf
+*.tsx         text eol=lf
+*.css         text eol=lf
+*.html        text eol=lf
+*.py          text eol=lf
+*.pyi         text eol=lf
+*.env.example text eol=lf
+
+# GNU make requires literal TAB indentation — never let a filter touch it.
+Makefile      text eol=lf
+*.mk          text eol=lf
+
+# Dockerfiles / dotfiles
+Dockerfile    text eol=lf
+.gitattributes text eol=lf
+.gitignore    text eol=lf
+.editorconfig text eol=lf
+
+# --- PowerShell prefers CRLF ---
+*.ps1         text eol=crlf
+*.psm1        text eol=crlf
+*.psd1        text eol=crlf
+
+# --- Binary (never diff, never normalise) ---
+*.png         binary
+*.jpg         binary
+*.jpeg        binary
+*.gif         binary
+*.webp        binary
+*.ico         binary
+*.pdf         binary
+*.woff        binary
+*.woff2       binary
+*.ttf         binary
+*.otf         binary
+
+# --- Generated / vendored: collapse in diffs and exclude from language stats ---
+pnpm-lock.yaml                        linguist-generated=true -diff merge=binary
+uv.lock                               linguist-generated=true -diff merge=binary
+apps/api/uv.lock                      linguist-generated=true -diff merge=binary
+packages/contracts/src/generated/**   linguist-generated=true -diff

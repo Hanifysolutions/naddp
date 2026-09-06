@@ -1,0 +1,41 @@
+# NADDP — editor defaults. Mirrors .prettierrc.json (JS/TS) and ruff (Python).
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+max_line_length = 100
+
+[*.py]
+indent_size = 4
+
+[*.{yml,yaml,json,jsonc,js,cjs,mjs,jsx,ts,tsx,css,scss,html}]
+indent_size = 2
+
+# GNU make requires literal TAB indentation on recipe lines.
+[Makefile]
+indent_style = tab
+indent_size = 4
+
+[*.mk]
+indent_style = tab
+indent_size = 4
+
+# PowerShell prefers CRLF (see .gitattributes).
+[*.{ps1,psm1,psd1}]
+end_of_line = crlf
+indent_size = 4
+
+# Markdown uses two trailing spaces for hard line breaks.
+[*.md]
+trim_trailing_whitespace = false
+
+[*.sql]
+indent_size = 2
+
+[{.env,.env.example}]
+indent_size = 2

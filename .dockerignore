@@ -1,0 +1,60 @@
+# Build context for infra/railway/Dockerfile.api is the REPOSITORY ROOT.
+#
+# Without this file, `COPY apps/api/ ./` drags a host-built virtualenv into the image.
+# This repo is developed on Windows, so apps/api/.venv contains Windows paths and a
+# Scripts/ layout; landing it in a Linux image on top of the /opt/venv built in the
+# builder stage corrupts interpreter resolution in ways that fail at runtime, not at
+# build time. Everything below is either host-specific, secret, or reproducible.
+
+# --- Python host artefacts -------------------------------------------------
+**/.venv
+**/venv
+**/__pycache__
+**/*.py[cod]
+**/*.egg-info
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.coverage
+**/htmlcov
+
+# --- JavaScript (the API image needs none of it) ---------------------------
+**/node_modules
+**/.next
+**/.turbo
+apps/web
+packages
+
+# --- Secrets: never in an image layer --------------------------------------
+.env
+.env.*
+!.env.example
+
+# --- Version control and CI ------------------------------------------------
+.git
+.gitignore
+.gitattributes
+.github
+
+# --- Local object storage: demo document bytes, not application code -------
+storage/*
+!storage/.gitkeep
+
+# --- Editor / OS -----------------------------------------------------------
+.vscode
+.idea
+.claude
+**/.DS_Store
+**/Thumbs.db
+
+# --- Docs and tooling that do not belong in a runtime image ----------------
+docs
+evals
+infra/vercel
+Makefile
+make.ps1
+README.md
+BUILD_BIBLE.md
+ROADMAP.md
+CLAUDE.md
+PROMPT_W1_foundation.md

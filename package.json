@@ -1,0 +1,24 @@
+{
+  "name": "naddp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "NADDP — Nigeria-Australia Digital Diplomacy Platform (Ambassador demo monorepo)",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev:web": "pnpm --filter @naddp/web dev",
+    "build:web": "pnpm --filter @naddp/web build",
+    "lint:web": "pnpm --filter @naddp/web lint",
+    "typecheck:web": "pnpm --filter @naddp/web typecheck",
+    "gen-client": "pnpm --filter @naddp/contracts generate",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "openapi-typescript": "7.13.0",
+    "prettier": "3.9.6",
+    "typescript": "5.6.3"
+  }
+}
