@@ -219,16 +219,18 @@ class Opportunity(UUIDPrimaryKeyMixin, TimestampMixin, ClassifiedMixin, Base):
             "score (docs/workflows.md section 1, row 2)."
         ),
     )
-    score_rationale: Mapped[list[dict[str, Any]] | None] = mapped_column(
+    score_rationale: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB,
         nullable=True,
         comment=(
-            "The explainable breakdown behind score: a JSON array of objects "
-            "{factor, weight, value, evidence_ids}, where evidence_ids point at the signals "
-            "and documents each factor was drawn from. JSONB rather than JSON so the trace "
-            "drawer can query into it. Held as structured data rather than prose because "
-            "Week 2 makes scoring explainable AND editable, and prose cannot be edited "
-            "factor by factor. NULL exactly when score is NULL."
+            "The explainable breakdown behind score, written by app.services.scoring: "
+            "{score, band, confidence, weighted_total, evidence_ceiling, capped_by_evidence, "
+            "caveats, decision_support_only, factors[]} where each factor carries its "
+            "weight, value, contribution, the sentence explaining it, its evidence_ids and "
+            "- when an officer has adjusted it - the machine value it replaced and why. "
+            "JSONB rather than JSON so the trace drawer can query into it. Structured "
+            "rather than prose because the score is explainable AND editable factor by "
+            "factor, and prose is neither. NULL exactly when score is NULL."
         ),
     )
 

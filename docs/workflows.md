@@ -85,7 +85,7 @@ Legend: ⏹ terminal · ⚠ non-autonomous control per `BUILD_BIBLE.md` §6 · �
 | 11 | `MEETING` | `close` | `CLOSED` ⏹ | `close:opportunity` | `opportunity.closed` | ✎ |
 | 12 | `NEGOTIATION` | `partner` | `PARTNERED` ⏹ | `commit:opportunity` ⚠ | `opportunity.partnered` | **§6 control — a commitment.** `AMBASSADOR` or `DEPUTY` only. Never AI-initiated. |
 | 13 | `NEGOTIATION` | `close` | `CLOSED` ⏹ | `close:opportunity` | `opportunity.closed` | ✎ |
-| 14 | `QUALIFIED`, `CONTACT_PLANNED`, `CONTACTED`, `MEETING`, `NEGOTIATION` | `revert` | *immediately preceding state* | `revert:opportunity` | `opportunity.reverted` | ✎ Corrects a mis-advance. One step only, never across a terminal. `DEPUTY` / `AMBASSADOR` only. See `docs/OPEN_QUESTIONS.md` Q-04. |
+| 14 | `QUALIFIED`, `CONTACT_PLANNED`, `CONTACTED`, `MEETING`, `NEGOTIATION` | `revert` | *immediately preceding state* | `revert:opportunity` | `opportunity.reverted` | ✎ Corrects a mis-advance. One step only, never across a terminal. `DEPUTY` / `AMBASSADOR` only, reason required, and the reason reaches the audit row's payload. Q-04 **RESOLVED — approved**. |
 
 Terminal states: `PARTNERED`, `CLOSED`. Neither is reopenable. A revived opportunity is a new
 `DETECTED` row carrying `superseded_opportunity_id`.

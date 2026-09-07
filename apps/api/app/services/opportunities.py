@@ -148,9 +148,16 @@ def _evidence_reference_count(opportunity: Opportunity) -> int:
     of an audience, so anything unrecognised simply contributes nothing.
     """
     count = 1 if opportunity.source_signal_id is not None else 0
+    # The column changed shape in W2.3: it was a bare list of factors, it is now the whole
+    # breakdown object with the factors under "factors". Both are accepted, because a row
+    # written before the change is still a valid row and a demo must not care which era its
+    # data came from.
+    rationale: Any = opportunity.score_rationale
+    if isinstance(rationale, dict):
+        rationale = rationale.get("factors")
     # Typed as Sequence[Any] on purpose: the column is JSONB, so what comes back at runtime
     # is whatever was written, not what the annotation promises.
-    factors: Sequence[Any] = opportunity.score_rationale or ()
+    factors: Sequence[Any] = rationale if isinstance(rationale, list) else ()
     for factor in factors:
         if not isinstance(factor, dict):
             continue

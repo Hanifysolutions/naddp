@@ -104,7 +104,7 @@ class OpportunityDetail(OpportunitySummary):
     """One opportunity in full, plus what the current caller may do to it next."""
 
     description: str = Field(description="What is being pursued, with whom, and why now.")
-    score_rationale: list[dict[str, Any]] | None = Field(
+    score_rationale: dict[str, Any] | list[dict[str, Any]] | None = Field(
         default=None,
         description=(
             "Explainable breakdown behind the score: {factor, weight, value, evidence_ids} "
