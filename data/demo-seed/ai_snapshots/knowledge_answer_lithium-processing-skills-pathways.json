@@ -1,0 +1,33 @@
+{
+  "$schema_version": "1.0",
+  "purpose": "KNOWLEDGE_ANSWER",
+  "scenario": "lithium-processing-skills-pathways",
+  "approval_status": "NOT_REQUIRED",
+  "notes": "Hero knowledge beat. Six citations, all VERIFIED, covering both the vocational and the professional pathway plus the migration instrument.",
+  "evidence_ids": [
+    "curtin-graduate-diploma-metallurgy",
+    "homeaffairs-immi-skills-in-demand-visa-482",
+    "migrationwa-wasmol-schedule-2-metallurgist",
+    "mriwa-fbicrc-battery-vocational-skills-gap-plan",
+    "murdoch-graduate-diploma-extractive-metallurgy",
+    "powering-australia-battery-powered-pathways-2025"
+  ],
+  "result": {
+    "question": "What Australian qualifications train someone for a lithium hydroxide refinery role, and is there a migration pathway for an overseas-trained metallurgist?",
+    "answer": "For refinery floor roles, Australia already has nationally recognised vocational qualifications: PMA30120 Certificate III in Process Plant Operations (about 13 months) maps to process operator roles and PMA40116 Certificate IV in Process Plant Technology (about 10 months) to process technician roles, with laboratory qualifications alongside them. A lithium hydroxide refinery converts roughly 5% Li2O spodumene concentrate into battery-grade 99.9% lithium hydroxide monohydrate, which is a chemical-processing skill set distinct from mining, and the work is usually overseen by process operators and technicians including panel and control room operators. For professional roles, Curtin and Murdoch each run one-year postgraduate conversion qualifications in metallurgy and extractive metallurgy; the Murdoch course is CRICOS-registered, so it can lawfully be delivered to overseas students on an Australian student visa. On migration: Western Australia lists Metallurgist (ANZSCO 234912) on WASMOL Schedule 2, nominable for a subclass 190 permanent or 491 regional provisional visa at a minimum of 65 points, and the Skills in Demand (subclass 482) visa is the employer-sponsored route.",
+    "citations": [
+      "powering-australia-battery-powered-pathways-2025",
+      "mriwa-fbicrc-battery-vocational-skills-gap-plan",
+      "curtin-graduate-diploma-metallurgy",
+      "murdoch-graduate-diploma-extractive-metallurgy",
+      "migrationwa-wasmol-schedule-2-metallurgist",
+      "homeaffairs-immi-skills-in-demand-visa-482"
+    ],
+    "caveats": [
+      "Visa settings and occupation lists change; confirm against the source before advising",
+      "Course availability and CRICOS registration must be checked at time of application"
+    ],
+    "answered_from_approved_sources": true,
+    "confidence": 0.83
+  }
+}

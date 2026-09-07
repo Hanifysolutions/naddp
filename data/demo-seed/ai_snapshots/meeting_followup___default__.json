@@ -1,0 +1,43 @@
+{
+  "$schema_version": "1.0",
+  "purpose": "MEETING_FOLLOWUP",
+  "scenario": "__default__",
+  "approval_status": "PENDING_APPROVAL",
+  "notes": "Default follow-up draft. Consequential: always returns PENDING_APPROVAL.",
+  "evidence_ids": [
+    "covalent-lithium-first-product-kwinana-refinery",
+    "covalent-lithium-mt-holland-expansion-approved",
+    "migrationwa-wasmol-schedule-2-metallurgist",
+    "mriwa-fbicrc-battery-vocational-skills-gap-plan",
+    "murdoch-graduate-diploma-extractive-metallurgy"
+  ],
+  "result": {
+    "meeting_ref": "MTG-COVALENT-BILATERAL-01",
+    "subject": "Following up: ramp-phase processing skills and a possible training pathway",
+    "recipients": [
+      "Covalent Lithium -- External Affairs",
+      "Nigerian High Commission Canberra -- Trade Office"
+    ],
+    "body": "Thank you for your time today.\n\nTo summarise what we discussed. Your Kwinana refinery produced first battery-grade lithium hydroxide in July 2025 and has been ramping toward its 50,000 tpa nameplate since August 2025; the Mt Holland concentrator expansion approved by shareholders in July 2026 doubles spodumene concentrate production and is a separate asset from the refinery. We understood your ramp-phase workforce need to sit in process operations and high-purity quality control.\n\nOn our side, the published Australian vocational assessment locates the battery-refining skills gap in exactly those areas -- high-purity quality control, automation, value-chain knowledge and battery chemistry -- rather than in any absence of a training system, with PMA30120 and PMA40116 already mapped to refinery roles. Western Australia lists Metallurgist (ANZSCO 234912) as a state-nominated priority occupation, so the migration instrument exists if a candidate pipeline ever justifies it.\n\nWe would like to explore, with no commitment on either side, whether a structured training and placement pathway involving Nigerian-qualified process engineers would be of interest. We should be clear that this is our proposition to test, not an existing arrangement.\n\nI will follow up with a short note on Australian conversion qualifications in extractive metallurgy. Please let me know if a further conversation would be useful.",
+    "key_commitments": [
+      {
+        "description": "Send a one-page summary of Australian conversion qualifications in extractive metallurgy, with entry requirements.",
+        "owner_role": "TRADE_OFFICER",
+        "due_label": "Within 5 business days"
+      },
+      {
+        "description": "Confirm whether the mission can convene a Nigerian training counterpart for an exploratory call. No commitment is offered or implied.",
+        "owner_role": "TRADE_OFFICER",
+        "due_label": "Within 10 business days"
+      }
+    ],
+    "citations": [
+      "covalent-lithium-first-product-kwinana-refinery",
+      "covalent-lithium-mt-holland-expansion-approved",
+      "mriwa-fbicrc-battery-vocational-skills-gap-plan",
+      "migrationwa-wasmol-schedule-2-metallurgist",
+      "murdoch-graduate-diploma-extractive-metallurgy"
+    ],
+    "approval_note": "DRAFT ONLY. This is an outbound diplomatic communication and is a BUILD_BIBLE section 6 control: it cannot be sent until a human with approve:meeting_followup has approved it, and SENT is reachable only from APPROVED. Check in particular that nothing in the body reads as a commitment, and that the Nigeria pathway is described as a proposition to test rather than an arrangement in place."
+  }
+}

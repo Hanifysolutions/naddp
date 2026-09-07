@@ -1,0 +1,79 @@
+{
+  "$schema_version": "1.0",
+  "purpose": "MORNING_BRIEF",
+  "scenario": "trade_officer",
+  "approval_status": "NOT_REQUIRED",
+  "notes": "Deterministic fallback for the morning brief (winning moment #1). Every citation id resolves to a VERIFIED entry in data/demo-seed/citations.json. Per BUILD_BIBLE section 2 the Kwinana refinery is described as RAMPING TO NAMEPLATE and the Mt Holland concentrator as expanding: these are different assets and must never be conflated. Per OPEN_QUESTIONS Q-17 the corridor is AI-proposed and carries lower confidence than every signal beneath it.",
+  "evidence_ids": [
+    "areea-resources-energy-workforce-forecast-2025-2030",
+    "ausimm-a-critical-moment-future-workforce-2021",
+    "coren-washington-accord-provisional-signatory",
+    "covalent-lithium-ceo-transition-2026-ramp-up",
+    "covalent-lithium-first-product-kwinana-refinery",
+    "curtin-graduate-diploma-metallurgy",
+    "engineersaustralia-migration-skills-assessment",
+    "homeaffairs-immi-skills-in-demand-visa-482",
+    "migrationwa-wasmol-schedule-2-metallurgist",
+    "mriwa-fbicrc-battery-vocational-skills-gap-plan",
+    "statehouse-ng-mining-licenses-local-value",
+    "watc-wa-battery-critical-minerals-profile-january-2026"
+  ],
+  "result": {
+    "headline": "Midstream processing: demand-side evidence and the qualification gap",
+    "as_at_label": "As at the current demo date",
+    "summary": "The commercial reading. Refinery ramp and workforce shortfall are both well sourced. The Nigeria corridor is not sourced at all and needs officer qualification before it travels further than a hypothesis.",
+    "items": [
+      {
+        "title": "Covalent's Kwinana lithium hydroxide refinery is ramping toward nameplate",
+        "item_type": "SIGNAL",
+        "detail": "Covalent Lithium (Wesfarmers/SQM) reported first battery-grade lithium hydroxide at its Kwinana refinery and a ramp toward 50,000 tpa nameplate. This is a ramp-up of an existing plant toward its designed capacity. It is NOT an expansion of Australian refining capacity: as at September 2026 the wider Western Australian refining picture is contraction, not growth.",
+        "so_what": "Midstream processing is where the bilateral opening sits, and it is the part of the value chain that needs metallurgical and process operators rather than miners. Brief on the ramp, not on an expansion. The distinction is checkable and anyone from the sector will check it.",
+        "confidence": 0.86,
+        "citations": [
+          "covalent-lithium-first-product-kwinana-refinery",
+          "covalent-lithium-ceo-transition-2026-ramp-up",
+          "watc-wa-battery-critical-minerals-profile-january-2026"
+        ]
+      },
+      {
+        "title": "Australia's resources sector has a documented processing-skills gap",
+        "item_type": "SIGNAL",
+        "detail": "Industry workforce forecasting and peak-body analysis both identify sustained shortfalls in metallurgical and processing-related occupations, and a Western Australian assessment identifies a vocational skills gap specific to battery and critical-minerals processing. Metallurgist sits on Western Australia's skilled migration occupation list.",
+        "so_what": "This is the demand side of any training or mobility proposition, sourced from Australian industry and government rather than inferred. That provenance is what makes it usable in a bilateral conversation.",
+        "confidence": 0.81,
+        "citations": [
+          "areea-resources-energy-workforce-forecast-2025-2030",
+          "ausimm-a-critical-moment-future-workforce-2021",
+          "mriwa-fbicrc-battery-vocational-skills-gap-plan",
+          "migrationwa-wasmol-schedule-2-metallurgist"
+        ]
+      },
+      {
+        "title": "A skilled-migration pathway exists for a Nigerian process engineer, but is not frictionless",
+        "item_type": "KNOWLEDGE",
+        "detail": "The Skills in Demand visa is the current employer-sponsored route and Engineers Australia runs the migration skills assessment. COREN holds PROVISIONAL Washington Accord signatory status, which is not the same as full signatory status and affects which assessment pathway a Nigerian-trained engineer follows.",
+        "so_what": "Do not present the pathway as open-and-shut. The provisional accreditation status is the most likely question from a Nigerian counterpart institution, and getting it wrong in the room would cost credibility.",
+        "confidence": 0.74,
+        "citations": [
+          "homeaffairs-immi-skills-in-demand-visa-482",
+          "engineersaustralia-migration-skills-assessment",
+          "coren-washington-accord-provisional-signatory"
+        ]
+      },
+      {
+        "title": "AI-PROPOSED: lithium value-chain partnership plus a skilled-migration training corridor",
+        "item_type": "OPPORTUNITY",
+        "detail": "The platform proposes linking Australia's processing-skills gap to Nigeria's stated value-addition agenda through a training corridor. No public source connects any Australian lithium operator to Nigeria. This is a synthesis of two independently sourced positions, not a reported fact, and it is unconfirmed.",
+        "so_what": "Treat as a hypothesis for officer qualification, not as intelligence. Its confidence sits deliberately below every signal beneath it, and the card is badged 'AI-proposed, pending officer qualification'.",
+        "confidence": 0.38,
+        "citations": [
+          "covalent-lithium-first-product-kwinana-refinery",
+          "areea-resources-energy-workforce-forecast-2025-2030",
+          "statehouse-ng-mining-licenses-local-value",
+          "curtin-graduate-diploma-metallurgy"
+        ]
+      }
+    ],
+    "confidence": 0.71
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "$schema_version": "1.0",
+  "purpose": "MORNING_BRIEF",
+  "scenario": "consular_officer",
+  "approval_status": "NOT_REQUIRED",
+  "notes": "Deterministic fallback for the morning brief (winning moment #1). Every citation id resolves to a VERIFIED entry in data/demo-seed/citations.json. Per BUILD_BIBLE section 2 the Kwinana refinery is described as RAMPING TO NAMEPLATE and the Mt Holland concentrator as expanding: these are different assets and must never be conflated. Per OPEN_QUESTIONS Q-17 the corridor is AI-proposed and carries lower confidence than every signal beneath it.",
+  "evidence_ids": [
+    "abs-census-2021-quickstats-nigeria-born",
+    "coren-washington-accord-provisional-signatory",
+    "engineersaustralia-migration-skills-assessment",
+    "fmino-tinubu-lithium-plant-nasarawa",
+    "homeaffairs-br0097-student-tempgrad-report-dec-2025",
+    "homeaffairs-immi-skills-in-demand-visa-482",
+    "statehouse-ng-mining-licenses-local-value"
+  ],
+  "result": {
+    "headline": "Student cohort and documentary casework",
+    "as_at_label": "As at the current demo date",
+    "summary": "The consular reading. The Nigeria-born and student-visa cohorts underpin routine documentary casework. Migration-pathway settings are relevant background because they drive enquiry volume, but no verified source publishes a Nigerian student count.",
+    "items": [
+      {
+        "title": "Nigerian student cohort in Australia underpins the routine consular caseload",
+        "item_type": "CASE",
+        "detail": "Home Affairs publishes student and temporary-graduate visa program reporting, and the 2021 Census records the Nigeria-born population resident in Australia. Neither source is broken down in a way that isolates a Nigerian student count on the page itself.",
+        "so_what": "Routine documentary casework for students is the mission's steady-state consular volume. State that the cohort exists; do not quote a Nigerian student figure, because no source we verified publishes one.",
+        "confidence": 0.62,
+        "citations": [
+          "homeaffairs-br0097-student-tempgrad-report-dec-2025",
+          "abs-census-2021-quickstats-nigeria-born"
+        ]
+      },
+      {
+        "title": "A skilled-migration pathway exists for a Nigerian process engineer, but is not frictionless",
+        "item_type": "KNOWLEDGE",
+        "detail": "The Skills in Demand visa is the current employer-sponsored route and Engineers Australia runs the migration skills assessment. COREN holds PROVISIONAL Washington Accord signatory status, which is not the same as full signatory status and affects which assessment pathway a Nigerian-trained engineer follows.",
+        "so_what": "Do not present the pathway as open-and-shut. The provisional accreditation status is the most likely question from a Nigerian counterpart institution, and getting it wrong in the room would cost credibility.",
+        "confidence": 0.74,
+        "citations": [
+          "homeaffairs-immi-skills-in-demand-visa-482",
+          "engineersaustralia-migration-skills-assessment",
+          "coren-washington-accord-provisional-signatory"
+        ]
+      },
+      {
+        "title": "Nigeria is commissioning lithium processing and tying licences to local value-addition",
+        "item_type": "SIGNAL",
+        "detail": "Nigeria commissioned a lithium processing plant in Nasarawa State, and the Presidency has stated that new mining licences must carry local value-addition commitments. Both are Nigerian federal sources.",
+        "so_what": "Nigeria's stated policy is to process domestically rather than export raw ore. That is a capability-building need, and capability building is where an Australian training relationship would attach.",
+        "confidence": 0.78,
+        "citations": [
+          "fmino-tinubu-lithium-plant-nasarawa",
+          "statehouse-ng-mining-licenses-local-value"
+        ]
+      }
+    ],
+    "confidence": 0.64
+  }
+}

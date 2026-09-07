@@ -1,0 +1,70 @@
+{
+  "$schema_version": "1.0",
+  "purpose": "MEETING_PREP",
+  "scenario": "__default__",
+  "approval_status": "NOT_REQUIRED",
+  "notes": "Default meeting pre-read.",
+  "evidence_ids": [
+    "covalent-lithium-ceo-transition-2026-ramp-up",
+    "covalent-lithium-first-product-kwinana-refinery",
+    "covalent-lithium-mt-holland-expansion-approved",
+    "migrationwa-wasmol-schedule-2-metallurgist",
+    "mriwa-fbicrc-battery-vocational-skills-gap-plan",
+    "powering-australia-battery-powered-pathways-2025"
+  ],
+  "result": {
+    "meeting_ref": "MTG-COVALENT-BILATERAL-01",
+    "counterpart": "Covalent Lithium (Wesfarmers-SQM joint venture), Mt Holland and Kwinana",
+    "objectives": [
+      "Establish whether ramp-phase process operator and quality-control roles are unfilled",
+      "Test appetite for a structured overseas training and recruitment pathway",
+      "Understand the operator's own view of the high-purity skills gap",
+      "Leave with one testable fact, not a memorandum"
+    ],
+    "talking_points": [
+      {
+        "point": "Congratulate on first product and ask where the ramp actually is",
+        "detail": "First battery-grade lithium hydroxide at Kwinana in July 2025, with a ramp to 50,000 tpa nameplate expected over the 18 months from August 2025 and still in progress as at 27 May 2026. Ask what the remaining constraint is.",
+        "citations": [
+          "covalent-lithium-first-product-kwinana-refinery",
+          "covalent-lithium-ceo-transition-2026-ramp-up"
+        ]
+      },
+      {
+        "point": "Acknowledge the Mt Holland expansion precisely -- it is the concentrator",
+        "detail": "The July 2026 shareholder approval doubles spodumene concentrate production at Mt Holland and adds an integrated ore sorting facility. The concentrator has completed commissioning and is at nameplate. The refinery is a separate asset and is unchanged by this approval.",
+        "citations": [
+          "covalent-lithium-mt-holland-expansion-approved",
+          "covalent-lithium-ceo-transition-2026-ramp-up"
+        ]
+      },
+      {
+        "point": "Name the skills gap in the operator's own terms",
+        "detail": "The published vocational assessment locates the gap in high-purity quality control, working with automation, value-chain knowledge and battery chemistry -- with PMA30120 and PMA40116 already mapping to process operator and technician roles. This is a competency conversation, not a curriculum one.",
+        "citations": [
+          "mriwa-fbicrc-battery-vocational-skills-gap-plan",
+          "powering-australia-battery-powered-pathways-2025"
+        ]
+      },
+      {
+        "point": "Note that the migration instrument already exists",
+        "detail": "Western Australia lists Metallurgist (ANZSCO 234912) on WASMOL Schedule 2, nominable for subclass 190 or 491 at a minimum of 65 points. Nothing new has to be built for a qualified person to move.",
+        "citations": [
+          "migrationwa-wasmol-schedule-2-metallurgist"
+        ]
+      }
+    ],
+    "questions_to_ask": [
+      "Which ramp-phase roles are hardest to fill right now, and for how long?",
+      "Is high-purity quality control resourced internally or contracted?",
+      "Would a structured overseas training pipeline be useful, or a distraction?",
+      "Who inside the business owns workforce planning for the refinery?"
+    ],
+    "sensitivities": [
+      "Do not present any Nigeria link as reported -- no public source connects the two",
+      "Concentrator and refinery are different assets; conflating them loses credibility",
+      "Australia's lithium project pipeline has thinned; avoid implying a boom"
+    ],
+    "confidence": 0.76
+  }
+}

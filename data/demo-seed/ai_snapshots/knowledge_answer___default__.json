@@ -1,0 +1,27 @@
+{
+  "$schema_version": "1.0",
+  "purpose": "KNOWLEDGE_ANSWER",
+  "scenario": "__default__",
+  "approval_status": "NOT_REQUIRED",
+  "notes": "Default grounded answer. Says plainly which part of the thread is unsourced.",
+  "evidence_ids": [
+    "covalent-lithium-first-product-kwinana-refinery",
+    "fmino-tinubu-lithium-plant-nasarawa",
+    "mriwa-fbicrc-battery-vocational-skills-gap-plan"
+  ],
+  "result": {
+    "question": "What can the platform say, on the record, about the Australia-Nigeria critical minerals and skills thread?",
+    "answer": "Three things are documented and one is not. Australia's lithium midstream is being ramped rather than expanded: Covalent produced first battery-grade lithium hydroxide at Kwinana in July 2025 and was still ramping toward nameplate in mid 2026. The Australian workforce problem in battery-minerals refining is specific -- high-purity quality control, automation, value-chain knowledge and battery chemistry -- rather than an absence of training qualifications. Nigeria has commissioned lithium processing capacity in Nasarawa State and ties new mining licences to local value addition. What is NOT documented anywhere is a connection between an Australian lithium operator and Nigeria; that link is the platform's own proposal and is badged as such wherever it appears.",
+    "citations": [
+      "covalent-lithium-first-product-kwinana-refinery",
+      "mriwa-fbicrc-battery-vocational-skills-gap-plan",
+      "fmino-tinubu-lithium-plant-nasarawa"
+    ],
+    "caveats": [
+      "The Nigeria-Australia corridor is AI-proposed and is not reported by any source",
+      "Concentrator and refinery are different assets and are never interchangeable here"
+    ],
+    "answered_from_approved_sources": true,
+    "confidence": 0.74
+  }
+}

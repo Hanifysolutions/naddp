@@ -73,6 +73,15 @@ export interface EvidenceRef {
   readonly title: string;
   readonly url: string | null;
   readonly source: string | null;
+  /**
+   * Key of the entry in `data/demo-seed/citations.json` this evidence resolved to.
+   *
+   * Usually the same string as `id`; it differs only when an item was matched to the
+   * registry under another key. Additive and nullable, so a consumer written before the
+   * Gateway landed still compiles. Reconciled against
+   * `components['schemas']['EvidenceRef']`, which is the authority.
+   */
+  readonly citation_id: string | null;
 }
 
 /**
@@ -87,6 +96,16 @@ export interface AiEnvelope<TResult> {
   readonly evidence: readonly EvidenceRef[];
   readonly trace_id: string;
   readonly approval_status: ApprovalStatus;
+  /**
+   * Why the Gateway refused, in a sentence a person can read.
+   *
+   * Populated only when `approval_status` is `BLOCKED`, and null otherwise. This is the
+   * text the UI must show instead of an empty panel: a refusal the audience cannot read
+   * looks like a broken demo rather than a control working. Additive and nullable, so an
+   * existing consumer still compiles. Reconciled against
+   * `components['schemas']['GatewayResult']`, which is the authority.
+   */
+  readonly explanation: string | null;
 }
 
 /**

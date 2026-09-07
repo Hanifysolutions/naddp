@@ -1,0 +1,52 @@
+{
+  "$schema_version": "1.0",
+  "purpose": "DIASPORA_MATCH",
+  "scenario": "lithium-migration",
+  "approval_status": "NOT_REQUIRED",
+  "notes": "Hero diaspora beat: the search returns BOTH a lithium-processing engineer AND a migration-pathway academic, which is what ties the dual-sector thread together in one result.",
+  "evidence_ids": [
+    "abs-census-2021-quickstats-nigeria-born",
+    "homeaffairs-immi-temporary-graduate-485",
+    "migrationwa-wasmol-schedule-2-metallurgist",
+    "murdoch-graduate-diploma-extractive-metallurgy"
+  ],
+  "result": {
+    "query": "Who in the diaspora could advise on lithium refinery process skills and on the migration pathway that would carry them?",
+    "matches": [
+      {
+        "profile_ref": "DIA-AU-WA-0142",
+        "display_name": "Dr Adaeze Nwachukwu (synthetic demo profile)",
+        "expertise_tags": [
+          "XP_LITHIUM_PROCESSING_ENG",
+          "XP_METALLURGY_TESTWORK",
+          "XP_MINERAL_ECONOMICS"
+        ],
+        "why_matched": "Hydrometallurgy and lithium refining background in Western Australia, the state that lists Metallurgist (ANZSCO 234912) on its Skilled Migration Occupation List and hosts Australia's lithium hydroxide refining capacity. Directly relevant to the ramp-phase processing question.",
+        "consent_status": "GIVEN_CONTACTABLE",
+        "contactable": true,
+        "citations": [
+          "migrationwa-wasmol-schedule-2-metallurgist",
+          "murdoch-graduate-diploma-extractive-metallurgy"
+        ]
+      },
+      {
+        "profile_ref": "DIA-AU-VIC-0087",
+        "display_name": "Associate Professor Emeka Balogun (synthetic demo profile)",
+        "expertise_tags": [
+          "XP_MIGRATION_PATHWAY_ACADEMIC",
+          "XP_QUALIFICATION_ASSESSMENT",
+          "XP_HIGHER_ED_PARTNERSHIPS"
+        ],
+        "why_matched": "Researches skilled-migration pathways and qualification recognition. Relevant because the Nigeria-born population in Australia is unusually credentialled -- 69.0% of those aged 15+ hold a Bachelor Degree or above against 22.7% nationally -- and because the Temporary Graduate (subclass 485) visa is the structural link between the student pipeline and skilled migration.",
+        "consent_status": "GIVEN_DIRECTORY_ONLY",
+        "contactable": false,
+        "citations": [
+          "abs-census-2021-quickstats-nigeria-born",
+          "homeaffairs-immi-temporary-graduate-485"
+        ]
+      }
+    ],
+    "rationale": "Both sides of the hero thread are returned deliberately: one processing engineer and one migration-pathway academic. Consent, not classification, is the gate here -- the second profile is directory-listed but not contactable, and the platform will not offer a contact action for it.",
+    "confidence": 0.73
+  }
+}

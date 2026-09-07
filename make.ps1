@@ -340,6 +340,12 @@ $Targets = [ordered]@{
             )
             Invoke-Target -Name 'migrate'
             Invoke-Target -Name 'seed'
+            # The AI Gateway memoises snapshots AND misses, and the citation registry
+            # with them. A reset that left either warm serves the previous seed's answer
+            # against the new seed's evidence ids, which stage 8 then refuses — on stage.
+            # The caches are process-local: this clears them here and prints the restart
+            # a running API still needs.
+            Invoke-Step -Exe $Uv -Arguments @('run', 'python', '-m', 'app.ai.reset') -WorkingDirectory $ApiDir
             Write-Host ''
             Write-Host 'demo-reset complete — clean seeded state restored' -ForegroundColor Green
         }

@@ -1,0 +1,36 @@
+{
+  "$schema_version": "1.0",
+  "purpose": "CONSULAR_TRIAGE",
+  "scenario": "passport-renewal",
+  "approval_status": "PENDING_APPROVAL",
+  "notes": "Hero consular beat: a synthetic passport renewal for a Nigerian student in Australia. inputs_used names exactly the four metadata fields the brief permits, which is what makes 'metadata only' checkable on screen rather than merely asserted.",
+  "evidence_ids": [
+    "nigeria-hc-canberra-standard-passport",
+    "nis-passports-diaspora-missions"
+  ],
+  "result": {
+    "case_ref": "NADDP-3K7QW9XZ-2M4T",
+    "proposed_case_type": "PASSPORT_RENEWAL",
+    "proposed_priority": "HIGH",
+    "proposed_sla_days": 21,
+    "rationale": "Proposed from metadata only: case type PASSPORT_RENEWAL, case age 16 days against a 21-day budget, SLA clock running, status ASSIGNED. The published renewal process requires an online Nigeria Immigration Service application followed by an in-person appointment in Canberra, with appointment slots limited to Tuesday to Thursday mornings, so the remaining budget is appointment-constrained rather than processing-constrained. NO CASE NARRATIVE WAS READ: nothing about the applicant, their circumstances or their correspondence entered this proposal.",
+    "next_steps": [
+      "Consular officer confirms case type, priority and classification before triage",
+      "Check the next available Tuesday to Thursday appointment against the SLA budget",
+      "If the budget cannot be met, escalate rather than allow a silent SLA breach"
+    ],
+    "inputs_used": [
+      "case_type",
+      "case_age_days",
+      "sla_state",
+      "status"
+    ],
+    "narrative_withheld": true,
+    "requires_human_determination": true,
+    "citations": [
+      "nigeria-hc-canberra-standard-passport",
+      "nis-passports-diaspora-missions"
+    ],
+    "confidence": 0.68
+  }
+}

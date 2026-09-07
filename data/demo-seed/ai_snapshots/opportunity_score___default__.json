@@ -1,0 +1,106 @@
+{
+  "$schema_version": "1.0",
+  "purpose": "OPPORTUNITY_SCORE",
+  "scenario": "__default__",
+  "approval_status": "NOT_REQUIRED",
+  "notes": "Default opportunity score. Serves the hero opportunity because it is the only opportunity in the Week 1 seed; a Week 2 seed with more opportunities should add per-opportunity scenarios rather than change this one.",
+  "evidence_ids": [
+    "areea-resources-energy-workforce-forecast-2025-2030",
+    "ausimm-a-critical-moment-future-workforce-2021",
+    "coren-washington-accord-provisional-signatory",
+    "covalent-lithium-ceo-transition-2026-ramp-up",
+    "covalent-lithium-first-product-kwinana-refinery",
+    "curtin-graduate-diploma-metallurgy",
+    "engineersaustralia-migration-skills-assessment",
+    "fmino-tinubu-lithium-plant-nasarawa",
+    "homeaffairs-immi-skills-in-demand-visa-482",
+    "migrationwa-wasmol-schedule-2-metallurgist",
+    "mriwa-fbicrc-battery-vocational-skills-gap-plan",
+    "statehouse-ng-mining-licenses-local-value",
+    "watc-wa-battery-critical-minerals-profile-january-2026"
+  ],
+  "result": {
+    "opportunity_ref": "OPP-AU-LITHIUM-NG-SKILLS-CORRIDOR",
+    "score": 62,
+    "band": "MEDIUM",
+    "confidence": 0.42,
+    "is_proposed_by_ai": true,
+    "rationale": "Scored MEDIUM on strong, independently sourced conditions either side of the corridor and no source at all for the corridor itself. Australia has a ramping lithium hydroxide refinery and a documented, specific processing-skills gap; Nigeria has commissioned lithium processing capacity and a federal value-addition policy tied to skills. Nothing published links the two. The score therefore rests on complementarity, and the confidence is deliberately lower than any single driver beneath it.",
+    "drivers": [
+      {
+        "label": "Australian lithium refining is ramping, not idle",
+        "detail": "First battery-grade lithium hydroxide at Kwinana in July 2025 with a ramp to 50,000 tpa nameplate running from August 2025, still in progress as at May 2026. A plant being brought to design capacity has live operating-workforce demand.",
+        "weight": 0.88,
+        "citations": [
+          "covalent-lithium-first-product-kwinana-refinery",
+          "covalent-lithium-ceo-transition-2026-ramp-up"
+        ]
+      },
+      {
+        "label": "Nigeria's stated policy is value addition plus skills",
+        "detail": "A 6,000 tonne-per-day lithium processing plant commissioned in Nasarawa State, roughly $250 million of investment, alongside a Presidential directive that new mining licences carry local value addition -- explicitly linked to skills acquisition by young Nigerians.",
+        "weight": 0.86,
+        "citations": [
+          "fmino-tinubu-lithium-plant-nasarawa",
+          "statehouse-ng-mining-licenses-local-value"
+        ]
+      },
+      {
+        "label": "The skills gap is documented and specific",
+        "detail": "Identified battery-refining training gaps are high-purity quality control, working with automation, value-chain knowledge and battery chemistry -- not the absence of a processing training system. A specific gap is a negotiable one.",
+        "weight": 0.84,
+        "citations": [
+          "mriwa-fbicrc-battery-vocational-skills-gap-plan",
+          "areea-resources-energy-workforce-forecast-2025-2030"
+        ]
+      },
+      {
+        "label": "A named migration pathway already exists",
+        "detail": "Western Australia lists Metallurgist (ANZSCO 234912) on its Skilled Migration Occupation List, nominable for a subclass 190 or 491 visa at a minimum of 65 points, and the Skills in Demand (subclass 482) visa provides the employer-sponsored route. No new instrument has to be invented for people to move.",
+        "weight": 0.79,
+        "citations": [
+          "migrationwa-wasmol-schedule-2-metallurgist",
+          "homeaffairs-immi-skills-in-demand-visa-482"
+        ]
+      },
+      {
+        "label": "Qualification-recognition machinery is in place",
+        "detail": "COREN, Nigeria's federal engineering regulator, attained Washington Accord provisional signatory status in June 2023 -- the same international accreditation system Engineers Australia participates in -- and Nigeria's own regulator frames it as improving Nigerian engineers' international mobility.",
+        "weight": 0.71,
+        "citations": [
+          "coren-washington-accord-provisional-signatory",
+          "engineersaustralia-migration-skills-assessment"
+        ]
+      }
+    ],
+    "risks": [
+      {
+        "label": "The corridor itself is unsourced -- this is a proposal, not a report",
+        "detail": "Nigeria's lithium processing activity and Australia's refining ramp are each independently documented, but no public source connects an Australian lithium operator to Nigeria. Any officer contact must open on that basis or the mission overstates its hand.",
+        "weight": 0.9,
+        "citations": [
+          "fmino-tinubu-lithium-plant-nasarawa"
+        ]
+      },
+      {
+        "label": "Australia's lithium project pipeline has thinned sharply",
+        "detail": "The new-lithium-project pipeline has fallen to a single expansion project driving about 50 new lithium jobs over 2025-2030, down from seven projects and 970 workers a year earlier, and total FTE across WA's battery and critical minerals industry fell 22% in 2024-25. Appetite for a new international training commitment may be low.",
+        "weight": 0.8,
+        "citations": [
+          "areea-resources-energy-workforce-forecast-2025-2030",
+          "watc-wa-battery-critical-minerals-profile-january-2026"
+        ]
+      },
+      {
+        "label": "Domestic supply may absorb the demand without an international route",
+        "detail": "AusIMM's workforce study documents the supply and demand of mining, metallurgical and geotechnical engineers in Australia, and Australian universities run one-year conversion qualifications that retrain existing science and engineering graduates as extractive metallurgists.",
+        "weight": 0.6,
+        "citations": [
+          "ausimm-a-critical-moment-future-workforce-2021",
+          "curtin-graduate-diploma-metallurgy"
+        ]
+      }
+    ],
+    "recommended_next_step": "Qualify before contacting. Confirm with a named Australian operator whether ramp-phase process-operator and quality-control roles are in fact unfilled, and only then test whether a Nigerian training partner is of interest. Do not present the corridor as an existing relationship."
+  }
+}

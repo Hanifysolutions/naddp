@@ -81,6 +81,11 @@ demo-reset: ## Drop the schema, re-migrate and re-seed — restores a clean demo
 	  -f /docker-entrypoint-initdb.d/001_extensions.sql
 	$(MAKE) migrate
 	$(MAKE) seed
+	@# The AI Gateway memoises snapshots AND misses, and the citation registry with them.
+	@# A reset that left either warm serves the previous seed's answer against the new
+	@# seed's evidence ids, which stage 8 then refuses — on stage. The caches are
+	@# process-local: this clears them here and prints the restart a running API needs.
+	cd $(API_DIR) && $(UV) run python -m app.ai.reset
 	@printf '\ndemo-reset complete — clean seeded state restored\n'
 
 test: ## Run the API test suite plus web lint + typecheck

@@ -1,0 +1,34 @@
+{
+  "$schema_version": "1.0",
+  "purpose": "CONSULAR_TRIAGE",
+  "scenario": "__default__",
+  "approval_status": "PENDING_APPROVAL",
+  "notes": "Default triage proposal. Metadata only (OPEN_QUESTIONS Q-06 option c): no case narrative reaches this purpose, and the context policy rejects narrative fields rather than trimming them. Confidence is deliberately low because the default has almost no metadata to work from.",
+  "evidence_ids": [
+    "nigeria-hc-canberra-standard-passport",
+    "nis-passports-diaspora-missions"
+  ],
+  "result": {
+    "case_ref": "NADDP-3K7QW9XZ-2M4T",
+    "proposed_case_type": "PASSPORT_RENEWAL",
+    "proposed_priority": "NORMAL",
+    "proposed_sla_days": 21,
+    "rationale": "Deterministic default proposal, made from case metadata only. No scenario-specific metadata was available, so this proposes the mission's highest-volume case type at its standard demo SLA budget and deliberately carries low confidence. A consular officer must confirm or replace the type, the priority and the classification before the case is triaged; nothing here is a determination.",
+    "next_steps": [
+      "Consular officer confirms or replaces the proposed case type",
+      "Confirm priority against the case's own metadata before triage",
+      "Record the confirmed determination against this proposal's trace id"
+    ],
+    "inputs_used": [
+      "case_type",
+      "status"
+    ],
+    "narrative_withheld": true,
+    "requires_human_determination": true,
+    "citations": [
+      "nigeria-hc-canberra-standard-passport",
+      "nis-passports-diaspora-missions"
+    ],
+    "confidence": 0.45
+  }
+}
