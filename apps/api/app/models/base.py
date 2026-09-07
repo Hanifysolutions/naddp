@@ -201,4 +201,5 @@ import app.models.intelligence  # noqa: E402
 import app.models.knowledge  # noqa: E402
 import app.models.meetings  # noqa: E402
 import app.models.opportunities  # noqa: E402
+import app.models.retrieval  # noqa: E402
 import app.models.stakeholders  # noqa: E402, F401

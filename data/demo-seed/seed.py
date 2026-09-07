@@ -70,6 +70,7 @@ from seed_parts.consular import seed_cases  # noqa: E402
 from seed_parts.context import FIXED_SEED, SeedContext  # noqa: E402
 from seed_parts.diaspora import seed_diaspora  # noqa: E402
 from seed_parts.governance import seed_governance  # noqa: E402
+from seed_parts.internal_corpus import seed_internal_corpus  # noqa: E402
 from seed_parts.knowledge import seed_knowledge  # noqa: E402
 from seed_parts.meetings import seed_actions, seed_meetings  # noqa: E402
 from seed_parts.opportunities import seed_opportunities  # noqa: E402
@@ -130,6 +131,12 @@ def main() -> int:
 
         print("  sources+documents...", flush=True)
         documents = seed_sources_and_documents(ctx)
+
+        # The mission's own material. Without it every document in the corpus is PUBLIC and
+        # the retrieval authorisation filter is untestable -- "a trade officer cannot read
+        # consular material" is vacuously true when no consular material exists.
+        print("  internal corpus ...", flush=True)
+        documents.update(seed_internal_corpus(ctx))
 
         print("  ai traces       ...", flush=True)
         traces = seed_traces(ctx, users)

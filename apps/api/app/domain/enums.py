@@ -630,3 +630,64 @@ CASE_TRANSITIONS: Final[Mapping[tuple[CaseStatus, str], CaseStatus]] = MappingPr
 #: case timeline non-monotonic, and that timeline is the record a citizen and an auditor
 #: rely on. A subsequent matter is a new case carrying ``related_case_id``.
 CASE_TERMINAL: Final[frozenset[CaseStatus]] = frozenset({CaseStatus.CLOSED})
+
+
+class ChunkCollection(str, Enum):  # noqa: UP042
+    """Logical retrieval collection (Arch section 8).
+
+    Internal notes and public intelligence stay in **separate logical collections even on
+    shared infrastructure**. They live in one physical table because one HNSW index over
+    one table is cheaper to keep warm than three, but every retrieval call names the
+    collections it is allowed to touch and the filter is applied in SQL before the
+    similarity operator runs. A caller cannot reach a collection by forgetting to
+    restrict it: the parameter is required, and there is no "all collections" value.
+    """
+
+    #: Public source material: documents ingested from the citation registry. Everything
+    #: here has a resolving public URL, so leaking it is not a disclosure.
+    PUBLIC_INTELLIGENCE = "PUBLIC_INTELLIGENCE"
+    #: The mission's own analysis, capture notes and internal assessments. Never mixed
+    #: into a public-intelligence answer.
+    INTERNAL_NOTES = "INTERNAL_NOTES"
+    #: Curated knowledge-base articles. Retrieval here carries the extra approval,
+    #: audience and validity-window filters (Week 3 grounded answers).
+    KNOWLEDGE = "KNOWLEDGE"
+
+
+class KnowledgeAudience(str, Enum):  # noqa: UP042
+    """Who a knowledge article is written for.
+
+    Independent of classification. Classification answers "is this person cleared to see
+    it"; audience answers "was this written for them". A trade-desk playbook is not
+    CONFIDENTIAL, but surfacing it as the grounded answer to a consular officer's question
+    is still wrong, so the two filters compose rather than substitute.
+    """
+
+    ALL_STAFF = "ALL_STAFF"
+    TRADE = "TRADE"
+    CONSULAR = "CONSULAR"
+    DIASPORA = "DIASPORA"
+    SENIOR = "SENIOR"
+
+
+#: Which audiences each role may be served from the knowledge base. ``ALL_STAFF`` is in
+#: every set; the compartment and clearance checks still apply on top.
+KNOWLEDGE_AUDIENCE_BY_ROLE: Final[Mapping[RoleCode, frozenset[KnowledgeAudience]]] = (
+    MappingProxyType(
+        {
+            RoleCode.AMBASSADOR: frozenset(KnowledgeAudience),
+            RoleCode.DEPUTY: frozenset(KnowledgeAudience),
+            RoleCode.TRADE_OFFICER: frozenset(
+                {KnowledgeAudience.ALL_STAFF, KnowledgeAudience.TRADE}
+            ),
+            RoleCode.CONSULAR_OFFICER: frozenset(
+                {KnowledgeAudience.ALL_STAFF, KnowledgeAudience.CONSULAR}
+            ),
+            RoleCode.DIASPORA_OFFICER: frozenset(
+                {KnowledgeAudience.ALL_STAFF, KnowledgeAudience.DIASPORA}
+            ),
+            # ADMIN holds no business-domain read at all (Q-02b), so it is served nothing.
+            RoleCode.ADMIN: frozenset(),
+        }
+    )
+)

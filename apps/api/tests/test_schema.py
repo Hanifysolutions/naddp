@@ -20,7 +20,7 @@ rows behind. That matters more than usual here: `audit_events` is append-only
 (ADR-0004), so a committed test row could not be deleted afterwards.
 
 Covers:
-  * all 26 tables exist (BUILD_BIBLE / PROMPT_W1 Phase 2 table list);
+  * all 27 tables exist (the 26 from PROMPT_W1 Phase 2, plus document_chunks from W2.1);
   * the three embedding columns are `vector(1536)` with HNSW indexes;
   * `audit_events` and `case_events` reject UPDATE and DELETE (ADR-0004);
   * the three BUILD_BIBLE section 6 non-autonomy CHECK constraints bite;
@@ -100,6 +100,7 @@ EXPECTED_TABLES: Final[frozenset[str]] = frozenset(
         "diaspora_profiles",
         "expertise_tags",
         "diaspora_expertise",
+        "document_chunks",
         # ai
         "ai_traces",
     }
@@ -185,7 +186,7 @@ def _make_case(**overrides: object) -> Case:
 
 
 # ---------------------------------------------------------------------------
-# 1. All 26 tables exist
+# 1. All 27 tables exist
 # ---------------------------------------------------------------------------
 
 
@@ -199,9 +200,9 @@ def _live_tables(db: Session) -> frozenset[str]:
     return frozenset(rows)
 
 
-def test_expected_table_count_is_twenty_six() -> None:
+def test_expected_table_count_is_twenty_seven() -> None:
     """Guards the expectation itself: a typo that drops a name must not pass silently."""
-    assert len(EXPECTED_TABLES) == 26
+    assert len(EXPECTED_TABLES) == 27
 
 
 def test_all_expected_tables_exist(db: Session) -> None:

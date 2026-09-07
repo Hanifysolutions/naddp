@@ -42,9 +42,11 @@ from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.domain.enums import KnowledgeStatus
+from app.domain.enums import KnowledgeAudience, KnowledgeStatus
 from app.models.base import Base, pg_enum
 from app.models.mixins import ClassifiedMixin, TimestampMixin, UUIDPrimaryKeyMixin
+
+KNOWLEDGE_AUDIENCE_ENUM = pg_enum(KnowledgeAudience, "knowledge_audience")
 
 __all__ = [
     "EMBEDDING_DIMENSIONS",
@@ -297,6 +299,38 @@ class KnowledgeArticle(UUIDPrimaryKeyMixin, TimestampMixin, ClassifiedMixin, Bas
             "Monotonic revision counter, starting at 1. A correction to an APPROVED article "
             "increments this and goes back through approval rather than being edited in "
             "place, so 'which text did the citizen actually see?' stays answerable."
+        ),
+    )
+    audience: Mapped[KnowledgeAudience] = mapped_column(
+        KNOWLEDGE_AUDIENCE_ENUM,
+        nullable=False,
+        default=KnowledgeAudience.ALL_STAFF,
+        index=True,
+        comment=(
+            "Who the article was written for. INDEPENDENT of classification, and both "
+            "filters apply: classification answers 'is this reader cleared', audience "
+            "answers 'was this written for them'. A trade playbook is not confidential, "
+            "but serving it as the grounded answer to a consular question is still wrong."
+        ),
+    )
+    valid_from: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment=(
+            "Start of the validity window. NULL means 'valid since creation'. Retrieval "
+            "excludes an article that is not yet in force."
+        ),
+    )
+    valid_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+        comment=(
+            "End of the validity window. NULL means 'no expiry set'. An expired article is "
+            "excluded from retrieval rather than deleted: it stays readable by direct "
+            "lookup and keeps prior citations resolvable, but it can never become the "
+            "source of a NEW grounded answer. Superseded guidance quietly resurfacing is "
+            "the failure mode this prevents."
         ),
     )
     tags: Mapped[list[str]] = mapped_column(

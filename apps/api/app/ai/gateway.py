@@ -74,6 +74,13 @@ from typing import TYPE_CHECKING, Any, Final
 
 from pydantic import ValidationError
 
+from app.ai.embeddings import (
+    EMBEDDING_DIM,
+    DeterministicEmbedder,
+    EmbeddingProvider,
+    EmbeddingUnavailableError,
+    ExternalEmbedder,
+)
 from app.ai.evidence import (
     AuthorisedEvidence,
     CitationEntry,
@@ -112,11 +119,15 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from sqlalchemy.orm import Session
 
 __all__ = [
+    "EMBEDDING_DIM",
     "EVIDENCE_LIMIT",
     "MAX_OUTPUT_TOKENS",
+    "EmbeddingBatch",
+    "EmbeddingUnavailableError",
     "GatewayOutcome",
     "StageRecord",
     "TraceRecord",
+    "embed",
     "generate",
     "generate_traced",
     "trace_summary",
@@ -957,3 +968,88 @@ def trace_summary(record: TraceRecord) -> Mapping[str, Any]:
         "stages": [stage.as_json() for stage in record.stages],
         "error": record.error,
     }
+
+
+# ---------------------------------------------------------------------------
+# Embeddings (Arch section 8) -- the ONLY way application code reaches an embedder
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class EmbeddingBatch:
+    """Vectors plus the routing decision that produced them."""
+
+    vectors: list[list[float]]
+    model_id: str
+    #: The section 4a route this batch took. Recorded by the caller onto every row it
+    #: writes, so "which route embedded this?" is answerable from the data alone.
+    route: str
+    off_box: bool
+
+
+def _embedding_provider() -> EmbeddingProvider:
+    """Return the configured provider.
+
+    Local by default. ``AI_EMBEDDING_PROVIDER=external`` selects the Q-07 seam, which
+    raises until a provider is actually wired -- loudly, rather than degrading to vectors
+    that would silently poison the index.
+    """
+    settings = get_settings()
+    choice = (getattr(settings, "ai_embedding_provider", "local") or "local").strip().lower()
+    if choice == "external":
+        return ExternalEmbedder(model=settings.anthropic_model)
+    return DeterministicEmbedder()
+
+
+def embed(
+    texts: list[str],
+    *,
+    data_class: Classification,
+    purpose: str = "retrieval_ingestion",
+) -> EmbeddingBatch:
+    """Embed ``texts``, enforcing the section 4a routing table.
+
+    This is a Gateway function for the same reason ``generate`` is: embedding is a model
+    call over document text, and letting a service reach a provider directly would put the
+    classification gate somewhere a reviewer has to trust rather than somewhere they can
+    find it. ``app/services/ingestion.py`` calls this and nothing else.
+
+    **The section 4a rule this enforces.** ``CONSULAR-SENSITIVE`` never leaves to an
+    external model -- no external call at all. Embedding transmits the full text, so an
+    off-box provider is refused for that zone outright and the local route is used instead.
+    That is not a downgrade: for consular content the local route is the *only* compliant
+    one, and it stays so whatever Q-07 decides.
+
+    Raises:
+        EmbeddingUnavailableError: if the selected provider cannot serve the request.
+    """
+    provider = _embedding_provider()
+
+    if provider.sends_text_off_box and data_class is Classification.CONSULAR_SENSITIVE:
+        provider = DeterministicEmbedder()
+        route = "sovereign-local (section 4a: CONSULAR-SENSITIVE never routes external)"
+        _logger.info(
+            "ai.embeddings.route_forced_local",
+            purpose=purpose,
+            data_class=data_class.value,
+            reason="BUILD_BIBLE section 4a forbids an external call for this zone",
+        )
+    elif provider.sends_text_off_box:
+        route = f"external-noret ({provider.model_id})"
+    else:
+        route = f"sovereign-local ({provider.model_id})"
+
+    vectors = provider.embed(texts)
+    if any(len(vector) != EMBEDDING_DIM for vector in vectors):
+        msg = (
+            f"Provider {provider.model_id!r} returned a vector of the wrong width; "
+            f"the schema is vector({EMBEDDING_DIM}). Refusing to write a mismatched index."
+        )
+        raise EmbeddingUnavailableError(msg)
+
+    return EmbeddingBatch(
+        vectors=vectors,
+        model_id=provider.model_id,
+        route=route,
+        off_box=provider.sends_text_off_box,
+    )
