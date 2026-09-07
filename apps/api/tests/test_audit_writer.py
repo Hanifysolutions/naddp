@@ -20,12 +20,13 @@ from decimal import Decimal
 from typing import Final
 
 import pytest
-from sqlalchemy import event, select, text
+from sqlalchemy import event, func, select, text
 from sqlalchemy.orm import Session
 
 from app.audit.writer import (
     AUDIT_HASH_DOMAIN,
     AuditImmutabilityError,
+    _hashable_fields,
     _reject_audit_mutation,
     audit_context,
     canonical_json,
@@ -451,3 +452,50 @@ def test_the_guard_does_not_interfere_with_ordinary_writes(db: Session) -> None:
     db.flush()
     _write(db, "still writable")
     assert verify_chain(db, limit=1).is_intact
+
+
+# ---------------------------------------------------------------------------
+# 7. The seed loader's backdating override (integration)
+#
+# ``write_audit_event(occurred_at=...)`` exists so that ``data/demo-seed/seed.py`` can lay
+# down the trailing-eight-week history OPEN_QUESTIONS Q-13 asks for *through the writer*,
+# instead of hand-inserting rows and breaking the chain at the first one. It is also the
+# only way a caller can put a caller-supplied time into an evidentiary table, so its two
+# load-bearing properties -- the naive-datetime refusal and the value staying inside the
+# hash -- are asserted here rather than left to the docstring.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_a_naive_occurred_at_is_refused_rather_than_assumed_to_be_utc(db: Session) -> None:
+    """Assuming UTC would put the row hours from where the caller meant it."""
+    with pytest.raises(ValueError, match="timezone-aware"):
+        _write(db, "backdated", occurred_at=datetime(2026, 7, 15, 9, 30))
+
+
+@pytest.mark.integration
+def test_omitting_occurred_at_still_takes_the_database_clock(db: Session) -> None:
+    """The default path is unchanged: no caller-supplied time, no caller-controlled fact."""
+    before = db.scalar(select(func.now()))
+    row = _write(db, "not backdated")
+    assert before is not None
+    assert row.occurred_at >= before
+
+
+@pytest.mark.integration
+def test_a_backdated_row_is_written_at_the_time_given_and_still_chains(db: Session) -> None:
+    """The seed's actual requirement: an eight-week-old row the chain still covers."""
+    backdated = datetime(2026, 7, 15, 9, 30, tzinfo=UTC)
+    row = _write(db, "backdated", occurred_at=backdated)
+    assert row.occurred_at == backdated
+    assert compute_event_hash(row, row.prev_event_hash) == row.event_hash
+    assert verify_chain(db, limit=1).is_intact
+
+
+@pytest.mark.integration
+def test_a_backdated_time_is_inside_the_hash_so_forging_it_is_detectable(db: Session) -> None:
+    """A backdated row is no less tamper-evident: move the time, the digest moves."""
+    row = _write(db, "backdated", occurred_at=datetime(2026, 7, 15, 9, 30, tzinfo=UTC))
+    forged = AuditEvent(**_hashable_fields(row))
+    forged.occurred_at = datetime(2026, 9, 1, 9, 30, tzinfo=UTC)
+    assert compute_event_hash(forged, row.prev_event_hash) != row.event_hash
