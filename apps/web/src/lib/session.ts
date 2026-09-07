@@ -1,5 +1,11 @@
 import { cookies } from 'next/headers';
-import { NADDP_ROLES, type NaddpRole } from '@naddp/contracts';
+import {
+  DATA_CLASSIFICATIONS,
+  NADDP_ROLES,
+  type DataClassification,
+  type NaddpRole,
+  type SessionSummary,
+} from '@naddp/contracts';
 
 import { API_BASE_URL } from '@/lib/api';
 
@@ -11,15 +17,21 @@ import { API_BASE_URL } from '@/lib/api';
  * cookie is signed by the API with `DEMO_SESSION_SECRET`, and only the API can validate
  * it. The web app asks; the API decides. That is the whole point of the boundary.
  *
- * The endpoint below does not exist yet; the governance track builds it in Week 1
- * (`app/security/` + `POST /v1/session/assume-role`). This implementation is written
- * against the endpoint as specified, so it starts working the moment that lands, with no
- * change here. Until then it fails closed: no permissions, and a stated reason.
+ * Resolving identity on the server rather than in the browser is what lets the navigation
+ * rail render permission-correct in the first paint, with no flash of a rail the role does
+ * not hold. The same payload is handed to the client through `SessionProvider`, so there
+ * is one identity in the tree and not two that can disagree.
+ *
+ * It fails closed. Every failure path returns no permissions and a stated reason, and the
+ * reason is rendered - a lookup that failed must never be indistinguishable from an
+ * account that legitimately holds nothing.
  */
 
 const SESSION_ENDPOINT = '/v1/session/me';
 
 export interface DemoSession {
+  /** The full session payload the API returned, or `null` when there is none. */
+  readonly summary: SessionSummary | null;
   /** The role the API confirmed, or `null` when there is no valid session. */
   readonly role: NaddpRole | null;
   /**
@@ -36,6 +48,7 @@ export interface DemoSession {
 }
 
 const NO_SESSION = (reason: string): DemoSession => ({
+  summary: null,
   role: null,
   permissions: [],
   unavailableReason: reason,
@@ -95,35 +108,92 @@ export async function getDemoSession(): Promise<DemoSession> {
     );
   }
 
-  return parseSession(body);
+  const summary = parseSessionSummary(body);
+  if (summary === null) {
+    return NO_SESSION(
+      'The session response did not match the shape this build was generated against. Permissions are withheld rather than partially trusted.',
+    );
+  }
+
+  return {
+    summary,
+    role: summary.role,
+    permissions: summary.permissions,
+    unavailableReason: null,
+  };
 }
 
-/**
- * Defensive parse. The response schema is owned by the API track and is not generated
- * yet, so every field is checked rather than asserted. An unrecognised shape yields no
- * session - it does not yield a partially-trusted one.
- */
-function parseSession(body: unknown): DemoSession {
-  if (typeof body !== 'object' || body === null) {
-    return NO_SESSION('The session response was not an object.');
-  }
+/* -------------------------------------------------------------------------- */
+/* Defensive parsing                                                          */
+/* -------------------------------------------------------------------------- */
 
+/*
+ * The response type is generated from the API's own OpenAPI document, so at compile time
+ * this shape is known. It is still checked at runtime, because the generated type is a
+ * statement about the build the client was generated against, not a guarantee about the
+ * server that answered. An unrecognised shape yields no session; it never yields a
+ * partially-trusted one.
+ */
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
+function asRole(value: unknown): NaddpRole | null {
+  return typeof value === 'string' && (NADDP_ROLES as readonly string[]).includes(value)
+    ? (value as NaddpRole)
+    : null;
+}
+
+function asClassifications(value: unknown): DataClassification[] | null {
+  if (!isStringArray(value)) return null;
+  const known = new Set<string>(DATA_CLASSIFICATIONS);
+  // An unknown zone is not dropped silently: a classification this client cannot render
+  // is a contract mismatch, and rendering the rest would understate what the API said.
+  return value.every((entry) => known.has(entry)) ? (value as DataClassification[]) : null;
+}
+
+export function parseSessionSummary(body: unknown): SessionSummary | null {
+  if (typeof body !== 'object' || body === null) return null;
   const record = body as Record<string, unknown>;
 
-  const rawRole = record['role'];
-  const role =
-    typeof rawRole === 'string' && (NADDP_ROLES as readonly string[]).includes(rawRole)
-      ? (rawRole as NaddpRole)
-      : null;
+  const role = asRole(record['role']);
+  const readableClassifications = asClassifications(record['readable_classifications']);
+  const permissions = record['permissions'];
+  const sensitivePermissions = record['sensitive_permissions'];
+  const compartments = record['compartments'];
 
-  const rawPermissions = record['permissions'];
-  const permissions = Array.isArray(rawPermissions)
-    ? rawPermissions.filter((entry): entry is string => typeof entry === 'string')
-    : [];
-
-  if (role === null) {
-    return NO_SESSION('The session response did not name a recognised role.');
+  if (
+    role === null ||
+    readableClassifications === null ||
+    !isStringArray(permissions) ||
+    !isStringArray(sensitivePermissions) ||
+    !isStringArray(compartments) ||
+    typeof record['user_id'] !== 'string' ||
+    typeof record['email'] !== 'string' ||
+    typeof record['full_name'] !== 'string' ||
+    typeof record['title'] !== 'string' ||
+    typeof record['mission'] !== 'string' ||
+    typeof record['clearance_rank'] !== 'number' ||
+    typeof record['is_demo_identity'] !== 'boolean' ||
+    typeof record['expires_in_seconds'] !== 'number'
+  ) {
+    return null;
   }
 
-  return { role, permissions, unavailableReason: null };
+  return {
+    role,
+    user_id: record['user_id'],
+    email: record['email'],
+    full_name: record['full_name'],
+    title: record['title'],
+    mission: record['mission'],
+    clearance_rank: record['clearance_rank'],
+    compartments,
+    permissions,
+    sensitive_permissions: sensitivePermissions,
+    readable_classifications: readableClassifications,
+    is_demo_identity: record['is_demo_identity'],
+    expires_in_seconds: record['expires_in_seconds'],
+  };
 }

@@ -249,6 +249,58 @@ function NavLink({
   const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
   const descriptionId = `${idPrefix}-nav-desc-${item.icon}`;
 
+  /*
+   * A destination this build does not serve is shown, not hidden, and is not a link.
+   *
+   * Hiding it would misrepresent the product to an audience being shown its shape.
+   * Linking it would put a 404 one click from the command centre, and BUILD_BIBLE §0 is
+   * explicit that the demo must be incapable of dead-ending. So: rendered, dimmed,
+   * `aria-disabled`, out of the tab order, and labelled with the week that builds it.
+   *
+   * The permission filter has already run by this point. A role that may not read the
+   * underlying object never reaches this branch, because the entry is not in `navItems`
+   * at all.
+   */
+  if (item.availability === 'planned') {
+    const planned = (
+      <span
+        aria-disabled="true"
+        aria-describedby={descriptionId}
+        className="group relative flex cursor-default items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium text-muted-foreground/70"
+      >
+        <Icon aria-hidden="true" className="h-4 w-4 shrink-0" />
+        <span className="truncate">{item.label}</span>
+        {item.plannedFor === undefined ? null : (
+          <span
+            aria-hidden="true"
+            className="ml-auto shrink-0 rounded border border-input px-1 py-0.5 text-2xs font-medium uppercase tracking-wide"
+          >
+            {item.plannedFor}
+          </span>
+        )}
+        <span id={descriptionId} className="sr-only">
+          {item.description} Not available in this build
+          {item.plannedFor === undefined ? '' : `; planned for ${item.plannedFor}`}.
+        </span>
+      </span>
+    );
+
+    if (!withTooltip) return planned;
+
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{planned}</TooltipTrigger>
+        <TooltipContent side="right" className="max-w-[16rem]">
+          {item.description}
+          <span className="mt-1 block text-2xs text-muted-foreground">
+            Not available in this build
+            {item.plannedFor === undefined ? '' : ` · planned for ${item.plannedFor}`}
+          </span>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
   const link = (
     <Link
       href={item.href}

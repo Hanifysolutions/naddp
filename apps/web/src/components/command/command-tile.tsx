@@ -1,107 +1,101 @@
 import * as React from 'react';
-import { Ban, Inbox, LoaderCircle, TriangleAlert, type LucideIcon } from 'lucide-react';
+import { Ban, Inbox, Lock, LoaderCircle, TriangleAlert, type LucideIcon } from 'lucide-react';
 
+import { DistributionBars } from '@/components/command/distribution-bars';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  API_TILE_LABEL,
+  API_TILE_PERMISSION,
+  type ApiTileKey,
+  type MetricTone,
+  type TileMetric,
+  type TileState,
+  type TileView,
+} from '@/lib/command-view';
 import { cn } from '@/lib/utils';
 
 /**
- * The five honest states a tile can be in. There is no sixth state called
- * "looks plausible" - a tile either has data from the API or says clearly that it does
- * not. No placeholder prose, no invented numbers.
+ * One executive tile.
+ *
+ * Purely presentational: it renders a `TileView` built by `lib/command-view.ts` and makes
+ * no decision of its own about what a number means. Its whole job is to keep five states
+ * visually distinct, because three of them are routinely confused in dashboards and the
+ * confusion is always in the same direction - towards looking healthier than the truth:
  *
  *   loading    a request is in flight
- *   ready      the API returned data and `metrics`/`children` describe it
- *   empty      the API answered, and the answer is genuinely nothing
- *   error      the request failed; the reason is shown
- *   forbidden  RBAC denied this read for the current role - a feature, shown as one
+ *   ready      the API returned data and it is on screen
+ *   empty      the API answered and every count was zero - a real answer, not a placeholder
+ *   error      the request failed; the API's own reason is shown
+ *   forbidden  this role may not read the source at all, so nothing was even queried
+ *
+ * `empty` and `forbidden` are the pair that must never blur. A zero is a statement about
+ * the mission's workload; a denial is a statement about the reader. Rendering a denial as a
+ * zero would tell an Ambassador there are no consular cases when the truth is that this
+ * role cannot see them.
  */
-export type CommandTileState = 'loading' | 'ready' | 'empty' | 'error' | 'forbidden';
 
-export interface CommandTileMetric {
-  /** Short label, e.g. "Open cases". */
-  readonly label: string;
-  /**
-   * The formatted value. `null` means "the API has not supplied this yet" and renders as
-   * an explicit placeholder glyph - never as 0, and never as a guess.
-   */
-  readonly value: string | null;
-  /** Optional qualifier rendered under the value, e.g. "last 7 days". */
-  readonly hint?: string;
-  /** Optional emphasis. Always accompanied by the label text; colour is never the cue. */
-  readonly tone?: 'default' | 'success' | 'warning' | 'destructive';
-}
-
-export interface CommandTileProps {
-  /** Tile heading. Rendered as an `<h3>` inside the page's heading hierarchy. */
-  title: string;
-  /** One line explaining what question this tile answers. */
-  description: string;
-  state: CommandTileState;
-  /** Metric row. Omitted entirely for tiles that are purely narrative. */
-  metrics?: readonly CommandTileMetric[];
-  /** Message shown in the `error` state. Required to be the real reason. */
-  errorMessage?: string;
-  /** Optional grid-span classes applied to the outer card. */
-  className?: string;
-  /** Body content for the `ready` state. */
-  children?: React.ReactNode;
-}
-
-const TONE_CLASS: Readonly<Record<NonNullable<CommandTileMetric['tone']>, string>> = {
+const TONE_CLASS: Readonly<Record<MetricTone, string>> = {
   default: 'text-foreground',
   success: 'text-success',
   warning: 'text-warning',
   destructive: 'text-destructive',
 };
 
-export function CommandTile({
-  title,
-  description,
-  state,
-  metrics,
-  errorMessage,
-  className,
-  children,
-}: CommandTileProps): React.JSX.Element {
-  const headingId = `tile-${slugify(title)}`;
+export interface CommandTileProps {
+  view: TileView;
+  /** Extra body content for the `ready` and `empty` states, e.g. a short evidence list. */
+  children?: React.ReactNode;
+}
+
+export function CommandTile({ view, children }: CommandTileProps): React.JSX.Element {
+  const { definition, state, metrics, distribution, note, restrictedSources, statusMessage } =
+    view;
+  const headingId = `tile-${definition.id}`;
+  const showsBody = state === 'ready' || state === 'empty';
 
   return (
     <Card
-      // `aria-busy` lets assistive tech announce the loading state without us having to
-      // render a live region per tile.
+      // `aria-busy` lets assistive tech announce the loading state without a live region
+      // per tile.
       aria-busy={state === 'loading'}
       aria-labelledby={headingId}
-      className={cn('flex h-full flex-col', className)}
+      className={cn('flex h-full flex-col', definition.span)}
     >
       <CardHeader className="gap-1 pb-3">
         <div className="flex items-start justify-between gap-2">
-          <h3 id={headingId} className="text-sm font-semibold leading-tight tracking-tight">
-            {title}
+          <h3
+            id={headingId}
+            className="text-sm font-semibold leading-tight tracking-tight text-foreground"
+          >
+            {definition.title}
           </h3>
           <StateChip state={state} />
         </div>
-        <p className="text-xs leading-snug text-muted-foreground">{description}</p>
+        <p className="text-xs leading-snug text-muted-foreground">{definition.description}</p>
       </CardHeader>
 
-      <CardContent className="flex flex-1 flex-col justify-between gap-3">
+      <CardContent className="flex flex-1 flex-col gap-3">
         {state === 'loading' ? <LoadingBody /> : null}
 
-        {state === 'ready' ? (
+        {showsBody ? (
           <>
-            {metrics === undefined ? null : <MetricRow metrics={metrics} />}
-            {children === undefined ? null : <div className="text-sm">{children}</div>}
-          </>
-        ) : null}
-
-        {state === 'empty' ? (
-          <>
-            {metrics === undefined ? null : <MetricRow metrics={metrics} />}
-            <StatusBody
-              icon={Inbox}
-              headline="Awaiting data"
-              detail="This tile is wired and structured, but the API has not returned any records for it yet. Nothing has been invented to fill the space."
-            />
+            <MetricRow metrics={metrics} />
+            {distribution === null ? null : <DistributionBars distribution={distribution} />}
+            {children}
+            {state === 'empty' ? (
+              <StatusBody
+                icon={Inbox}
+                headline="Every count here is zero"
+                detail="The API answered and the query found no rows in the zones you are cleared to read. These are real counts, not placeholders - the demonstration dataset has not been loaded, or nothing matches yet."
+              />
+            ) : null}
+            {note === null ? null : (
+              <p className="mt-auto text-2xs leading-snug text-muted-foreground">{note}</p>
+            )}
+            {restrictedSources.length === 0 ? null : (
+              <RestrictedFootnote sources={restrictedSources} />
+            )}
           </>
         ) : null}
 
@@ -111,8 +105,9 @@ export function CommandTile({
             tone="destructive"
             headline="Could not load this tile"
             detail={
-              errorMessage ??
-              'The request failed and the API did not supply a reason. The figures above are unavailable rather than zero.'
+              statusMessage === null
+                ? 'The request failed and the API did not supply a reason. These figures are unavailable rather than zero.'
+                : `${statusMessage} These figures are unavailable rather than zero.`
             }
           />
         ) : null}
@@ -120,9 +115,8 @@ export function CommandTile({
         {state === 'forbidden' ? (
           <StatusBody
             icon={Ban}
-            tone="muted"
-            headline="Not available to this role"
-            detail="Your current demo role does not hold the permission this view requires. Access is denied by default and enforced by the API, not by hiding it here."
+            headline="Your role does not have access"
+            detail={forbiddenDetail(restrictedSources, statusMessage)}
           />
         ) : null}
       </CardContent>
@@ -130,17 +124,44 @@ export function CommandTile({
   );
 }
 
-function StateChip({ state }: { state: CommandTileState }): React.JSX.Element | null {
+/**
+ * The words a denial gets.
+ *
+ * It names the permission the API wanted, because a refusal a viewer can trace is a
+ * demonstrable control and a refusal they cannot is just a broken screen. It never implies
+ * the underlying figure is zero, and never suggests it might appear later.
+ */
+function forbiddenDetail(
+  sources: readonly ApiTileKey[],
+  statusMessage: string | null,
+): string {
+  const base =
+    sources.length === 0
+      ? 'The API refused this read for your current demo role.'
+      : `Reading ${joinWords(sources.map((source) => API_TILE_LABEL[source]))} requires ${joinWords(
+          sources.map((source) => API_TILE_PERMISSION[source]),
+        )}, which your current demo role does not hold. The underlying tables were never queried, so this is not a count of zero - it is a refusal.`;
+
+  return statusMessage === null ? base : `${base} The API said: ${statusMessage}`;
+}
+
+/** "a", "a and b", "a, b and c". */
+function joinWords(parts: readonly string[]): string {
+  if (parts.length <= 1) return parts[0] ?? '';
+  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1] ?? ''}`;
+}
+
+function StateChip({ state }: { state: TileState }): React.JSX.Element | null {
   if (state === 'ready') return null;
 
-  const copy: Readonly<Record<Exclude<CommandTileState, 'ready'>, string>> = {
+  const copy: Readonly<Record<Exclude<TileState, 'ready'>, string>> = {
     loading: 'Loading',
-    empty: 'Awaiting data',
+    empty: 'No records',
     error: 'Error',
     forbidden: 'Restricted',
   };
 
-  const tone: Readonly<Record<Exclude<CommandTileState, 'ready'>, string>> = {
+  const tone: Readonly<Record<Exclude<TileState, 'ready'>, string>> = {
     loading: 'border-input text-muted-foreground',
     empty: 'border-input text-muted-foreground',
     error: 'border-destructive/50 text-destructive',
@@ -157,46 +178,79 @@ function StateChip({ state }: { state: CommandTileState }): React.JSX.Element | 
       {state === 'loading' ? (
         <LoaderCircle aria-hidden="true" className="mr-1 inline h-3 w-3 animate-spin" />
       ) : null}
+      {state === 'forbidden' ? (
+        <Lock aria-hidden="true" className="mr-1 inline h-3 w-3" />
+      ) : null}
       {copy[state]}
     </span>
   );
 }
 
-function MetricRow({
-  metrics,
-}: {
-  metrics: readonly CommandTileMetric[];
-}): React.JSX.Element {
+function MetricRow({ metrics }: { metrics: readonly TileMetric[] }): React.JSX.Element | null {
+  if (metrics.length === 0) return null;
+
   return (
     <dl className="grid grid-cols-2 gap-x-4 gap-y-3 xl:grid-cols-3">
-      {metrics.map((metric) => (
-        <div key={metric.label} className="min-w-0">
+      {metrics.map((entry) => (
+        <div key={entry.label} className="min-w-0">
           <dt className="truncate text-2xs uppercase tracking-wide text-muted-foreground">
-            {metric.label}
+            {entry.label}
           </dt>
           <dd
             className={cn(
               'tabular mt-0.5 font-mono text-xl font-semibold leading-none',
-              TONE_CLASS[metric.tone ?? 'default'],
+              TONE_CLASS[entry.tone ?? 'default'],
             )}
           >
-            {metric.value === null ? (
-              <>
-                <span aria-hidden="true" className="text-muted-foreground">
-                  &mdash;
-                </span>
-                <span className="sr-only">No value available yet</span>
-              </>
-            ) : (
-              metric.value
-            )}
+            {entry.value === null ? <UnavailableValue metric={entry} /> : entry.value}
           </dd>
-          {metric.hint === undefined ? null : (
-            <p className="mt-1 truncate text-2xs text-muted-foreground">{metric.hint}</p>
+          {entry.hint === undefined ? null : (
+            <p className="mt-1 truncate text-2xs text-muted-foreground">{entry.hint}</p>
           )}
         </div>
       ))}
     </dl>
+  );
+}
+
+/**
+ * A missing value, with the reason it is missing.
+ *
+ * Never a zero, and never a bare dash: the sighted reader gets a lock glyph for a denial,
+ * and every reader gets a sentence naming which of the two very different reasons applies.
+ */
+function UnavailableValue({ metric }: { metric: TileMetric }): React.JSX.Element {
+  const restricted = metric.unavailable === 'restricted';
+
+  return (
+    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+      {restricted ? <Lock aria-hidden="true" className="h-3.5 w-3.5" /> : null}
+      <span aria-hidden="true">&mdash;</span>
+      <span className="sr-only">
+        {restricted
+          ? 'Restricted: your role does not have access to this figure.'
+          : 'Not reported by the API for this response.'}
+      </span>
+    </span>
+  );
+}
+
+/** Named on a partially-visible tile, so a short row is never read as a low number. */
+function RestrictedFootnote({
+  sources,
+}: {
+  sources: readonly ApiTileKey[];
+}): React.JSX.Element {
+  return (
+    <p className="flex items-start gap-1.5 text-2xs leading-snug text-muted-foreground">
+      <Lock aria-hidden="true" className="mt-0.5 h-3 w-3 shrink-0" />
+      <span>
+        {joinWords(sources.map((source) => API_TILE_LABEL[source]))}{' '}
+        {sources.length === 1 ? 'is' : 'are'} withheld from this role, so{' '}
+        {sources.length === 1 ? 'that figure is' : 'those figures are'} shown as restricted
+        rather than as zero.
+      </span>
+    </p>
   );
 }
 
@@ -257,12 +311,4 @@ function StatusBody({
       </div>
     </div>
   );
-}
-
-/** Stable, collision-resistant enough id fragment for a fixed set of tile titles. */
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
 }

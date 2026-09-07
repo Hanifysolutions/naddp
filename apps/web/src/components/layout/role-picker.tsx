@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { LoaderCircle, TriangleAlert } from 'lucide-react';
-import { NADDP_ROLES, toApiError, type ApiError, type NaddpRole } from '@naddp/contracts';
+import { isApiError, NADDP_ROLES, toApiError, type ApiError, type NaddpRole } from '@naddp/contracts';
 
 import {
   Select,
@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { API_BASE_URL } from '@/lib/api';
+import { assumeRole as postAssumeRole } from '@/lib/api-queries';
 import { cn } from '@/lib/utils';
 
 /**
@@ -35,8 +35,7 @@ const ROLE_LABELS: Readonly<Record<NaddpRole, string>> = {
 export interface RolePickerProps {
   /**
    * The role the API says this session currently holds, or `null` when no session has
-   * been established. Supplied by the caller once `GET /v1/session/me` exists; until
-   * then the picker starts empty, which is the honest state.
+   * been established. Resolved server-side in `app/command/layout.tsx`.
    */
   activeRole?: NaddpRole | null;
   className?: string;
@@ -45,21 +44,28 @@ export interface RolePickerProps {
 /**
  * Demo identity switcher.
  *
- * Only the *identity* is faked in this product. RBAC is real and deny-by-default from
- * day one (CLAUDE.md §2.4), so this control does exactly one thing: ask the API to issue
- * a signed `naddp_demo_session` cookie for the chosen role. Every authorisation decision
- * that follows is made server-side against that cookie.
+ * Only the *identity* is faked in this product. RBAC is real and deny-by-default from day
+ * one (CLAUDE.md §2.4), so this control does exactly one thing: ask the API to issue a
+ * signed `naddp_demo_session` cookie for the chosen role. Every authorisation decision that
+ * follows is made server-side against that cookie.
  *
- * Failure behaviour is deliberate and load-bearing. `POST /v1/session/assume-role` does
- * not exist yet - the governance track builds it. When the call fails for any reason
- * (missing endpoint, API down, RBAC refusal), this component:
+ * The success path has three steps and skipping any of them would leave the screen lying:
  *
- *   - reverts the visible selection to the role the API last confirmed;
- *   - renders the status code and the API's own message in an inline alert;
- *   - does NOT optimistically pretend the switch happened.
+ *   1. **Adopt the role the API returned**, not the one that was requested. They agree in
+ *      every expected case; trusting the response is what makes an unexpected one visible.
+ *   2. **Drop every cached read.** `removeQueries()` rather than `invalidateQueries()`:
+ *      each cache entry was authorised for the previous identity, and removal means no
+ *      component can render one for a frame while the refetch is in flight. Query keys
+ *      carry the role too, so this is the second of two independent guards.
+ *   3. **`router.refresh()`**, which re-runs the server layout with the new cookie and
+ *      rebuilds the navigation rail from the new permission set.
  *
- * A demo that silently shows the wrong identity is far more dangerous in front of a
- * consular audience than one that says plainly that a call failed.
+ * Failure behaviour is deliberate and load-bearing. When the call fails for any reason -
+ * API down, CORS, RBAC refusal - this component reverts the visible selection to the role
+ * the API last confirmed, renders the status code and the API's own message inline, and
+ * never optimistically pretends the switch happened. A demo that silently shows the wrong
+ * identity is far more dangerous in front of a consular audience than one that says plainly
+ * that a call failed.
  */
 export function RolePicker({
   activeRole = null,
@@ -89,7 +95,7 @@ export function RolePicker({
     };
   }, []);
 
-  const assumeRole = React.useCallback(
+  const assume = React.useCallback(
     async (nextRole: NaddpRole): Promise<void> => {
       abortRef.current?.abort();
       const controller = new AbortController();
@@ -100,40 +106,16 @@ export function RolePicker({
       setError(null);
 
       try {
-        const response = await fetch(`${API_BASE_URL}/v1/session/assume-role`, {
-          method: 'POST',
-          // The demo session cookie must ride along, and must be settable cross-origin
-          // (web on :3000, API on :8000).
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
-          body: JSON.stringify({ role: nextRole }),
-          signal: controller.signal,
-        });
+        const session = await postAssumeRole(nextRole, controller.signal);
 
-        if (!response.ok) {
-          let body: unknown;
-          try {
-            body = await response.json();
-          } catch (parseFailure) {
-            // A non-JSON error body (a proxy error page, an empty 404) still carries a
-            // real status. Preserve it and say why the detail is missing rather than
-            // discarding the failure.
-            body = {
-              detail: `The API returned status ${response.status} with a non-JSON body (${
-                parseFailure instanceof Error ? parseFailure.message : 'unknown parse failure'
-              }).`,
-            };
-          }
-          throw toApiError(response.status, body);
-        }
+        // Step 1: the API's answer, not the request.
+        setConfirmed(session.role);
+        setSelected(session.role);
 
-        setConfirmed(nextRole);
-        // Every cached read was scoped to the previous identity. Drop all of it rather
-        // than reasoning about which queries happen to be role-sensitive.
-        await queryClient.invalidateQueries();
+        // Step 2: every cached read was authorised for the previous identity.
+        queryClient.removeQueries();
+
+        // Step 3: rebuild the server-rendered chrome - rail, identity, permissions.
         router.refresh();
       } catch (failure) {
         if (failure instanceof DOMException && failure.name === 'AbortError') {
@@ -142,15 +124,7 @@ export function RolePicker({
         }
         // Revert to the last identity the API actually confirmed.
         setSelected(confirmed);
-        setError(
-          failure instanceof TypeError
-            ? {
-                status: 0,
-                message: `Could not reach the API at ${API_BASE_URL}. Is it running?`,
-                traceId: null,
-              }
-            : toApiErrorFromUnknown(failure),
-        );
+        setError(normaliseFailure(failure));
       } finally {
         if (!controller.signal.aborted) {
           setPending(false);
@@ -163,16 +137,14 @@ export function RolePicker({
   const handleChange = React.useCallback(
     (value: string): void => {
       if (!isNaddpRole(value)) {
-        setError({
-          status: 0,
-          message: `"${value}" is not a recognised role.`,
-          traceId: null,
-        });
+        setError(
+          toApiError(0, { detail: `"${value}" is not a role this API defines.` }),
+        );
         return;
       }
-      void assumeRole(value);
+      void assume(value);
     },
-    [assumeRole],
+    [assume],
   );
 
   const labelId = 'role-picker-label';
@@ -185,11 +157,7 @@ export function RolePicker({
           Demo identity: choose the role to view the mission as
         </span>
 
-        <Select
-          value={selected ?? ''}
-          onValueChange={handleChange}
-          disabled={pending}
-        >
+        <Select value={selected ?? ''} onValueChange={handleChange} disabled={pending}>
           <SelectTrigger
             aria-labelledby={labelId}
             aria-describedby={error === null ? undefined : errorId}
@@ -215,7 +183,10 @@ export function RolePicker({
         </Select>
 
         {pending ? (
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
+          <span
+            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            role="status"
+          >
             <LoaderCircle aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />
             Switching
           </span>
@@ -241,6 +212,16 @@ export function RolePicker({
           <p className="mt-1.5 pl-6 text-sm leading-snug text-muted-foreground">
             {error.message}
           </p>
+          {error.missingPermissions.length === 0 ? null : (
+            <p className="mt-1.5 pl-6 font-mono text-2xs text-muted-foreground">
+              missing {error.missingPermissions.join(', ')}
+            </p>
+          )}
+          {error.requestId === null ? null : (
+            <p className="mt-1.5 pl-6 font-mono text-2xs text-muted-foreground">
+              request {error.requestId}
+            </p>
+          )}
           {error.traceId === null ? null : (
             <p className="mt-1.5 pl-6 font-mono text-2xs text-muted-foreground">
               trace {error.traceId}
@@ -261,17 +242,8 @@ function isNaddpRole(value: string): value is NaddpRole {
 }
 
 /** Last-resort normalisation for a thrown value that is not already an ApiError. */
-function toApiErrorFromUnknown(failure: unknown): ApiError {
-  if (
-    typeof failure === 'object' &&
-    failure !== null &&
-    'status' in failure &&
-    'message' in failure &&
-    typeof (failure as { status: unknown }).status === 'number' &&
-    typeof (failure as { message: unknown }).message === 'string'
-  ) {
-    return failure as ApiError;
-  }
+function normaliseFailure(failure: unknown): ApiError {
+  if (isApiError(failure)) return failure;
   return toApiError(0, {
     detail: failure instanceof Error ? failure.message : 'An unexpected error occurred.',
   });

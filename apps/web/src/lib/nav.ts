@@ -25,9 +25,14 @@
  * it cannot express the transition permissions the state machines already depend on
  * (`approve:meeting_followup`, `resolve:consular_case`) without a second, parallel scheme.
  *
- * CROSS-TRACK CONTRACT: these strings must match the permission names in
- * `apps/api/app/security/` exactly. If the API track chooses different identifiers, this
- * list is the thing that changes - the server is the authority.
+ * CROSS-TRACK CONTRACT: these strings must match the permission codes in
+ * `apps/api/app/security/permissions.py` exactly. VERIFIED against that file: all nine are
+ * members of its `Permission` enum, spelled identically.
+ *
+ * They are not generated, and cannot be: the API returns a session's permissions as a
+ * `list[str]`, so no enum for them reaches the OpenAPI document. A typo here is therefore
+ * not a compile error - it is a link that never appears for anybody, which is the failure
+ * mode this comment exists to make findable.
  */
 export const PERMISSIONS = [
   'read:command',
@@ -55,6 +60,18 @@ export type NavIconName =
   | 'knowledge'
   | 'governance';
 
+/**
+ * Whether the destination exists in this build.
+ *
+ * `planned` entries are rendered - dimmed, not focusable as links, and labelled with the
+ * week that builds them - rather than hidden or linked. Hiding them would misrepresent the
+ * product's shape; linking them would put a 404 one click from the command centre, and
+ * "the demo must never dead-end" (BUILD_BIBLE §0) is not a suggestion. The permission
+ * filter still applies first: a role that may not read consular cases never sees the
+ * consular entry at all, planned or not.
+ */
+export type NavAvailability = 'available' | 'planned';
+
 export interface NavItem {
   /** Route this entry links to. */
   readonly href: string;
@@ -66,6 +83,10 @@ export interface NavItem {
   readonly icon: NavIconName;
   /** The single permission required to see this entry. */
   readonly permission: Permission;
+  /** Whether this build serves the route. */
+  readonly availability: NavAvailability;
+  /** When a planned destination lands. Rendered verbatim; omitted when available. */
+  readonly plannedFor?: string;
 }
 
 /**
@@ -79,6 +100,7 @@ export const NAV_CATALOGUE: readonly NavItem[] = [
     description: 'Executive overview across every mission function.',
     icon: 'command',
     permission: 'read:command',
+    availability: 'available',
   },
   {
     href: '/intelligence',
@@ -86,6 +108,8 @@ export const NAV_CATALOGUE: readonly NavItem[] = [
     description: 'Signals and the morning brief, every claim source-backed.',
     icon: 'intelligence',
     permission: 'read:intelligence',
+    availability: 'planned',
+    plannedFor: 'Week 2',
   },
   {
     href: '/opportunities',
@@ -93,6 +117,8 @@ export const NAV_CATALOGUE: readonly NavItem[] = [
     description: 'Bilateral opportunity pipeline and stage transitions.',
     icon: 'opportunities',
     permission: 'read:opportunity',
+    availability: 'planned',
+    plannedFor: 'Week 2',
   },
   {
     href: '/stakeholders',
@@ -100,6 +126,8 @@ export const NAV_CATALOGUE: readonly NavItem[] = [
     description: 'Organisations, contacts and relationship history.',
     icon: 'stakeholders',
     permission: 'read:stakeholder',
+    availability: 'planned',
+    plannedFor: 'Week 2',
   },
   {
     href: '/meetings',
@@ -107,6 +135,8 @@ export const NAV_CATALOGUE: readonly NavItem[] = [
     description: 'Pre-reads and follow-ups. Sending requires human approval.',
     icon: 'meetings',
     permission: 'read:meeting',
+    availability: 'planned',
+    plannedFor: 'Week 3',
   },
   {
     href: '/consular',
@@ -114,6 +144,8 @@ export const NAV_CATALOGUE: readonly NavItem[] = [
     description: 'Citizen case workload, ageing and service-level risk.',
     icon: 'consular',
     permission: 'read:consular_case',
+    availability: 'planned',
+    plannedFor: 'Week 3',
   },
   {
     href: '/diaspora',
@@ -121,6 +153,8 @@ export const NAV_CATALOGUE: readonly NavItem[] = [
     description: 'Consent-filtered expertise and capability search.',
     icon: 'diaspora',
     permission: 'read:diaspora_profile',
+    availability: 'planned',
+    plannedFor: 'Week 4',
   },
   {
     href: '/knowledge',
@@ -128,6 +162,8 @@ export const NAV_CATALOGUE: readonly NavItem[] = [
     description: 'Approved-source answers. Refuses when no source exists.',
     icon: 'knowledge',
     permission: 'read:knowledge_article',
+    availability: 'planned',
+    plannedFor: 'Week 3',
   },
   {
     href: '/governance',
@@ -135,6 +171,8 @@ export const NAV_CATALOGUE: readonly NavItem[] = [
     description: 'Append-only audit trail and AI decision traces.',
     icon: 'governance',
     permission: 'read:audit',
+    availability: 'planned',
+    plannedFor: 'Week 4',
   },
 ];
 
