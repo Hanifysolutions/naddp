@@ -89,7 +89,7 @@ demo-reset: ## Drop the schema, re-migrate and re-seed — restores a clean demo
 	@printf '\ndemo-reset complete — clean seeded state restored\n'
 
 test: ## Run the API test suite plus web lint + typecheck
-	cd $(API_DIR) && $(UV) run pytest -q
+	cd $(API_DIR) && $(UV) run pytest
 	$(PNPM) --filter @naddp/web lint
 	$(PNPM) --filter @naddp/web typecheck
 

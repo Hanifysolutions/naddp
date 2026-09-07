@@ -381,7 +381,7 @@ $Targets = [ordered]@{
     'test' = @{
         Help = 'Run the API test suite plus web lint + typecheck'
         Run  = {
-            Invoke-Step -Exe $Uv -Arguments @('run', 'pytest', '-q') -WorkingDirectory $ApiDir
+            Invoke-Step -Exe $Uv -Arguments @('run', 'pytest') -WorkingDirectory $ApiDir
             Invoke-Step -Exe $Pnpm -Arguments @('--filter', '@naddp/web', 'lint')
             Invoke-Step -Exe $Pnpm -Arguments @('--filter', '@naddp/web', 'typecheck')
         }
