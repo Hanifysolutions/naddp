@@ -84,6 +84,13 @@ class BriefGenerationError(RuntimeError):
     """The Gateway returned something that cannot honestly be published as a brief."""
 
 
+class ProgressFn(Protocol):
+    """Token-level progress from a long generation. Structural, so this module needs no
+    import from ``app.ai`` (ADR-0001)."""
+
+    def __call__(self, *, chars: int, elapsed: float) -> None: ...
+
+
 class EvidenceResolver(Protocol):
     """Resolves an evidence id to its registry entry. Injected, so this module stays
     free of ``app.ai`` (ADR-0001)."""
@@ -102,7 +109,8 @@ class GenerateFn(Protocol):
         user: Principal,
         *,
         session: Session | None = ...,
-    ) -> Any: ...  # noqa: ANN401
+        on_progress: ProgressFn | None = ...,
+    ) -> Any: ...  # noqa: ANN401  # noqa: ANN401
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,6 +149,7 @@ def generate_brief(
     generate: GenerateFn,
     context_factory: Any,  # noqa: ANN401 - builds a GatewayContext; see ADR-0001
     resolve_evidence: EvidenceResolver,
+    on_progress: ProgressFn | None = None,
 ) -> GeneratedBrief:
     """Generate today's brief for ``principal``'s role and persist it as a DRAFT.
 
@@ -166,6 +175,7 @@ def generate_brief(
         context_factory(),
         principal,
         session=session,
+        on_progress=on_progress,
     )
 
     if result.result is None:

@@ -22,6 +22,7 @@ from typing import Any
 import pytest
 
 from app.ai import gateway
+from app.ai.purposes import HEAVY_BUDGET_SECONDS
 from app.ai.schemas import GatewayContext, MorningBriefResult
 from app.domain.enums import AiPurpose, Classification, RoleCode
 from app.security.principal import principal_for_role
@@ -67,21 +68,68 @@ class _StubUsage:
     output_tokens = 567
 
 
+class _StubTextBlock:
+    type = "text"
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
 class _StubMessage:
+    """Serves both provider paths.
+
+    ``parse`` reads ``parsed_output``; the streaming path reads ``content`` blocks and
+    parses the assembled JSON itself, so the stub carries both.
+    """
+
     def __init__(self, parsed: Any, model: str) -> None:
         self.parsed_output = parsed
         self.model = model
         self.usage = _StubUsage()
+        self.content = [_StubTextBlock(parsed.model_dump_json())] if parsed is not None else []
+
+
+class _StubStream:
+    """Context manager mimicking ``client.messages.stream(...)``."""
+
+    def __init__(self, message: _StubMessage) -> None:
+        self._message = message
+
+    def __enter__(self) -> _StubStream:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    @property
+    def text_stream(self) -> Iterator[str]:
+        # Chunked, so a progress callback sees more than one event.
+        payload = "".join(block.text for block in self._message.content)
+        for start in range(0, len(payload), 64):
+            yield payload[start : start + 64]
+
+    def get_final_message(self) -> _StubMessage:
+        return self._message
 
 
 def _install_stub(monkeypatch: pytest.MonkeyPatch, behaviour: Any) -> dict[str, Any]:
-    """Replace the ``anthropic`` module with a stub. Returns the recorded call kwargs."""
+    """Replace the ``anthropic`` module with a stub. Returns the recorded call kwargs.
+
+    ``behaviour`` is invoked for BOTH paths, so a test that makes it raise or sleep
+    exercises whichever path the purpose under test actually takes.
+    """
     recorded: dict[str, Any] = {}
 
     class _Messages:
         def parse(self, **kwargs: Any) -> Any:
             recorded.update(kwargs)
+            recorded["path"] = "parse"
             return behaviour(**kwargs)
+
+        def stream(self, **kwargs: Any) -> Any:
+            recorded.update(kwargs)
+            recorded["path"] = "stream"
+            return _StubStream(behaviour(**kwargs))
 
     class _Anthropic:
         def __init__(self, **kwargs: Any) -> None:
@@ -126,10 +174,12 @@ def test_a_successful_live_call_is_served_and_not_a_fallback(
     assert outcome.trace.fallback is False
     assert outcome.envelope.result is not None
     assert outcome.envelope.result.headline == "Live-path brief"
-    # Structured output, not prose-then-parse.
-    assert recorded["output_format"] is MorningBriefResult
-    # The HTTP client is bounded by the same budget as the outer timeout.
-    assert recorded["client_kwargs"]["timeout"] == pytest.approx(4.0)
+    # morning_brief is a heavy generative purpose: it streams, and the schema goes through
+    # output_config rather than output_format.
+    assert recorded["path"] == "stream"
+    assert recorded["output_config"]["format"]["type"] == "json_schema"
+    # The HTTP client is bounded by the same PER-PURPOSE budget as the outer timeout.
+    assert recorded["client_kwargs"]["timeout"] == pytest.approx(HEAVY_BUDGET_SECONDS)
     assert recorded["client_kwargs"]["max_retries"] == 0
 
 
@@ -152,7 +202,7 @@ def test_a_timeout_falls_back_deterministically(monkeypatch: pytest.MonkeyPatch)
     """The ≤4s budget is the contract; past it the demo serves the snapshot."""
 
     def _slow(**kwargs: Any) -> Any:
-        time.sleep(6.0)
+        time.sleep(HEAVY_BUDGET_SECONDS + 5)
         raise AssertionError("unreachable: the budget should have expired")
 
     _install_stub(monkeypatch, _slow)
@@ -163,7 +213,7 @@ def test_a_timeout_falls_back_deterministically(monkeypatch: pytest.MonkeyPatch)
     assert outcome.trace.fallback is True
     assert outcome.trace.fallback_reason == "TIMEOUT"
     # The caller waits the budget, not the provider.
-    assert elapsed < 5.5, f"the budget did not bound the wait ({elapsed:.1f}s)"
+    assert elapsed < HEAVY_BUDGET_SECONDS + 2, f"the budget did not bound the wait ({elapsed:.1f}s)"
     # And the brief still renders.
     assert outcome.envelope.result is not None
     assert outcome.envelope.approval_status.value != "BLOCKED"

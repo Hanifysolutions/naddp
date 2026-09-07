@@ -19,7 +19,7 @@
         .\make.ps1 test; if ($LASTEXITCODE -ne 0) { ... }
 
     Targets: help, install, db-up, db-down, migrate, dev, seed, demo-reset,
-             test, lint, typecheck, gen-client, clean.
+             demo-prewarm, test, lint, typecheck, gen-client, clean.
 
 .EXAMPLE
     .\make.ps1
@@ -347,6 +347,14 @@ $Targets = [ordered]@{
         Help = 'Load the synthetic demo dataset (hero thread + citation registry)'
         Run  = {
             Invoke-Step -Exe $Uv -Arguments @('run', '--project', 'apps/api', 'python', $SeedScript)
+        }
+    }
+
+    'demo-prewarm' = @{
+        Help = 'Generate and cache the hero morning briefs (run AFTER demo-reset)'
+        Run  = {
+            Write-Host 'warming the demo caches - the on-stage brief becomes a database read'
+            Invoke-Step -Exe $Uv -Arguments @('run', 'python', '-m', 'app.cli.prewarm') -WorkingDirectory $ApiDir
         }
     }
 

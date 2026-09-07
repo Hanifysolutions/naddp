@@ -70,7 +70,7 @@ import time
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from pydantic import ValidationError
 
@@ -101,6 +101,7 @@ from app.ai.fallback import (
 from app.ai.purposes import (
     ModelRoute,
     PurposeSpec,
+    budget_for,
     check_context,
     resolve_purpose,
     route_for,
@@ -204,6 +205,8 @@ class TraceRecord:
     #: Section 4a capability tier, and the badge the trace drawer renders verbatim.
     model_tier: str | None = None
     route_badge: str = ""
+    #: Wall-clock budget this call was given, in seconds. Per purpose, not global.
+    budget_seconds: float | None = None
     model_requested: str | None = None
     model_used: str | None = None
     live: bool = False
@@ -243,6 +246,7 @@ class TraceRecord:
             route_reason=self.route_reason,
             model_tier=self.model_tier,
             route_badge=self.route_badge,
+            budget_seconds=self.budget_seconds,
             model_requested=self.model_requested,
             model_used=self.model_used,
             live=self.live,
@@ -358,6 +362,12 @@ class _ProviderResponse:
     output_tokens: int | None
 
 
+class ProgressFn(Protocol):
+    """Called while a long generation runs, so a 25s wait is not a frozen screen."""
+
+    def __call__(self, *, chars: int, elapsed: float) -> None: ...
+
+
 def _call_provider(
     *,
     model: str,
@@ -366,6 +376,8 @@ def _call_provider(
     system: str,
     output_schema: type[GroundedResult],
     timeout_seconds: float,
+    stream: bool,
+    on_progress: ProgressFn | None = None,
 ) -> _ProviderResponse:
     """Make the live call. **The lazy ``anthropic`` import lives here and nowhere else.**
 
@@ -374,11 +386,18 @@ def _call_provider(
     boot; and the test suite never touches the network by accident, because it cannot reach
     this function with ``AI_GATEWAY_LIVE=false``.
 
-    **Structured output, not prose-then-hope.** ``messages.parse`` with ``output_format``
-    constrains generation to the purpose's schema and returns a validated instance, so a
-    model that would have produced almost-JSON produces the right shape or fails loudly.
-    Stage 7 re-validates anyway -- the constraint is generation-side, the check is ours, and
-    a schema failure is a fallback reason (ADR-0002), not an exception the caller sees.
+    **Two shapes, one decision.** A purpose that returns a number and a sentence uses
+    ``messages.parse``: one round trip, a validated instance, nothing to stream. A purpose
+    that generates prose streams, because its budget is 25s and a 25s wait with no feedback
+    reads as a hung demo rather than a slow one. ``spec.stream`` decides; the caller never
+    does.
+
+    **Structured output either way.** ``parse`` constrains generation with
+    ``output_format``; the streaming path passes the same schema through
+    ``output_config.format``, which guarantees the assembled text is valid JSON of that
+    shape. Stage 7 re-validates regardless -- the constraint is generation-side, the check
+    is ours, and a schema failure is a fallback reason (ADR-0002) rather than an exception
+    the caller sees.
 
     **The HTTP timeout is set as well as the outer budget.** ``call_with_budget`` stops
     *waiting* but cannot stop the request; giving the client the same budget means the
@@ -389,26 +408,96 @@ def _call_provider(
     import anthropic
 
     client = anthropic.Anthropic(api_key=api_key, timeout=timeout_seconds, max_retries=0)
-    message = client.messages.parse(
+
+    if not stream:
+        message = client.messages.parse(
+            model=model,
+            max_tokens=MAX_OUTPUT_TOKENS,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+            output_format=output_schema,
+        )
+        parsed = message.parsed_output
+        if parsed is None:
+            msg = "The provider returned no parsed output; a 200 is not a usable answer."
+            raise ValueError(msg)
+        usage = message.usage
+        return _ProviderResponse(
+            payload=parsed.model_dump(mode="json"),
+            model_used=message.model,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+        )
+
+    started = time.perf_counter()
+    chars = 0
+    with client.messages.stream(
         model=model,
         max_tokens=MAX_OUTPUT_TOKENS,
         system=system,
         messages=[{"role": "user", "content": prompt}],
-        output_format=output_schema,
-    )
+        output_config={"format": {"type": "json_schema", "schema": _json_schema(output_schema)}},
+    ) as stream_handle:
+        for text in stream_handle.text_stream:
+            chars += len(text)
+            if on_progress is not None:
+                # Progress reporting must never be able to fail a generation that is
+                # otherwise succeeding: a broken console or a closed socket on the caller's
+                # side is not a reason to lose the answer.
+                try:
+                    on_progress(chars=chars, elapsed=time.perf_counter() - started)
+                except Exception:
+                    _logger.warning("ai.gateway.progress_callback_failed", exc_info=True)
+        final = stream_handle.get_final_message()
 
-    parsed = message.parsed_output
-    if parsed is None:
-        msg = "The provider returned no parsed output; a 200 is not the same as a usable answer."
+    # `block.type == "text"` rather than getattr: the literal comparison is what narrows
+    # the content union, so the type checker verifies this against the real SDK types
+    # instead of taking our word for it.
+    text = "".join(block.text for block in final.content if block.type == "text").strip()
+    if not text:
+        msg = "The provider streamed no text; a 200 is not the same as a usable answer."
         raise ValueError(msg)
 
-    usage = message.usage
+    payload: object = json.loads(text)
+    if not isinstance(payload, dict):
+        msg = f"The provider returned {type(payload).__name__}, not a JSON object."
+        raise TypeError(msg)
+
+    stream_usage = final.usage
     return _ProviderResponse(
-        payload=parsed.model_dump(mode="json"),
-        model_used=message.model,
-        input_tokens=usage.input_tokens,
-        output_tokens=usage.output_tokens,
+        payload=payload,
+        model_used=final.model,
+        input_tokens=stream_usage.input_tokens,
+        output_tokens=stream_usage.output_tokens,
     )
+
+
+def _json_schema(output_schema: type[GroundedResult]) -> dict[str, Any]:
+    """JSON Schema for ``output_config.format``, inlined.
+
+    Pydantic emits ``$ref``/``$defs`` for nested models. Whether a given provider accepts
+    those is not something this codebase can assume, so nested definitions are inlined and
+    the schema is handed over self-contained. If the provider rejects it anyway the call
+    raises, which classifies as API_ERROR and serves the snapshot -- a fallback, not a
+    broken brief.
+    """
+    schema = output_schema.model_json_schema()
+    defs = schema.pop("$defs", {})
+
+    def _inline(node: object) -> object:
+        if isinstance(node, dict):
+            ref = node.get("$ref")
+            if isinstance(ref, str) and ref.startswith("#/$defs/"):
+                target = defs.get(ref.split("/")[-1], {})
+                merged = {k: v for k, v in node.items() if k != "$ref"}
+                return _inline({**target, **merged})
+            return {key: _inline(value) for key, value in node.items()}
+        if isinstance(node, list):
+            return [_inline(item) for item in node]
+        return node
+
+    inlined = _inline(schema)
+    return inlined if isinstance(inlined, dict) else schema
 
 
 def _retrieval_query(context: GatewayContext, sectors: Sequence[str], spec: PurposeSpec) -> str:
@@ -609,6 +698,7 @@ def generate(
     user: Principal,
     *,
     session: Session | None = None,
+    on_progress: ProgressFn | None = None,
 ) -> GatewayResult:
     """Run the nine-stage pipeline and return the fixed envelope.
 
@@ -638,6 +728,7 @@ def generate_traced(
     user: Principal,
     *,
     session: Session | None = None,
+    on_progress: ProgressFn | None = None,
 ) -> GatewayOutcome:
     """As :func:`generate`, but also returns the assembled trace.
 
@@ -657,7 +748,9 @@ def generate_traced(
     acyclic.
     """
     with ai_actor_scope():
-        return _run_pipeline(purpose, data_class, context, user, session=session)
+        return _run_pipeline(
+            purpose, data_class, context, user, session=session, on_progress=on_progress
+        )
 
 
 def _run_pipeline(
@@ -667,6 +760,7 @@ def _run_pipeline(
     user: Principal,
     *,
     session: Session | None = None,
+    on_progress: ProgressFn | None = None,
 ) -> GatewayOutcome:
     """The nine stages, in order.
 
@@ -819,6 +913,13 @@ def _run_pipeline(
     )
 
     # -- Stage 6: generation (live under budget, else deterministic) -------
+    #
+    # The budget is PER PURPOSE (architect ruling, W2.2 review). A flat 4s meant a heavy
+    # generative purpose timed out on every call, so the live path was live only in the
+    # sense that it tried. Recorded on the trace so the drawer can say what the call was
+    # actually given, rather than leaving a reader to assume the global default.
+    budget = budget_for(spec)
+    record.budget_seconds = budget
     stage_started = time.perf_counter()
     live_result: GroundedResult | None = None
     reason: FallbackReason | None = None
@@ -847,9 +948,11 @@ def _run_pipeline(
                     prompt=prompt,
                     system=spec.summary,
                     output_schema=spec.output_schema,
-                    timeout_seconds=settings.ai_gateway_timeout_seconds,
+                    timeout_seconds=budget,
+                    stream=spec.stream,
+                    on_progress=on_progress,
                 ),
-                seconds=settings.ai_gateway_timeout_seconds,
+                seconds=budget,
             )
         except BudgetExpiredError as exc:
             reason = FallbackReason.TIMEOUT

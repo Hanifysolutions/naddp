@@ -72,12 +72,14 @@ from app.domain.enums import (
 
 __all__ = [
     "DEFAULT_SCENARIO",
+    "HEAVY_BUDGET_SECONDS",
     "PURPOSES",
     "ContextPolicy",
     "ContextRefusal",
     "ModelRoute",
     "PurposeNotAllowedError",
     "PurposeSpec",
+    "budget_for",
     "check_context",
     "resolve_purpose",
     "route_for",
@@ -141,6 +143,17 @@ class ContextPolicy:
     rationale: str = ""
 
 
+#: Budget for a purpose that generates prose. Architect ruling after the W2.2 review: the
+#: flat 4s budget guaranteed a timeout on every heavy call, so the live path was theatre.
+#:
+#: The ruling names morning_brief and meeting_prep. It is applied here to every STRONG-tier
+#: generative purpose, meeting_followup and knowledge_answer included, because the reasoning
+#: is identical -- they generate prose against the same models -- and leaving those two at
+#: 4s would reintroduce exactly the bug the ruling exists to fix. Flagged for confirmation
+#: rather than assumed: see docs/OPEN_QUESTIONS.md Q-21.
+HEAVY_BUDGET_SECONDS: Final[float] = 25.0
+
+
 @dataclass(frozen=True, slots=True)
 class ModelRoute:
     """The stage 5 routing decision, per ``BUILD_BIBLE.md`` section 4a.
@@ -181,6 +194,15 @@ class PurposeSpec:
     scenario_includes_role: bool = False
     #: Sector codes used to narrow stage 3 retrieval when the caller names none.
     default_sector_codes: tuple[str, ...] = ()
+    #: Wall-clock budget for the live call, in seconds. ``None`` takes the global default
+    #: (``AI_GATEWAY_TIMEOUT_SECONDS``, 4s), which is right for a purpose that returns a
+    #: number and a sentence. A purpose that generates prose needs far longer, and a flat
+    #: 4s budget for those meant the live path timed out essentially every time -- the
+    #: Gateway was "live" only in the sense that it tried. See ADR-0002 and the W2.2 review.
+    budget_seconds: float | None = None
+    #: Whether the caller is offered token-level progress while a long call runs. A 25s
+    #: wait with no feedback reads as a hung demo, which is a worse failure than a slow one.
+    stream: bool = False
     #: Whether this purpose may EVER make an external call, independent of the band its
     #: context happens to fall in. Section 4a routes by data class, and consular_triage
     #: caps at MISSION_INTERNAL precisely because narrative never enters it -- so by the
@@ -278,6 +300,8 @@ _NO_QUESTION_POLICY: Final[ContextPolicy] = ContextPolicy(
 _SPECS: Final[tuple[PurposeSpec, ...]] = (
     PurposeSpec(
         purpose=AiPurpose.MORNING_BRIEF,
+        budget_seconds=HEAVY_BUDGET_SECONDS,
+        stream=True,
         output_schema=MorningBriefResult,
         max_classification=Classification.MISSION_INTERNAL,
         consequential=False,
@@ -307,6 +331,8 @@ _SPECS: Final[tuple[PurposeSpec, ...]] = (
     ),
     PurposeSpec(
         purpose=AiPurpose.MEETING_PREP,
+        budget_seconds=HEAVY_BUDGET_SECONDS,
+        stream=True,
         output_schema=MeetingPrepResult,
         max_classification=Classification.CONFIDENTIAL,
         consequential=False,
@@ -317,6 +343,8 @@ _SPECS: Final[tuple[PurposeSpec, ...]] = (
     ),
     PurposeSpec(
         purpose=AiPurpose.MEETING_FOLLOWUP,
+        budget_seconds=HEAVY_BUDGET_SECONDS,
+        stream=True,
         output_schema=MeetingFollowupResult,
         max_classification=Classification.MISSION_INTERNAL,
         consequential=True,
@@ -349,6 +377,8 @@ _SPECS: Final[tuple[PurposeSpec, ...]] = (
     ),
     PurposeSpec(
         purpose=AiPurpose.KNOWLEDGE_ANSWER,
+        budget_seconds=HEAVY_BUDGET_SECONDS,
+        stream=True,
         output_schema=KnowledgeAnswerResult,
         max_classification=Classification.MISSION_INTERNAL,
         consequential=False,
@@ -504,6 +534,7 @@ def scenario_for(spec: PurposeSpec, role: RoleCode, context: GatewayContext) -> 
 #: not incidental formatting.
 BADGE_SEP: Final[str] = " · "
 
+
 #: Which capability tier each purpose takes, per BUILD_BIBLE section 4a: "Fast:
 #: classify/score - Strong: briefs/meeting-prep". Scoring and matching produce a number
 #: and a short rationale, where the strong tier buys little; a brief or a draft
@@ -520,6 +551,13 @@ _TIER_BY_PURPOSE: Final[Mapping[AiPurpose, str]] = MappingProxyType(
         AiPurpose.CONSULAR_TRIAGE: "fast",
     }
 )
+
+
+def budget_for(spec: PurposeSpec) -> float:
+    """Wall-clock budget for this purpose's live call, in seconds."""
+    if spec.budget_seconds is not None:
+        return spec.budget_seconds
+    return get_settings().ai_gateway_timeout_seconds
 
 
 def tier_for(purpose: AiPurpose) -> str:

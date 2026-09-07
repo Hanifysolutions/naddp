@@ -29,7 +29,7 @@ DB_USER        ?= naddp
 DB_NAME        ?= naddp
 DB_WAIT_TRIES  ?= 60
 
-.PHONY: help install db-up db-down migrate dev seed demo-reset test lint typecheck gen-client clean
+.PHONY: help install db-up db-down migrate dev seed demo-reset demo-prewarm test lint typecheck gen-client clean
 
 help: ## Show this help
 	@printf '\nNADDP — Nigeria-Australia Digital Diplomacy Platform (DEMO / SYNTHETIC DATA ONLY)\n\n'
@@ -87,6 +87,10 @@ demo-reset: ## Drop the schema, re-migrate and re-seed — restores a clean demo
 	@# process-local: this clears them here and prints the restart a running API needs.
 	cd $(API_DIR) && $(UV) run python -m app.ai.reset
 	@printf '\ndemo-reset complete — clean seeded state restored\n'
+
+demo-prewarm: ## Generate and cache the hero morning briefs (run AFTER demo-reset)
+	@printf 'warming the demo caches\n'
+	cd $(API_DIR) && $(UV) run python -m app.cli.prewarm
 
 test: ## Run the API test suite plus web lint + typecheck
 	cd $(API_DIR) && $(UV) run pytest

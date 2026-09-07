@@ -36,9 +36,20 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Final
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+)
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID  # noqa: N811
@@ -359,6 +370,16 @@ class AiTrace(UUIDPrimaryKeyMixin, Base):
             "(ADR-0006). Unbounded Text because it is prose. This sentence is the single "
             "most persuasive thing in the drawer -- it is the difference between showing a "
             "decision and asserting one -- so it is NOT NULL and must never be boilerplate."
+        ),
+    )
+    budget_seconds: Mapped[Decimal | None] = mapped_column(
+        Numeric(6, 2),
+        nullable=True,
+        comment=(
+            "Wall-clock budget this call was given, in seconds. PER PURPOSE, not global: "
+            "a purpose returning a score gets ~4s, one generating prose gets 25s. Recorded "
+            "because 'it fell back' means something different at 4s than at 25s, and a "
+            "reader cannot tell which without knowing what the call was actually allowed."
         ),
     )
     model_tier: Mapped[str | None] = mapped_column(

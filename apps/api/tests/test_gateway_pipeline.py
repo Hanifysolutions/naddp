@@ -26,7 +26,7 @@ from app.ai.fallback import (
     snapshot_file,
 )
 from app.ai.gateway import _ProviderResponse, generate, generate_traced
-from app.ai.purposes import DEFAULT_SCENARIO, PURPOSES, PurposeNotAllowedError
+from app.ai.purposes import DEFAULT_SCENARIO, HEAVY_BUDGET_SECONDS, PURPOSES, PurposeNotAllowedError
 from app.ai.schemas import GatewayContext, GatewayResult
 from app.core import config as config_module
 from app.core.config import Settings
@@ -291,8 +291,13 @@ def test_consular_triage_accepts_metadata_and_proposes_a_triage() -> None:
 
 
 def test_timeout_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
-    settings = _live_settings(ai_gateway_timeout_seconds=0.2)
+    settings = _live_settings()
     monkeypatch.setattr(gateway_module, "get_settings", lambda: settings)
+    # The budget is PER PURPOSE now, so AI_GATEWAY_TIMEOUT_SECONDS no longer governs
+    # morning_brief (it gets 25s). Patch the resolver rather than the setting: the property
+    # under test is "the budget bounds the response", not "the budget is 0.2s", and waiting
+    # 25s to prove it would be a poor trade.
+    monkeypatch.setattr(gateway_module, "budget_for", lambda _spec: 0.2)
 
     def _slow(**_: Any) -> _ProviderResponse:
         time.sleep(1.5)
@@ -309,6 +314,19 @@ def test_timeout_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
     assert outcome.trace.live is True, "a call WAS attempted; the trace must say so"
     assert outcome.envelope.result is not None, "the demo must not dead-end on a timeout"
     assert elapsed < 1.4, "the budget must bound the response, not the provider"
+    assert outcome.trace.budget_seconds == pytest.approx(0.2), (
+        "the trace must record the budget the call was actually given"
+    )
+
+
+def test_the_budget_is_per_purpose_and_recorded() -> None:
+    """Architect ruling, W2.2 review: a flat 4s made every heavy call time out."""
+    heavy = _go(AiPurpose.MORNING_BRIEF, role=RoleCode.AMBASSADOR)
+    light = _go(AiPurpose.OPPORTUNITY_SCORE, role=RoleCode.AMBASSADOR)
+
+    assert heavy.trace.budget_seconds == pytest.approx(HEAVY_BUDGET_SECONDS)
+    assert light.trace.budget_seconds == pytest.approx(4.0)
+    assert heavy.trace.budget_seconds > light.trace.budget_seconds
 
 
 @pytest.mark.parametrize(
