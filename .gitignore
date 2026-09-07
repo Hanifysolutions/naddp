@@ -72,6 +72,16 @@ desktop.ini
 !/storage/.gitkeep
 !/storage/README.md
 
+# --- Generated seed manifest (produced by `make seed`) ---
+# Maps stable seed slugs to the primary keys of the current dataset, so an eval case
+# or a demo script can name `opp-au-lithium-ng-skills-corridor` rather than a UUID.
+# NOT committed: the identifiers are a pure function of the slug and so are reproduced
+# identically by any `make seed`, while the `cases.public_ref` values it also records
+# are CSPRNG-minted (ADR-0007) and legitimately change on every `make demo-reset`.
+# Committing it would therefore add churn and no information. Run `make seed` to
+# produce it; anything that reads it runs after the seed by definition.
+data/demo-seed/manifest.json
+
 # --- Generated OpenAPI contract output (produced by `make gen-client`) ---
 # NOTE: packages/contracts/src/generated/openapi.d.ts IS committed on purpose.
 # It is the placeholder `packages/contracts/src/index.ts` imports, so a fresh

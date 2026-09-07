@@ -1,0 +1,44 @@
+# Lint configuration for the seed loader.
+#
+# WHY THIS FILE EXISTS. `apps/api/pyproject.toml` configures ruff for the API, and ruff
+# resolves configuration by walking up from the file being linted -- so `data/demo-seed/`
+# would otherwise fall through to ruff's defaults and be held to a different standard from
+# the code it imports. This mirrors the API's settings so that one repository has one
+# style, and adds the two things that are specific to a script run outside the package:
+#
+#   * `seed_parts` is first-party, so isort groups it with `app` rather than with pypi
+#     packages (it is a sibling package on sys.path, not a dependency);
+#   * `T201` is not selected, because printing the volume report is the seed's job.
+#
+# Run it explicitly, from `apps/api`:
+#
+#     uv run ruff check ../../data/demo-seed
+#     uv run ruff format --check ../../data/demo-seed
+#
+# `make lint` does not cover this directory today: the API target is `ruff check .` from
+# `apps/api`, and widening it belongs to whoever owns the Makefile.
+
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = [
+    "E",     # pycodestyle errors
+    "F",     # pyflakes
+    "I",     # isort
+    "N",     # pep8-naming
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "SIM",   # flake8-simplify
+    "RUF",   # ruff-specific
+    "ANN",   # flake8-annotations
+    "S",     # flake8-bandit
+    "C4",    # flake8-comprehensions
+    "PTH",   # flake8-use-pathlib
+]
+
+[lint.isort]
+known-first-party = ["app", "seed_parts"]
+
+[format]
+line-ending = "lf"

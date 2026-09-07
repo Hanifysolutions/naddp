@@ -437,6 +437,7 @@ def write_audit_event(
     trace_id: uuid.UUID | None = None,
     ip_address: str | None = None,
     user_agent: str | None = None,
+    occurred_at: datetime | None = None,
 ) -> AuditEvent:
     """Append one row to ``audit_events`` and return it.
 
@@ -473,12 +474,41 @@ def write_audit_event(
         trace_id: The ``ai_traces`` row that informed this event, where one did.
         ip_address: Client address; ``None`` for a system action.
         user_agent: Client user agent; ``None`` for a system action.
+        occurred_at: **Backdating override, for the seed loader only.** Leave it ``None``
+            and the timestamp comes from the database clock, which is what every
+            application path must do -- a caller-supplied time in an evidentiary table is a
+            caller-controlled fact, and that is the whole reason ``_database_now`` exists.
+
+            The single sanctioned exception is ``data/demo-seed/seed.py``, which has to
+            lay down about 450 rows of *historical* audit trail over a trailing eight
+            weeks (``docs/OPEN_QUESTIONS.md`` Q-13). The alternative was hand-inserting
+            those rows, which would bypass the hash chain and break it at the first row --
+            so the narrow parameter is strictly safer than the workaround it replaces.
+            The value is still covered by ``event_hash`` (it is in
+            :func:`_hashable_fields`), so a backdated row is no less tamper-evident than
+            any other; what it is not is *independently attested*, which is why nothing
+            but the seed may pass it.
+
+            Must be timezone-aware. A naive value is rejected rather than assumed to be
+            UTC: a silent assumption here would put a row hours away from where the caller
+            meant it, in the one table where the time is the evidence.
+
+    Raises:
+        ValueError: if ``occurred_at`` is naive.
 
     Returns:
         The persisted :class:`~app.models.governance.AuditEvent`, with its ``id``,
         ``occurred_at``, ``event_hash`` and ``prev_event_hash`` populated.
     """
     context = current_audit_context()
+
+    if occurred_at is not None and occurred_at.tzinfo is None:
+        msg = (
+            "write_audit_event(occurred_at=...) requires a timezone-aware datetime; "
+            "a naive value would be silently reinterpreted as UTC in the one table "
+            "whose timestamps are the evidence."
+        )
+        raise ValueError(msg)
 
     # Flush first so that any audit row written earlier in this transaction is visible to
     # the ORDER BY below. Without it, two events in one unit of work would both chain to
@@ -487,7 +517,7 @@ def write_audit_event(
 
     row = AuditEvent(
         id=new_id(),
-        occurred_at=_database_now(session),
+        occurred_at=occurred_at if occurred_at is not None else _database_now(session),
         actor_user_id=actor.user_id if actor is not None else None,
         actor_role=actor.role if actor is not None else None,
         action=action,
