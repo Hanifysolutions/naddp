@@ -46,8 +46,12 @@ EXPECTED_ROUTES: Final[tuple[tuple[str, str], ...]] = (
     ("POST", "/v1/session/end"),
     ("GET", "/v1/command/today"),
     ("GET", "/v1/opportunities"),
+    ("GET", "/v1/opportunities/board"),
     ("GET", "/v1/opportunities/{opportunity_id}"),
     ("POST", "/v1/opportunities/{opportunity_id}/transition"),
+    ("GET", "/v1/stakeholders/organisations"),
+    ("GET", "/v1/stakeholders/organisations/{organisation_id}"),
+    ("GET", "/v1/stakeholders/people/{stakeholder_id}"),
     ("POST", "/v1/ai/morning-brief"),
     ("POST", "/v1/ai/opportunities/{opportunity_id}/score"),
     ("POST", "/v1/ai/meetings/{meeting_id}/prep"),
@@ -269,11 +273,17 @@ def test_every_business_route_refuses_an_anonymous_caller(client: TestClient) ->
     for method, path in EXPECTED_ROUTES:
         if path in UNGATED_ROUTES:
             continue
+        # A nil UUID for every path parameter. The row cannot exist, which is the point:
+        # an anonymous caller must be refused before the handler ever looks it up, so the
+        # expected answer is 403 and never 404.
+        nil = "00000000-0000-0000-0000-000000000000"
         url = path.format(
-            opportunity_id="00000000-0000-0000-0000-000000000000",
-            meeting_id="00000000-0000-0000-0000-000000000000",
-            case_id="00000000-0000-0000-0000-000000000000",
-            trace_id="00000000-0000-0000-0000-000000000000",
+            opportunity_id=nil,
+            meeting_id=nil,
+            case_id=nil,
+            trace_id=nil,
+            organisation_id=nil,
+            stakeholder_id=nil,
         )
         response = client.request(method, url)
         assert response.status_code == 403, f"{method} {url} answered {response.status_code}"

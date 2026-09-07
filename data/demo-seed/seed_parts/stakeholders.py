@@ -20,6 +20,7 @@ recognise rather than a flat wall of green.
 from __future__ import annotations
 
 import unicodedata
+import uuid
 from dataclasses import dataclass
 from typing import Final
 
@@ -31,6 +32,7 @@ from app.domain.enums import (
     OrganisationType,
     RelationshipStrength,
     RoleCode,
+    dominant,
 )
 from app.models.governance import User
 from app.models.stakeholders import Interaction, Organisation, Stakeholder
@@ -38,9 +40,11 @@ from seed_parts.context import SeedContext
 from seed_parts.registry import require_sector, verified
 
 __all__ = [
+    "HERO_INTERACTIONS",
     "ORGANISATION_SPECS",
     "STAKEHOLDER_SPECS",
     "SYNTHETIC_NOTE",
+    "seed_hero_interactions",
     "seed_interactions",
     "seed_stakeholders",
 ]
@@ -419,6 +423,21 @@ ORGANISATION_SPECS: Final[tuple[OrganisationSpec, ...]] = (
         ),
     ),
 )
+
+
+@dataclass(frozen=True, slots=True)
+class HeroInteractionSpec:
+    """One hand-written entry on the hero thread's timeline."""
+
+    slug: str
+    stakeholder_slug: str
+    organisation_slug: str
+    interaction_type: InteractionType
+    direction: InteractionDirection
+    days_ago: float
+    subject: str
+    body: str
+    recorded_by: RoleCode
 
 
 STAKEHOLDER_SPECS: Final[tuple[StakeholderSpec, ...]] = (
@@ -934,8 +953,164 @@ def seed_interactions(
                     "is not a record of anything said by the organisation named."
                 ),
                 recorded_by_user_id=users[spec.owner].id,
-                classification=Classification.MISSION_INTERNAL,
+                # ADR-0006: the effective classification is the maximum over the row's
+                # constituents. An interaction with a CONFIDENTIAL counterpart is itself at
+                # least confidential - it is a record of speaking to them - so a flat
+                # MISSION_INTERNAL here would have put the substance of a confidential
+                # relationship one clearance rank lower than the relationship itself.
+                classification=dominant(
+                    Classification.MISSION_INTERNAL, stakeholder.classification
+                ),
             )
             offset += 18.0 + ctx.rng.uniform(4.0, 40.0)
     ctx.session.flush()
     return interactions
+
+
+#: The hero thread's own contact history, hand-written rather than generated.
+#:
+#: WHY THESE ARE NOT GENERATED. :func:`seed_interactions` produces a plausible spread of
+#: touches for thirty counterparts, which is what the Relationship Health tile needs. It
+#: cannot produce a *narrative* - a sequence where the Australian operator and the Nigerian
+#: institute are visibly being worked toward the same opportunity - and without that the
+#: Stakeholder 360 dossier opens on a timeline that has nothing to do with the opportunity
+#: beside it. These seven entries are the thread the demo actually walks.
+#:
+#: Every one carries ``opportunity_id``, which is what ties the two dossiers to the hero
+#: opportunity and satisfies the ``record_contact`` guard in ``docs/workflows.md`` row 6.
+#: Content is synthetic and attributes nothing to the organisations named (section 11).
+HERO_INTERACTIONS: Final[tuple[HeroInteractionSpec, ...]] = (
+    HeroInteractionSpec(
+        "int-hero-covalent-intro",
+        "stk-covalent-external-affairs",
+        "org-covalent-lithium",
+        InteractionType.EMAIL,
+        InteractionDirection.OUTBOUND,
+        112.0,
+        "Introduction: mission interest in processing workforce pathways",
+        (
+            "Mission introduced itself and asked whether the operator would be open to a "
+            "conversation about processing-skills pathways. Synthetic demo record."
+        ),
+        RoleCode.TRADE_OFFICER,
+    ),
+    HeroInteractionSpec(
+        "int-hero-nimg-intro",
+        "stk-nimg-deputy-provost",
+        "org-nimg",
+        InteractionType.CALL,
+        InteractionDirection.OUTBOUND,
+        104.0,
+        "Call: institute capacity for process-operator training",
+        (
+            "Discussed the institute's existing programmes and what a trainer-of-trainers "
+            "pilot would require. Synthetic demo record."
+        ),
+        RoleCode.TRADE_OFFICER,
+    ),
+    HeroInteractionSpec(
+        "int-hero-covalent-briefing",
+        "stk-covalent-external-affairs",
+        "org-covalent-lithium",
+        InteractionType.EVENT,
+        InteractionDirection.OUTBOUND,
+        74.0,
+        "Critical minerals workforce briefing, Perth",
+        (
+            "Mission attended an industry briefing and followed up on the workforce theme. "
+            "Synthetic demo record."
+        ),
+        RoleCode.TRADE_OFFICER,
+    ),
+    HeroInteractionSpec(
+        "int-hero-nimg-curriculum",
+        "stk-nimg-deputy-provost",
+        "org-nimg",
+        InteractionType.MEETING,
+        InteractionDirection.INBOUND,
+        58.0,
+        "Meeting: curriculum mapping against WA processing roles",
+        (
+            "Institute walked the mission through its curriculum and where it would need to "
+            "map onto Australian processing roles. Synthetic demo record."
+        ),
+        RoleCode.TRADE_OFFICER,
+    ),
+    HeroInteractionSpec(
+        "int-hero-internal-readout",
+        "stk-covalent-external-affairs",
+        "org-covalent-lithium",
+        InteractionType.NOTE,
+        InteractionDirection.INTERNAL,
+        41.0,
+        "Internal note: the corridor is a synthesis, not a reported fact",
+        (
+            "Recorded that no public source connects these two parties. Both sides of the "
+            "case are evidenced; the link between them is the mission's own proposition and "
+            "must be presented that way (OPEN_QUESTIONS Q-17). Synthetic demo record."
+        ),
+        RoleCode.DEPUTY,
+    ),
+    HeroInteractionSpec(
+        "int-hero-covalent-refinery-ramp",
+        "stk-covalent-process-superintendent",
+        "org-covalent-lithium",
+        InteractionType.EMAIL,
+        InteractionDirection.INBOUND,
+        22.0,
+        "Refinery ramp-up and what it implies for operator numbers",
+        (
+            "Operator pointed the mission at its published ramp-up position. Note the "
+            "concentrator expansion and the refinery ramp are different things and must not "
+            "be conflated (BUILD_BIBLE section 2). Synthetic demo record."
+        ),
+        RoleCode.TRADE_OFFICER,
+    ),
+    HeroInteractionSpec(
+        "int-hero-nimg-next-step",
+        "stk-nimg-deputy-provost",
+        "org-nimg",
+        InteractionType.EMAIL,
+        InteractionDirection.OUTBOUND,
+        6.0,
+        "Proposed next step: joint scoping note before any approach",
+        (
+            "Mission proposed drafting a joint scoping note. Nothing has been offered or "
+            "committed to either party. Synthetic demo record."
+        ),
+        RoleCode.TRADE_OFFICER,
+    ),
+)
+
+
+def seed_hero_interactions(
+    ctx: SeedContext,
+    users: dict[RoleCode, User],
+    organisations: dict[str, Organisation],
+    stakeholders: dict[str, Stakeholder],
+    hero_opportunity_id: uuid.UUID,
+) -> dict[str, Interaction]:
+    """Write the hero thread's contact history, tied to the hero opportunity.
+
+    Called after ``seed_opportunities`` because it needs the opportunity's id - which is
+    the whole point of it. ``seed_interactions`` runs before and cannot do this.
+    """
+    written: dict[str, Interaction] = {}
+    for spec in HERO_INTERACTIONS:
+        written[spec.slug] = ctx.upsert(
+            Interaction,
+            ctx.register("interaction", spec.slug),
+            stakeholder_id=stakeholders[spec.stakeholder_slug].id,
+            organisation_id=organisations[spec.organisation_slug].id,
+            opportunity_id=hero_opportunity_id,
+            meeting_id=None,
+            interaction_type=spec.interaction_type,
+            direction=spec.direction,
+            occurred_at=ctx.days_ago(spec.days_ago),
+            subject=spec.subject,
+            body=spec.body,
+            recorded_by_user_id=users[spec.recorded_by].id,
+            classification=Classification.MISSION_INTERNAL,
+        )
+    ctx.session.flush()
+    return written

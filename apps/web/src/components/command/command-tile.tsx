@@ -1,5 +1,14 @@
 import * as React from 'react';
-import { Ban, Inbox, Lock, LoaderCircle, TriangleAlert, type LucideIcon } from 'lucide-react';
+import Link from 'next/link';
+import {
+  ArrowRight,
+  Ban,
+  Inbox,
+  Lock,
+  LoaderCircle,
+  TriangleAlert,
+  type LucideIcon,
+} from 'lucide-react';
 
 import { DistributionBars } from '@/components/command/distribution-bars';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -73,6 +82,14 @@ export function CommandTile({ view, children }: CommandTileProps): React.JSX.Ele
           <StateChip state={state} />
         </div>
         <p className="text-xs leading-snug text-muted-foreground">{definition.description}</p>
+        {definition.href === undefined || !showsBody ? null : (
+          <Link
+            href={definition.href}
+            className="inline-flex w-fit items-center gap-1 text-xs font-medium underline underline-offset-2 hover:text-foreground"
+          >
+            Open <ArrowRight aria-hidden="true" className="size-3" />
+          </Link>
+        )}
       </CardHeader>
 
       <CardContent className="flex flex-1 flex-col gap-3">

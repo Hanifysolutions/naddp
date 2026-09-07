@@ -61,9 +61,10 @@ from app.models.diaspora import DiasporaProfile
 from app.models.intelligence import Signal
 from app.models.meetings import Meeting
 from app.models.opportunities import Opportunity
-from app.models.stakeholders import Stakeholder
+from app.models.stakeholders import Organisation, Stakeholder
 from app.security.permissions import Permission
 from app.security.principal import Principal, readable_classifications_for
+from app.services.stakeholders import DORMANT_AFTER
 
 __all__ = [
     "CONSULAR_OPEN_STATUSES",
@@ -118,12 +119,23 @@ CONSULAR_OPEN_STATUSES: Final[frozenset[CaseStatus]] = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class OpportunityTile:
-    """The trade pipeline, by stage. Requires ``read:opportunity``."""
+    """Bilateral Opportunity Health: the trade pipeline, by stage. Requires ``read:opportunity``.
+
+    Counts, not a composite health score (OPEN_QUESTIONS A-08): a "health" judgement needs a
+    baseline and thresholds nobody has supplied, and inventing them here would put a number
+    on the command centre that no officer could defend when asked what it means.
+
+    ``pipeline_value_aud`` is the one non-count, and it is a plain sum of a stored column
+    over the open stages - not a forecast. It is quoted next to the stage counts because
+    "ten open" and "ten open worth A$25m" are different briefings.
+    """
 
     total: int
     open_total: int
     by_stage: Mapping[OpportunityStage, int]
     overdue_next_action: int
+    pipeline_value_aud: float
+    ai_proposed: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,11 +152,19 @@ class ConsularTile:
 
 @dataclass(frozen=True, slots=True)
 class StakeholderTile:
-    """The relationship map, by strength. Requires ``read:stakeholder``."""
+    """Relationship Health: the relationship map, by strength. Requires ``read:stakeholder``.
+
+    ``dormant`` counts contacts last spoken to more than
+    :data:`app.services.stakeholders.DORMANT_AFTER` ago. Distinct from ``never_contacted``
+    on purpose: a relationship that has gone quiet and one that was never started need
+    different work, and a tile that merged them would hide which.
+    """
 
     total: int
     by_relationship_strength: Mapping[RelationshipStrength, int]
     never_contacted: int
+    dormant: int
+    organisations: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,6 +274,27 @@ def _opportunity_tile(
                 Opportunity.next_action_at < now,
             ),
         ),
+        # coalesce so an empty pipeline is 0.0 rather than None. A tile that renders "-"
+        # where a number belongs reads as a bug on stage even when it is arithmetically
+        # honest.
+        pipeline_value_aud=float(
+            session.scalar(
+                select(func.coalesce(func.sum(Opportunity.value_estimate_aud), 0)).where(
+                    readable, Opportunity.stage.in_(OPPORTUNITY_OPEN_STAGES)
+                )
+            )
+            or 0
+        ),
+        ai_proposed=_count(
+            session,
+            select(func.count())
+            .select_from(Opportunity)
+            .where(
+                readable,
+                Opportunity.stage.in_(OPPORTUNITY_OPEN_STAGES),
+                Opportunity.is_proposed_by_ai.is_(True),
+            ),
+        ),
     )
 
 
@@ -306,7 +347,9 @@ def _consular_tile(
     )
 
 
-def _stakeholder_tile(session: Session, zones: Sequence[Classification]) -> StakeholderTile:
+def _stakeholder_tile(
+    session: Session, zones: Sequence[Classification], now: datetime
+) -> StakeholderTile:
     """Relationship counts by strength."""
     readable = Stakeholder.classification.in_(zones)
     return StakeholderTile(
@@ -319,6 +362,22 @@ def _stakeholder_tile(session: Session, zones: Sequence[Classification]) -> Stak
             select(func.count())
             .select_from(Stakeholder)
             .where(readable, Stakeholder.last_contact_at.is_(None)),
+        ),
+        dormant=_count(
+            session,
+            select(func.count())
+            .select_from(Stakeholder)
+            .where(
+                readable,
+                Stakeholder.last_contact_at.is_not(None),
+                Stakeholder.last_contact_at < now - DORMANT_AFTER,
+            ),
+        ),
+        organisations=_count(
+            session,
+            select(func.count())
+            .select_from(Organisation)
+            .where(Organisation.classification.in_(zones)),
         ),
     )
 
@@ -437,7 +496,7 @@ def build_command_today(session: Session, principal: Principal) -> CommandToday:
 
     stakeholders: StakeholderTile | None = None
     if principal.has(Permission.READ_STAKEHOLDER):
-        stakeholders = _stakeholder_tile(session, zones)
+        stakeholders = _stakeholder_tile(session, zones, now)
         visible.append("stakeholders")
 
     diaspora: DiasporaTile | None = None

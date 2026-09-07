@@ -23,7 +23,12 @@ CONTRACTS_DIR  ?= packages/contracts
 SEED_SCRIPT    ?= data/demo-seed/seed.py
 API_PORT       ?= 8000
 WEB_PORT       ?= 3000
-API_URL        ?= http://localhost:$(API_PORT)
+# 127.0.0.1, not localhost. gen-client starts uvicorn bound to 127.0.0.1, and on Windows
+# `localhost` resolves to ::1 first - so curl reached an address nothing was listening on
+# and the target failed with "could not fetch" while the server it had just started sat
+# there answering. Pinning the literal address removes the resolution order from the
+# question entirely.
+API_URL        ?= http://127.0.0.1:$(API_PORT)
 DB_SERVICE     ?= db
 DB_USER        ?= naddp
 DB_NAME        ?= naddp

@@ -292,6 +292,27 @@ export type OpportunityPage = components['schemas']['OpportunityPageResponse'];
 export type OpportunitySummary = components['schemas']['OpportunitySummary'];
 export type OpportunityStage = components['schemas']['OpportunityStage'];
 
+/** `GET /v1/opportunities/board`: the kanban, grouped by stage, display fields resolved. */
+export type PipelineBoard = components['schemas']['PipelineBoardResponse'];
+export type BoardColumn = components['schemas']['BoardColumnResponse'];
+export type BoardCard = components['schemas']['BoardCardResponse'];
+export type GatedEvent = components['schemas']['GatedEventResponse'];
+
+/** `POST /v1/opportunities/{id}/transition`: fire a workflow event. */
+export type TransitionRequest = components['schemas']['TransitionRequest'];
+export type TransitionResponse = components['schemas']['TransitionResponse'];
+export type OpportunityDetail = components['schemas']['OpportunityDetail'];
+
+/** `GET /v1/stakeholders/*`: the organisation index and the Stakeholder 360 dossier. */
+export type OrganisationList = components['schemas']['OrganisationListResponse'];
+export type OrganisationRow = components['schemas']['OrganisationRowResponse'];
+export type Dossier = components['schemas']['DossierResponse'];
+export type DossierPerson = components['schemas']['DossierPersonResponse'];
+export type DossierOpportunity = components['schemas']['DossierOpportunityResponse'];
+export type TimelineEntry = components['schemas']['TimelineEntryResponse'];
+export type ResolvedSource = components['schemas']['ResolvedSourceResponse'];
+export type InteractionType = components['schemas']['InteractionType'];
+
 /** `GET /v1/audit/events`: one page of the append-only log, newest first. */
 export type AuditEventPage = components['schemas']['AuditEventPageResponse'];
 export type AuditEvent = components['schemas']['AuditEventResponse'];

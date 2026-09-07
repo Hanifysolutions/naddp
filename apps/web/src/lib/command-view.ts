@@ -156,6 +156,15 @@ export interface TileDefinition {
   readonly metricGridClass: string;
   /** Which API tiles this card is built from. */
   readonly sources: readonly ApiTileKey[];
+  /**
+   * The screen this tile summarises, when one exists in this build.
+   *
+   * A summary the reader cannot act on is a dead end, and BUILD_BIBLE section 0 does not
+   * allow those. The link is rendered only in the `ready` and `empty` states: a tile the
+   * caller may not read must not offer a route to the thing they may not read either -
+   * the API would refuse them, but the offer itself would leak that it exists.
+   */
+  readonly href?: string;
 }
 
 /** Three metric columns from 1280px up. For tiles spanning four columns or more. */
@@ -216,6 +225,7 @@ export const TILE_DEFINITIONS: readonly TileDefinition[] = [
     span: 'md:col-span-3 xl:col-span-3 desk:col-span-4',
     metricGridClass: NARROW_METRICS,
     sources: ['opportunities'],
+    href: '/opportunities',
   },
   {
     id: 'citizen-service-health',
@@ -232,6 +242,7 @@ export const TILE_DEFINITIONS: readonly TileDefinition[] = [
     span: 'md:col-span-3 xl:col-span-4',
     metricGridClass: WIDE_METRICS,
     sources: ['stakeholders'],
+    href: '/stakeholders',
   },
   {
     id: 'diaspora-capability',
@@ -267,6 +278,19 @@ export function formatCount(value: number): string {
 }
 
 /**
+ * Format a money figure for an executive tile.
+ *
+ * Rounded to the nearest hundred thousand and rendered as "A$24.9m", because the precision
+ * the column carries is not the precision the estimate has - printing A$24,900,000 on a
+ * summary tile claims an accuracy nobody behind the number would defend.
+ */
+export function formatAud(value: number): string {
+  if (value >= 1_000_000) return `A$${(value / 1_000_000).toFixed(1)}m`;
+  if (value >= 1_000) return `A$${Math.round(value / 1_000)}k`;
+  return `A$${NUMBER_FORMAT.format(Math.round(value))}`;
+}
+
+/**
  * Read one bucket out of a distribution map.
  *
  * Returns `null`, never 0, when the key is absent. The API contracts to send every enum
@@ -287,6 +311,26 @@ function metric(
   return {
     label,
     value: formatCount(value),
+    ...(options.hint === undefined ? {} : { hint: options.hint }),
+    ...(options.tone === undefined ? {} : { tone: options.tone }),
+  };
+}
+
+/**
+ * A metric whose value is already formatted - money, so far.
+ *
+ * Separate from {@link metric} rather than widening its parameter to `number | string`:
+ * that widening would also let a caller pass an unformatted number straight through as a
+ * string and skip `formatCount`, which is how a tile ends up rendering "24900000".
+ */
+function formattedMetric(
+  label: string,
+  value: string,
+  options: { hint?: string; tone?: MetricTone } = {},
+): TileMetric {
+  return {
+    label,
+    value,
     ...(options.hint === undefined ? {} : { hint: options.hint }),
     ...(options.tone === undefined ? {} : { tone: options.tone }),
   };
@@ -410,7 +454,9 @@ function opportunityContent(tile: OpportunityTile): TileContent {
       metric('Overdue next action', tile.overdue_next_action, {
         tone: riskTone(tile.overdue_next_action, 'destructive'),
       }),
-      bucketMetric('At negotiation', tile.by_stage, 'NEGOTIATION'),
+      formattedMetric('Open pipeline', formatAud(tile.pipeline_value_aud), {
+        hint: 'sum of estimates, not probability-weighted',
+      }),
     ],
     distribution: distribution(
       'Pipeline by stage',
@@ -418,7 +464,17 @@ function opportunityContent(tile: OpportunityTile): TileContent {
       OPPORTUNITY_STAGE_ORDER,
       OPPORTUNITY_STAGE_LABELS,
     ),
-    note: null,
+    // Stated on the tile rather than only on the board: an AI-proposed opportunity that
+    // reaches an executive summary without that word attached has quietly become a
+    // reported fact (OPEN_QUESTIONS Q-17).
+    note:
+      tile.ai_proposed > 0
+        ? `${formatCount(tile.ai_proposed)} of these ${
+            tile.ai_proposed === 1 ? 'was' : 'were'
+          } proposed by the AI and ${
+            tile.ai_proposed === 1 ? 'is' : 'are'
+          } pending officer qualification.`
+        : null,
     observed: [tile.total, tile.open_total, tile.overdue_next_action],
   };
 }
@@ -452,11 +508,17 @@ function consularContent(tile: ConsularTile): TileContent {
 function stakeholderContent(tile: StakeholderTile): TileContent {
   return {
     metrics: [
-      metric('Stakeholders', tile.total),
+      metric('Contacts', tile.total, {
+        hint: `across ${formatCount(tile.organisations)} organisations`,
+      }),
       metric('Never contacted', tile.never_contacted, {
         tone: riskTone(tile.never_contacted, 'warning'),
       }),
-      bucketMetric('Strategic', tile.by_relationship_strength, 'STRATEGIC'),
+      // Distinct from 'never contacted', and the distinction is the point: a relationship
+      // that has gone quiet and one that was never started need different work.
+      metric('Dormant 90 days', tile.dormant, {
+        tone: riskTone(tile.dormant, 'warning'),
+      }),
     ],
     distribution: distribution(
       'Relationship strength',
@@ -465,7 +527,7 @@ function stakeholderContent(tile: StakeholderTile): TileContent {
       RELATIONSHIP_STRENGTH_LABELS,
     ),
     note: null,
-    observed: [tile.total, tile.never_contacted],
+    observed: [tile.total, tile.never_contacted, tile.dormant],
   };
 }
 

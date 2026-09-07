@@ -117,8 +117,7 @@ export const NAV_CATALOGUE: readonly NavItem[] = [
     description: 'Bilateral opportunity pipeline and stage transitions.',
     icon: 'opportunities',
     permission: 'read:opportunity',
-    availability: 'planned',
-    plannedFor: 'Week 2',
+    availability: 'available',
   },
   {
     href: '/stakeholders',
@@ -126,8 +125,7 @@ export const NAV_CATALOGUE: readonly NavItem[] = [
     description: 'Organisations, contacts and relationship history.',
     icon: 'stakeholders',
     permission: 'read:stakeholder',
-    availability: 'planned',
-    plannedFor: 'Week 2',
+    availability: 'available',
   },
   {
     href: '/meetings',

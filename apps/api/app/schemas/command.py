@@ -64,6 +64,15 @@ class OpportunityTileResponse(_Tile):
     overdue_next_action: int = Field(
         description="Open opportunities whose next_action_at has already passed."
     )
+    pipeline_value_aud: float = Field(
+        description=(
+            "Sum of value_estimate_aud across the open stages. A plain sum of a stored "
+            "column, not a forecast: nothing here is probability-weighted."
+        )
+    )
+    ai_proposed: int = Field(
+        description="Open opportunities the AI proposed and no officer has yet qualified (Q-17)."
+    )
 
 
 class ConsularTileResponse(_Tile):
@@ -92,6 +101,14 @@ class StakeholderTileResponse(_Tile):
         description="Count per relationship strength, NONE included."
     )
     never_contacted: int = Field(description="Stakeholders with no recorded contact date.")
+    dormant: int = Field(
+        description=(
+            "Stakeholders contacted once but not in the last 90 days. Counted separately "
+            "from never_contacted: a relationship that has gone quiet and one that was "
+            "never started need different work."
+        )
+    )
+    organisations: int = Field(description="Organisations in zones you are cleared to read.")
 
 
 class DiasporaTileResponse(_Tile):

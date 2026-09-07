@@ -4,8 +4,12 @@ import {
   type ApiError,
   type AuditEventPage,
   type CommandTodayResponse,
+  type Dossier,
   type OpportunityPage,
+  type OrganisationList,
+  type PipelineBoard,
   type SessionSummary,
+  type TransitionResponse,
 } from '@naddp/contracts';
 
 import { api, API_BASE_URL } from '@/lib/api';
@@ -129,6 +133,96 @@ export async function assumeRole(
 ): Promise<SessionSummary> {
   const { data, error, response } = await guard(
     api.POST('/v1/session/assume-role', { body: { role }, signal }),
+  );
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/**
+ * `GET /v1/opportunities/board` - the pipeline, grouped by stage.
+ *
+ * One call rather than a list plus a fan-out: the cards show owner and counterpart *names*,
+ * and resolving those from the browser would be an N+1 across the wire on the one screen an
+ * audience is watching. The server also decides which events each card may offer, so the
+ * client never derives a button from a role.
+ */
+export async function fetchPipelineBoard(signal?: AbortSignal): Promise<PipelineBoard> {
+  const { data, error, response } = await guard(
+    api.GET('/v1/opportunities/board', { signal }),
+  );
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/**
+ * `POST /v1/opportunities/{id}/transition` - fire a workflow event.
+ *
+ * `expectedStage` is sent as a precondition, not as a courtesy: two officers with the board
+ * open are the normal case, and without it the second click would silently apply to a stage
+ * that had already moved. The API answers 409 instead, and the UI can say so.
+ *
+ * A refusal is thrown, never swallowed. A 403 here is a control working - BUILD_BIBLE
+ * section 6 requires it to be visible - so the caller renders the reason rather than a
+ * generic failure.
+ */
+export async function transitionOpportunity(
+  opportunityId: string,
+  event: string,
+  reason: string,
+  expectedStage: string,
+  signal?: AbortSignal,
+): Promise<TransitionResponse> {
+  const { data, error, response } = await guard(
+    api.POST('/v1/opportunities/{opportunity_id}/transition', {
+      params: { path: { opportunity_id: opportunityId } },
+      body: {
+        event,
+        reason,
+        expected_stage: expectedStage as TransitionResponse['from_stage'],
+      },
+      signal,
+    }),
+  );
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/** `GET /v1/stakeholders/organisations` - the organisation index. */
+export async function fetchOrganisations(
+  signal?: AbortSignal,
+): Promise<OrganisationList> {
+  const { data, error, response } = await guard(
+    api.GET('/v1/stakeholders/organisations', { signal }),
+  );
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/** `GET /v1/stakeholders/organisations/{id}` - Stakeholder 360 for an organisation. */
+export async function fetchOrganisationDossier(
+  organisationId: string,
+  signal?: AbortSignal,
+): Promise<Dossier> {
+  const { data, error, response } = await guard(
+    api.GET('/v1/stakeholders/organisations/{organisation_id}', {
+      params: { path: { organisation_id: organisationId } },
+      signal,
+    }),
+  );
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/** `GET /v1/stakeholders/people/{id}` - Stakeholder 360 for one named contact. */
+export async function fetchPersonDossier(
+  stakeholderId: string,
+  signal?: AbortSignal,
+): Promise<Dossier> {
+  const { data, error, response } = await guard(
+    api.GET('/v1/stakeholders/people/{stakeholder_id}', {
+      params: { path: { stakeholder_id: stakeholderId } },
+      signal,
+    }),
   );
   if (data === undefined) throw toApiError(response.status, error);
   return data;

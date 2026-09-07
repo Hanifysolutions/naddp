@@ -2,8 +2,8 @@ import * as React from 'react';
 
 import { MissionShell } from '@/components/layout/mission-shell';
 
-/** The command centre's chrome. See `components/layout/mission-shell` for why it is shared. */
-export default async function CommandLayout({
+/** Same chrome as every other staff route. See `components/layout/mission-shell`. */
+export default async function StakeholdersLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>): Promise<React.JSX.Element> {
   return <MissionShell>{children}</MissionShell>;

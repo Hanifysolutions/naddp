@@ -42,6 +42,7 @@ from app.schemas.opportunities import (
     TransitionRequest,
     TransitionResponse,
 )
+from app.schemas.pipeline import PipelineBoardResponse
 from app.security.deps import require
 from app.security.permissions import Permission
 from app.security.principal import Principal
@@ -53,6 +54,7 @@ from app.services.opportunities import (
     list_opportunities,
     transition_opportunity,
 )
+from app.services.pipeline import build_board
 
 router = APIRouter(prefix="/opportunities", tags=["opportunities"])
 
@@ -167,6 +169,28 @@ def list_opportunities_endpoint(
         offset=page.offset,
         has_more=page.has_more,
     )
+
+
+@router.get(
+    "/board",
+    response_model=PipelineBoardResponse,
+    summary="The pipeline board, grouped by stage",
+    response_description="Every stage column the caller may read, with resolved display fields.",
+)
+def read_board(principal: ReadPrincipal, db: DbSession) -> PipelineBoardResponse:
+    """Return the kanban board.
+
+    **Declared before ``/{opportunity_id}``, and that ordering is load-bearing.** FastAPI
+    matches routes in declaration order; with the parameterised route first, ``/board``
+    would be parsed as a UUID and answered with a 422 that named a validation error rather
+    than the board. The two routes are adjacent so a future edit cannot separate them
+    without noticing this comment.
+
+    One call rather than a list plus a fan-out of lookups: the client renders owner and
+    counterpart *names*, and resolving those from the browser would be an N+1 across the
+    wire on the one screen an audience is watching.
+    """
+    return PipelineBoardResponse.model_validate(build_board(db, principal))
 
 
 @router.get(

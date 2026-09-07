@@ -14,8 +14,12 @@ Mounted paths, which the web client and the Week 1 VERIFY block depend on exactl
     POST /v1/session/end
     GET  /v1/command/today
     GET  /v1/opportunities
+    GET  /v1/opportunities/board
     GET  /v1/opportunities/{opportunity_id}
     POST /v1/opportunities/{opportunity_id}/transition
+    GET  /v1/stakeholders/organisations
+    GET  /v1/stakeholders/organisations/{organisation_id}
+    GET  /v1/stakeholders/people/{stakeholder_id}
     POST /v1/ai/morning-brief
     POST /v1/ai/opportunities/{opportunity_id}/score
     POST /v1/ai/meetings/{meeting_id}/prep
@@ -32,8 +36,8 @@ order, and no two routers share a prefix -- so the sequence below follows the sh
 product: metadata, then who you are, then the day's picture, then the bounded contexts,
 then the governance surface that records all of it.
 
-The remaining Week 2 contexts (``intelligence``, ``stakeholders``, ``meetings``,
-``consular``, ``diaspora``, ``knowledge``) add themselves the same way.
+The remaining contexts (``intelligence``, ``meetings``, ``consular``, ``diaspora``,
+``knowledge``) add themselves the same way.
 """
 
 from fastapi import APIRouter
@@ -44,12 +48,14 @@ from app.api.v1.command import router as command_router
 from app.api.v1.meta import router as meta_router
 from app.api.v1.opportunities import router as opportunities_router
 from app.api.v1.session import router as session_router
+from app.api.v1.stakeholders import router as stakeholders_router
 
 router = APIRouter()
 router.include_router(meta_router)
 router.include_router(session_router)
 router.include_router(command_router)
 router.include_router(opportunities_router)
+router.include_router(stakeholders_router)
 router.include_router(ai_router)
 router.include_router(audit_router)
 

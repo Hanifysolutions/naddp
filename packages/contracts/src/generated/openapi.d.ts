@@ -164,6 +164,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/opportunities/board": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The pipeline board, grouped by stage
+         * @description Return the kanban board.
+         *
+         *     **Declared before ``/{opportunity_id}``, and that ordering is load-bearing.** FastAPI
+         *     matches routes in declaration order; with the parameterised route first, ``/board``
+         *     would be parsed as a UUID and answered with a 422 that named a validation error rather
+         *     than the board. The two routes are adjacent so a future edit cannot separate them
+         *     without noticing this comment.
+         *
+         *     One call rather than a list plus a fan-out of lookups: the client renders owner and
+         *     counterpart *names*, and resolving those from the browser would be an N+1 across the
+         *     wire on the one screen an audience is watching.
+         */
+        get: operations["read_board_v1_opportunities_board_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/opportunities/{opportunity_id}": {
         parameters: {
             query?: never;
@@ -210,6 +240,76 @@ export interface paths {
          *     commit together or not at all (ADR-0004).
          */
         post: operations["transition_opportunity_endpoint_v1_opportunities__opportunity_id__transition_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/stakeholders/organisations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List organisations the caller may read
+         * @description Return the organisation index.
+         *
+         *     The clearance predicate is part of the SQL (``CLAUDE.md`` rule 5), so ``total`` counts
+         *     what this caller may read and nothing else -- it cannot be differenced against another
+         *     role's total to learn how many rows were withheld.
+         */
+        get: operations["list_organisations_endpoint_v1_stakeholders_organisations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/stakeholders/organisations/{organisation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stakeholder 360 for an organisation
+         * @description Return the organisation dossier.
+         *
+         *     A row outside the caller's zones returns **404, not 403**, and the difference is
+         *     deliberate. The opportunity detail route returns 403 naming the zone because the caller
+         *     already asserted that id and a legible refusal is what makes the control demonstrable.
+         *     Here the caller arrives from a list they were served, so a 403 would confirm the
+         *     existence of an organisation the list correctly declined to show them.
+         */
+        get: operations["read_organisation_dossier_v1_stakeholders_organisations__organisation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/stakeholders/people/{stakeholder_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stakeholder 360 for a person
+         * @description Return one person's dossier, on the same terms as the organisation view.
+         */
+        get: operations["read_person_dossier_v1_stakeholders_people__stakeholder_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -840,6 +940,161 @@ export interface components {
         /** BaseModel */
         BaseModel: Record<string, never>;
         /**
+         * BoardCardResponse
+         * @description One opportunity as it appears on the board.
+         */
+        BoardCardResponse: {
+            /**
+             * Id
+             * Format: uuid
+             * @description Internal identifier (a ULID rendered as a UUID).
+             */
+            id: string;
+            /**
+             * Title
+             * @description Short human headline shown on the card.
+             */
+            title: string;
+            /** @description Current pipeline stage. */
+            stage: components["schemas"]["OpportunityStage"];
+            /**
+             * Stage Changed At
+             * Format: date-time
+             * @description When the stage last changed.
+             */
+            stage_changed_at: string;
+            /** @description Data zone governing this row. */
+            classification: components["schemas"]["Classification"];
+            /**
+             * Sector Code
+             * @description Top-level sector code, e.g. CRITICAL_MINERALS.
+             */
+            sector_code: string;
+            /**
+             * Country Focus
+             * @description ISO 3166-1 alpha-2 country the work sits in.
+             */
+            country_focus: string;
+            /**
+             * Score
+             * @description Stored explainable score, 0-100, or null.
+             */
+            score: number | null;
+            /**
+             * Probability
+             * @description Stated probability, 0-100, or null.
+             */
+            probability: number | null;
+            /**
+             * Value Estimate Aud
+             * @description Estimated value in AUD, or null.
+             */
+            value_estimate_aud: number | null;
+            /**
+             * Weighted Value Aud
+             * @description value_estimate_aud multiplied by probability. Stated alongside the estimate and never instead of it, so the reader can see which half is a judgement.
+             */
+            weighted_value_aud: number | null;
+            /**
+             * Owner User Id
+             * @description Owning officer's user id, or null.
+             */
+            owner_user_id: string | null;
+            /**
+             * Owner Name
+             * @description Owning officer's display name, or null.
+             */
+            owner_name: string | null;
+            /**
+             * Counterpart Id
+             * @description Primary stakeholder's id, or null.
+             */
+            counterpart_id: string | null;
+            /**
+             * Counterpart Name
+             * @description Primary stakeholder's name. Null when the row exists but sits outside the caller's clearance - classification is checked per row, not inherited.
+             */
+            counterpart_name: string | null;
+            /**
+             * Organisation Id
+             * @description Lead organisation's id, or null.
+             */
+            organisation_id: string | null;
+            /**
+             * Organisation Name
+             * @description Lead organisation's name, or null.
+             */
+            organisation_name: string | null;
+            /**
+             * Next Action At
+             * @description When the next action falls due.
+             */
+            next_action_at: string | null;
+            /**
+             * Next Action Overdue
+             * @description Whether that date has passed.
+             */
+            next_action_overdue: boolean;
+            /**
+             * Evidence Count
+             * @description Distinct citation ids behind the stored score.
+             */
+            evidence_count: number;
+            /**
+             * Citation Ids
+             * @description The first few of those ids, for chips.
+             */
+            citation_ids: string[];
+            /**
+             * Is Proposed By Ai
+             * @description True for an AI-proposed opportunity awaiting officer qualification (Q-17).
+             */
+            is_proposed_by_ai: boolean;
+            /**
+             * Available Events
+             * @description Events legal from this stage that this caller also holds the permission for.
+             */
+            available_events: string[];
+            /**
+             * Gated Events
+             * @description Events legal from this stage that this caller may not fire.
+             */
+            gated_events: components["schemas"]["GatedEventResponse"][];
+        };
+        /**
+         * BoardColumnResponse
+         * @description One stage column.
+         */
+        BoardColumnResponse: {
+            /** @description The stage this column holds. */
+            stage: components["schemas"]["OpportunityStage"];
+            /**
+             * Label
+             * @description Display label for the column header.
+             */
+            label: string;
+            /**
+             * Count
+             * @description Cards in this column that the caller may read.
+             */
+            count: number;
+            /**
+             * Value Estimate Aud
+             * @description Sum of the estimates in this column.
+             */
+            value_estimate_aud: number;
+            /**
+             * Is Terminal
+             * @description PARTNERED and CLOSED are terminal and never reopen.
+             */
+            is_terminal: boolean;
+            /**
+             * Cards
+             * @description The cards, highest score first.
+             */
+            cards: components["schemas"]["BoardCardResponse"][];
+        };
+        /**
          * CaseStatus
          * @description Consular case state. ``BUILD_BIBLE.md`` section 9, ``docs/workflows.md`` section 3.
          *
@@ -1030,6 +1285,205 @@ export interface components {
             contactable: number;
         };
         /**
+         * DossierOpportunityResponse
+         * @description An opportunity attached to this counterpart.
+         */
+        DossierOpportunityResponse: {
+            /**
+             * Id
+             * Format: uuid
+             * @description Opportunity id.
+             */
+            id: string;
+            /**
+             * Title
+             * @description Opportunity title.
+             */
+            title: string;
+            /**
+             * Stage
+             * @description Current pipeline stage.
+             */
+            stage: string;
+            /** @description Data zone governing the opportunity. */
+            classification: components["schemas"]["Classification"];
+            /**
+             * Score
+             * @description Stored explainable score, 0-100.
+             */
+            score: number | null;
+            /**
+             * Value Estimate Aud
+             * @description Estimated value in AUD.
+             */
+            value_estimate_aud: number | null;
+            /**
+             * Next Action At
+             * @description When the next action falls due.
+             */
+            next_action_at: string | null;
+            /**
+             * Is Proposed By Ai
+             * @description True for an AI-proposed opportunity (Q-17).
+             */
+            is_proposed_by_ai: boolean;
+            /**
+             * Link
+             * @description How it reached this dossier: 'lead' (lead organisation), 'counterpart' (primary stakeholder) or 'interaction' (a recorded interaction names it).
+             */
+            link: string;
+        };
+        /**
+         * DossierPersonResponse
+         * @description A named contact.
+         */
+        DossierPersonResponse: {
+            /**
+             * Id
+             * Format: uuid
+             * @description Stakeholder id.
+             */
+            id: string;
+            /**
+             * Full Name
+             * @description Name.
+             */
+            full_name: string;
+            /**
+             * Role Title
+             * @description Their role at the organisation.
+             */
+            role_title: string;
+            /**
+             * Influence
+             * @description Assessed influence: LOW, MEDIUM or HIGH.
+             */
+            influence: string;
+            /** @description Assessed relationship. */
+            relationship_strength: components["schemas"]["RelationshipStrength"];
+            /**
+             * Last Contact At
+             * @description Most recent recorded contact.
+             */
+            last_contact_at: string | null;
+            /**
+             * Email
+             * @description Contact email. Synthetic in this demo.
+             */
+            email: string | null;
+            /**
+             * Country
+             * @description ISO 3166-1 alpha-2.
+             */
+            country: string;
+            /**
+             * Owner Name
+             * @description Mission officer who owns the relationship.
+             */
+            owner_name: string | null;
+        };
+        /**
+         * DossierResponse
+         * @description Stakeholder 360: everything the mission knows about one counterpart.
+         */
+        DossierResponse: {
+            /**
+             * Subject Kind
+             * @description 'organisation' or 'person'.
+             */
+            subject_kind: string;
+            /**
+             * Subject Id
+             * Format: uuid
+             * @description Id of the subject.
+             */
+            subject_id: string;
+            /**
+             * Name
+             * @description Display name.
+             */
+            name: string;
+            /**
+             * Subtitle
+             * @description Organisation type, or role and employer for a person.
+             */
+            subtitle: string;
+            /**
+             * Country
+             * @description ISO 3166-1 alpha-2.
+             */
+            country: string;
+            /** @description Data zone governing the subject row. */
+            classification: components["schemas"]["Classification"];
+            /**
+             * Description
+             * @description What this counterpart is, in a sentence or two.
+             */
+            description: string;
+            /**
+             * Website
+             * @description Public website, when one is recorded.
+             */
+            website: string | null;
+            /**
+             * Sectors
+             * @description Sector codes this counterpart sits in.
+             */
+            sectors: string[];
+            /**
+             * People
+             * @description Named contacts the caller may read.
+             */
+            people: components["schemas"]["DossierPersonResponse"][];
+            /**
+             * Timeline
+             * @description Interactions, newest first.
+             */
+            timeline: components["schemas"]["TimelineEntryResponse"][];
+            /**
+             * Opportunities
+             * @description Linked opportunities.
+             */
+            opportunities: components["schemas"]["DossierOpportunityResponse"][];
+            /**
+             * Sources
+             * @description Citations behind this dossier.
+             */
+            sources: components["schemas"]["ResolvedSourceResponse"][];
+            /** @description Strongest relationship held with any readable contact here. */
+            strongest_relationship: components["schemas"]["RelationshipStrength"] | null;
+            /**
+             * Last Contact At
+             * @description Most recent readable contact.
+             */
+            last_contact_at: string | null;
+            /**
+             * Interaction Count
+             * @description Timeline entries returned.
+             */
+            interaction_count: number;
+            /**
+             * Dormant
+             * @description True when nothing has been recorded for 90 days.
+             */
+            dormant: boolean;
+            /**
+             * Withheld Interactions
+             * @description Interactions this caller's clearance removed. A count, never the content - a silently short timeline would read as a complete one.
+             */
+            withheld_interactions: number;
+            /**
+             * Withheld Opportunities
+             * @description Linked opportunities removed by clearance.
+             */
+            withheld_opportunities: number;
+            /**
+             * Timeline Truncated
+             * @description True when the timeline hit its page limit.
+             */
+            timeline_truncated: boolean;
+        };
+        /**
          * EvidenceRef
          * @description One item of provenance behind an AI answer.
          *
@@ -1051,6 +1505,37 @@ export interface components {
              * @description Key of the entry in data/demo-seed/citations.json this evidence resolved to. Defaults to `id`, which is the same string for every registry-backed item.
              */
             citation_id?: string | null;
+        };
+        /**
+         * GatedEventResponse
+         * @description A transition legal from this stage that this caller may not fire.
+         */
+        GatedEventResponse: {
+            /**
+             * Event
+             * @description The workflow event, e.g. partner.
+             */
+            event: string;
+            /**
+             * Label
+             * @description Human label for a button, e.g. 'Commit to partnership'.
+             */
+            label: string;
+            /**
+             * Permission
+             * @description The permission the caller lacks, in verb:object form.
+             */
+            permission: string;
+            /**
+             * Is Commitment
+             * @description True when this is a BUILD_BIBLE section 6 never-autonomous control rather than ordinary RBAC. The UI renders these as a visible lock, because a control nobody can see being refused is not a demonstrable control.
+             */
+            is_commitment: boolean;
+            /**
+             * Reason
+             * @description Why this caller cannot fire it, in a sentence.
+             */
+            reason: string;
         };
         /**
          * GatewayResult
@@ -1138,6 +1623,16 @@ export interface components {
              */
             awaiting_triage: number;
         };
+        /**
+         * InteractionType
+         * @description How an interaction with a stakeholder happened.
+         *
+         *     ``docs/workflows.md`` section 1, row 6 makes this load-bearing: ``record_contact``
+         *     requires a linked ``stakeholders.interaction``, so the interaction row is the evidence
+         *     that the approach was actually made.
+         * @enum {string}
+         */
+        InteractionType: "EMAIL" | "CALL" | "MEETING" | "EVENT" | "NOTE";
         /**
          * KnowledgeAnswerRequest
          * @description A staff question for ``KNOWLEDGE_ANSWER``.
@@ -1322,6 +1817,8 @@ export interface components {
              * @description Explainable breakdown behind the score: {factor, weight, value, evidence_ids} objects. Structured rather than prose because scoring is editable factor by factor, and because 'at least one evidence reference' is a gate on qualifying.
              */
             score_rationale?: {
+                [key: string]: unknown;
+            } | {
                 [key: string]: unknown;
             }[] | null;
             /**
@@ -1510,6 +2007,129 @@ export interface components {
              * @description Open opportunities whose next_action_at has already passed.
              */
             overdue_next_action: number;
+            /**
+             * Pipeline Value Aud
+             * @description Sum of value_estimate_aud across the open stages. A plain sum of a stored column, not a forecast: nothing here is probability-weighted.
+             */
+            pipeline_value_aud: number;
+            /**
+             * Ai Proposed
+             * @description Open opportunities the AI proposed and no officer has yet qualified (Q-17).
+             */
+            ai_proposed: number;
+        };
+        /**
+         * OrganisationListResponse
+         * @description The organisation index.
+         */
+        OrganisationListResponse: {
+            /**
+             * Items
+             * @description Organisations, by country then name.
+             */
+            items: components["schemas"]["OrganisationRowResponse"][];
+            /**
+             * Total
+             * @description How many the caller may read.
+             */
+            total: number;
+        };
+        /**
+         * OrganisationRowResponse
+         * @description One line of the organisation index.
+         */
+        OrganisationRowResponse: {
+            /**
+             * Id
+             * Format: uuid
+             * @description Organisation id.
+             */
+            id: string;
+            /**
+             * Name
+             * @description Organisation name.
+             */
+            name: string;
+            /**
+             * Org Type
+             * @description COMPANY, GOVERNMENT, UNIVERSITY and so on.
+             */
+            org_type: string;
+            /**
+             * Country
+             * @description ISO 3166-1 alpha-2.
+             */
+            country: string;
+            /** @description Data zone governing the row. */
+            classification: components["schemas"]["Classification"];
+            /**
+             * Sectors
+             * @description Sector codes.
+             */
+            sectors: string[];
+            /**
+             * People Count
+             * @description Readable contacts at this organisation.
+             */
+            people_count: number;
+            /**
+             * Interaction Count
+             * @description Readable interactions recorded with it.
+             */
+            interaction_count: number;
+            /**
+             * Last Contact At
+             * @description Most recent readable contact.
+             */
+            last_contact_at: string | null;
+            /** @description Strongest relationship held with any readable contact here. */
+            strongest_relationship: components["schemas"]["RelationshipStrength"] | null;
+            /**
+             * Opportunity Count
+             * @description Readable opportunities it leads.
+             */
+            opportunity_count: number;
+        };
+        /**
+         * PipelineBoardResponse
+         * @description The board, plus the totals the command tile quotes.
+         */
+        PipelineBoardResponse: {
+            /**
+             * Columns
+             * @description Columns in pipeline order.
+             */
+            columns: components["schemas"]["BoardColumnResponse"][];
+            /**
+             * Total
+             * @description Opportunities the caller may read, across all stages.
+             */
+            total: number;
+            /**
+             * Open Total
+             * @description Those not in a terminal stage.
+             */
+            open_total: number;
+            /**
+             * Pipeline Value Aud
+             * @description Sum of estimates across open stages.
+             */
+            pipeline_value_aud: number;
+            /**
+             * Weighted Pipeline Value Aud
+             * @description The same sum, probability-weighted.
+             */
+            weighted_pipeline_value_aud: number;
+            /**
+             * Overdue Next Action
+             * @description Open opportunities whose next action is late.
+             */
+            overdue_next_action: number;
+            /**
+             * Ai Proposed
+             * @description Opportunities proposed by the AI, pending qualification.
+             */
+            ai_proposed: number;
         };
         /**
          * PolicyResult
@@ -1529,6 +2149,42 @@ export interface components {
          * @enum {string}
          */
         RelationshipStrength: "NONE" | "WEAK" | "DEVELOPING" | "STRONG" | "STRATEGIC";
+        /**
+         * ResolvedSourceResponse
+         * @description A citation resolved to something the reader can open.
+         */
+        ResolvedSourceResponse: {
+            /**
+             * Citation Id
+             * @description Key into data/demo-seed/citations.json.
+             */
+            citation_id: string;
+            /**
+             * Title
+             * @description Title of the source document.
+             */
+            title: string;
+            /**
+             * Url
+             * @description Real public URL. Never synthesised (BUILD_BIBLE section 11).
+             */
+            url: string;
+            /**
+             * Publisher
+             * @description Who published it.
+             */
+            publisher: string;
+            /**
+             * Verified
+             * @description False means TODO_VERIFY: live, but not yet confirmed by eye from this network.
+             */
+            verified: boolean;
+            /**
+             * Cited For
+             * @description What this dossier cites the source for.
+             */
+            cited_for: string;
+        };
         /**
          * RoleCode
          * @description The six demo personas.
@@ -1642,6 +2298,78 @@ export interface components {
              * @description Stakeholders with no recorded contact date.
              */
             never_contacted: number;
+            /**
+             * Dormant
+             * @description Stakeholders contacted once but not in the last 90 days. Counted separately from never_contacted: a relationship that has gone quiet and one that was never started need different work.
+             */
+            dormant: number;
+            /**
+             * Organisations
+             * @description Organisations in zones you are cleared to read.
+             */
+            organisations: number;
+        };
+        /**
+         * TimelineEntryResponse
+         * @description One recorded interaction on the dossier timeline.
+         */
+        TimelineEntryResponse: {
+            /**
+             * Id
+             * Format: uuid
+             * @description Interaction id.
+             */
+            id: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             * @description When it happened.
+             */
+            occurred_at: string;
+            /** @description Email, call, meeting, event or note. */
+            interaction_type: components["schemas"]["InteractionType"];
+            /**
+             * Direction
+             * @description INBOUND, OUTBOUND or INTERNAL.
+             */
+            direction: string;
+            /**
+             * Subject
+             * @description One-line subject.
+             */
+            subject: string;
+            /**
+             * Body
+             * @description The recorded note. Synthetic in this demo.
+             */
+            body: string;
+            /** @description Data zone governing this entry. */
+            classification: components["schemas"]["Classification"];
+            /**
+             * Stakeholder Id
+             * @description Person involved, if any.
+             */
+            stakeholder_id: string | null;
+            /**
+             * Stakeholder Name
+             * @description That person's name, if readable.
+             */
+            stakeholder_name: string | null;
+            /**
+             * Opportunity Id
+             * @description Opportunity this was recorded against.
+             */
+            opportunity_id: string | null;
+            /**
+             * Opportunity Title
+             * @description That opportunity's title. Null when the caller may read the interaction but not the opportunity it points at - the tie is shown, the content is not.
+             */
+            opportunity_title: string | null;
+            /**
+             * Recorded By
+             * @description Officer who recorded it.
+             */
+            recorded_by: string | null;
         };
         /**
          * TransitionRequest
@@ -1900,6 +2628,26 @@ export interface operations {
             };
         };
     };
+    read_board_v1_opportunities_board_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every stage column the caller may read, with resolved display fields. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineBoardResponse"];
+                };
+            };
+        };
+    };
     read_opportunity_v1_opportunities__opportunity_id__get: {
         parameters: {
             query?: never;
@@ -1987,6 +2735,118 @@ export interface operations {
             };
             /** @description The event is illegal from the current stage, the stage is terminal, a required reason is missing, a guard refused, or the expected_stage precondition failed. The body explains which. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_organisations_endpoint_v1_stakeholders_organisations_get: {
+        parameters: {
+            query?: {
+                /** @description ISO 3166-1 alpha-2, e.g. AU. */
+                country?: string | null;
+                /** @description Case-insensitive name fragment. */
+                q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The organisation index, narrowed to the caller's zones. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganisationListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_organisation_dossier_v1_stakeholders_organisations__organisation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organisation's id. */
+                organisation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The dossier: people, timeline, linked opportunities and sources. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DossierResponse"];
+                };
+            };
+            /** @description No such organisation, or it is outside the caller's zones. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_person_dossier_v1_stakeholders_people__stakeholder_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The stakeholder's id. */
+                stakeholder_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The dossier for one named contact. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DossierResponse"];
+                };
+            };
+            /** @description No such stakeholder, or they are outside the caller's zones. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -73,10 +73,14 @@ from seed_parts.governance import seed_governance  # noqa: E402
 from seed_parts.internal_corpus import seed_internal_corpus  # noqa: E402
 from seed_parts.knowledge import seed_knowledge  # noqa: E402
 from seed_parts.meetings import seed_actions, seed_meetings  # noqa: E402
-from seed_parts.opportunities import seed_opportunities  # noqa: E402
+from seed_parts.opportunities import HERO_OPPORTUNITY, seed_opportunities  # noqa: E402
 from seed_parts.signals import seed_signals  # noqa: E402
 from seed_parts.sources import seed_sources_and_documents  # noqa: E402
-from seed_parts.stakeholders import seed_interactions, seed_stakeholders  # noqa: E402
+from seed_parts.stakeholders import (  # noqa: E402
+    seed_hero_interactions,
+    seed_interactions,
+    seed_stakeholders,
+)
 from seed_parts.targets import render, report  # noqa: E402
 from seed_parts.traces import seed_traces  # noqa: E402
 
@@ -150,6 +154,12 @@ def main() -> int:
 
         print("  opportunities   ...", flush=True)
         opportunities = seed_opportunities(ctx, users, organisations, stakeholders, signals, traces)
+
+        # After the opportunities, because the hero thread's interactions carry the hero
+        # opportunity's id - which is what connects the two Stakeholder 360 dossiers to it.
+        seed_hero_interactions(
+            ctx, users, organisations, stakeholders, opportunities[HERO_OPPORTUNITY].id
+        )
 
         print("  meetings        ...", flush=True)
         meetings = seed_meetings(ctx, users, organisations, stakeholders, opportunities, traces)

@@ -52,7 +52,13 @@ $ContractsDir = Join-Path $RepoRoot 'packages/contracts'
 $SeedScript   = 'data/demo-seed/seed.py'
 $ApiPort      = if ($env:API_PORT) { $env:API_PORT } else { '8000' }
 $WebPort      = if ($env:WEB_PORT) { $env:WEB_PORT } else { '3000' }
-$ApiUrl       = "http://localhost:$ApiPort"
+# 127.0.0.1, not localhost. gen-client starts uvicorn bound to 127.0.0.1, and on Windows
+# `localhost` resolves to ::1 first - so the health probe reached an address nothing was
+# listening on and the target failed with "could not fetch" while the server it had just
+# started sat there answering. Pinning the literal address removes name resolution from
+# the question. The web app still talks to the API over `localhost` from the browser,
+# which is a different hop and works either way.
+$ApiUrl       = "http://127.0.0.1:$ApiPort"
 $Uv           = if ($env:UV) { $env:UV } else { 'uv' }
 $Pnpm         = if ($env:PNPM) { $env:PNPM } else { 'pnpm' }
 $ComposeExe   = 'docker'

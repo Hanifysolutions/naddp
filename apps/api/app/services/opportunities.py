@@ -81,6 +81,7 @@ __all__ = [
     "OPPORTUNITY_MACHINE",
     "OPPORTUNITY_OBJECT_TYPE",
     "OpportunityPage",
+    "evidence_citation_ids",
     "get_opportunity",
     "list_opportunities",
     "transition_opportunity",
@@ -138,33 +139,48 @@ OPPORTUNITY_IDEMPOTENT_EVENTS: Final[frozenset[str]] = frozenset(
 # ---------------------------------------------------------------------------
 
 
-def _evidence_reference_count(opportunity: Opportunity) -> int:
-    """Count the evidence references an opportunity carries.
+def evidence_citation_ids(opportunity: Opportunity) -> tuple[str, ...]:
+    """The distinct citation ids recorded in an opportunity's stored score breakdown.
 
-    Reads ``score_rationale[].evidence_ids`` defensively: the column is JSONB written by
-    the Gateway and editable by an officer, so it can legitimately be ``None``, a list of
-    objects without the key, or a factor whose ``evidence_ids`` is not a list. A guard that
-    raised ``TypeError`` on any of those would turn a data-shape problem into a 500 in front
-    of an audience, so anything unrecognised simply contributes nothing.
+    **The one reader of this column's shape.** ``score_rationale`` is JSONB written by the
+    Gateway, rewritten by the scorer and editable by an officer, and it changed shape in
+    W2.3: it was a bare list of factors, it is now the whole breakdown object with the
+    factors under ``"factors"``. Both are accepted, because a row written before the change
+    is still a valid row and a demo must not care which era its data came from - the seed
+    writes the older form, so a reader that handled only the newer one would report zero
+    evidence on every freshly seeded card.
+
+    Everything is checked before it is indexed. A malformed breakdown costs a caller its
+    evidence chips, never a 500 in front of an audience.
     """
-    count = 1 if opportunity.source_signal_id is not None else 0
-    # The column changed shape in W2.3: it was a bare list of factors, it is now the whole
-    # breakdown object with the factors under "factors". Both are accepted, because a row
-    # written before the change is still a valid row and a demo must not care which era its
-    # data came from.
     rationale: Any = opportunity.score_rationale
     if isinstance(rationale, dict):
         rationale = rationale.get("factors")
     # Typed as Sequence[Any] on purpose: the column is JSONB, so what comes back at runtime
     # is whatever was written, not what the annotation promises.
     factors: Sequence[Any] = rationale if isinstance(rationale, list) else ()
+    found: list[str] = []
     for factor in factors:
         if not isinstance(factor, dict):
             continue
         ids = factor.get("evidence_ids")
-        if isinstance(ids, list):
-            count += len(ids)
-    return count
+        if not isinstance(ids, list):
+            continue
+        for citation_id in ids:
+            if isinstance(citation_id, str) and citation_id and citation_id not in found:
+                found.append(citation_id)
+    return tuple(found)
+
+
+def _evidence_reference_count(opportunity: Opportunity) -> int:
+    """Count the evidence references an opportunity carries.
+
+    The signal it was detected from counts: row 1 already requires one at creation, and it
+    is evidence. Citations are counted distinctly - the same source cited by two factors is
+    one source, and counting it twice would let a thin case clear the row 2 guard.
+    """
+    count = 1 if opportunity.source_signal_id is not None else 0
+    return count + len(evidence_citation_ids(opportunity))
 
 
 def _requires_score_and_evidence(context: TransitionContext[Opportunity]) -> str | None:

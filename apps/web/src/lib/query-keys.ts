@@ -25,4 +25,10 @@ export const queryKeys = {
     ['opportunities', 'list', role, limit] as const,
   auditEvents: (role: NaddpRole | null, limit: number) =>
     ['audit', 'events', role, limit] as const,
+  pipelineBoard: (role: NaddpRole | null) => ['opportunities', 'board', role] as const,
+  organisations: (role: NaddpRole | null) => ['stakeholders', 'organisations', role] as const,
+  organisationDossier: (role: NaddpRole | null, id: string) =>
+    ['stakeholders', 'organisation', role, id] as const,
+  personDossier: (role: NaddpRole | null, id: string) =>
+    ['stakeholders', 'person', role, id] as const,
 } as const;
