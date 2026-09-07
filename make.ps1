@@ -159,6 +159,33 @@ function Stop-ProcessTree {
     }
 }
 
+# Start-Process launches an image, not a shell command: it cannot run a .ps1, and on
+# PATH it takes the FIRST match rather than the first PATHEXT match. `pnpm` installs
+# three shims side by side -- an extensionless Bash script, pnpm.cmd and pnpm.ps1 --
+# so `Start-Process pnpm` picks the Bash script and dies with "%1 is not a valid Win32
+# application", which is how `.\make.ps1 dev` failed to start the web server while every
+# Invoke-Step call kept working (PowerShell's call operator understands .ps1). Resolve
+# to a real .exe/.cmd/.bat before handing anything to Start-Process.
+function Resolve-Launcher {
+    param([Parameter(Mandatory)][string] $Exe)
+
+    $launchable = @('.exe', '.com', '.cmd', '.bat')
+
+    if ($Exe.Contains('\') -or $Exe.Contains('/')) {
+        return $Exe
+    }
+
+    foreach ($candidate in @(Get-Command -Name $Exe -All -ErrorAction SilentlyContinue)) {
+        if ($candidate.CommandType -ne 'Application') { continue }
+        $extension = [System.IO.Path]::GetExtension($candidate.Source).ToLowerInvariant()
+        if ($launchable -contains $extension) { return $candidate.Source }
+    }
+
+    # Nothing launchable on PATH: hand back the original name so Start-Process reports the
+    # failure itself rather than this helper inventing a path that does not exist.
+    return $Exe
+}
+
 function Remove-PathIfPresent {
     param([Parameter(Mandatory)][string] $Path)
 
@@ -254,7 +281,7 @@ $Targets = [ordered]@{
                 # Identical commands to the Makefile `dev` recipe. Both children
                 # inherit this console, so their output streams straight through.
                 $apiProcess = @{
-                    FilePath         = $Uv
+                    FilePath         = Resolve-Launcher $Uv
                     ArgumentList     = @('run', 'uvicorn', 'app.main:app', '--reload', '--host', '0.0.0.0', '--port', $ApiPort)
                     WorkingDirectory = $ApiDir
                     NoNewWindow      = $true
@@ -263,7 +290,7 @@ $Targets = [ordered]@{
                 $api = Start-Process @apiProcess
 
                 $webProcess = @{
-                    FilePath         = $Pnpm
+                    FilePath         = Resolve-Launcher $Pnpm
                     ArgumentList     = @('--filter', '@naddp/web', 'dev', '--port', $WebPort)
                     WorkingDirectory = $RepoRoot
                     NoNewWindow      = $true
@@ -386,7 +413,7 @@ $Targets = [ordered]@{
                 if (-not (Test-ApiUp)) {
                     Write-Host "api not reachable — starting a temporary instance on :$ApiPort"
                     $spawn = @{
-                        FilePath         = $Uv
+                        FilePath         = Resolve-Launcher $Uv
                         ArgumentList     = @('run', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', $ApiPort)
                         WorkingDirectory = $ApiDir
                         NoNewWindow      = $true
