@@ -11,17 +11,17 @@
 
 ---
 
-## Week 1 — Foundation  ⬜
+## Week 1 — Foundation  ✅
 Prompt: `PROMPT_W1_foundation.md`
-- ⬜ P1 Monorepo & tooling (pnpm + Poetry/uv, Makefile, CI, docker-compose w/ pgvector)
-- ⬜ P2 DB schema + Alembic migration (Arch §7 tables, UUID PKs, pgvector columns, classification enums)
-- ⬜ P3 Governance core (role-picker auth stub, deny-by-default RBAC, append-only audit)
-- ⬜ P4 AI Gateway interface + fallback harness (9-stage pipeline, stubbed generation)
-- ⬜ P5 Seed dataset + citation registry (hero thread, real public URLs, audit history)
-- ⬜ P6 Command-center shell (DEMO badge, role picker, 6 tiles wired to seed, OpenAPI client)
-- ⬜ VERIFY block passes · `docs/W1_STATUS.md` written
+- ✅ P1 Monorepo & tooling (pnpm + Poetry/uv, Makefile, CI, docker-compose w/ pgvector)
+- ✅ P2 DB schema + Alembic migration (Arch §7 tables, UUID PKs, pgvector columns, classification enums)
+- ✅ P3 Governance core (role-picker auth stub, deny-by-default RBAC, append-only audit)
+- ✅ P4 AI Gateway interface + fallback harness (9-stage pipeline, stubbed generation)
+- ✅ P5 Seed dataset + citation registry (hero thread, real public URLs, audit history)
+- ✅ P6 Command-center shell (DEMO badge, role picker, 6 tiles wired to seed, OpenAPI client)
+- ✅ VERIFY block passes · `docs/W1_STATUS.md` written
 
-**Exit condition:** `make dev` boots clean, `make seed` hits §10 targets, role-scoped `/command/today` works, gateway fallback + audit write proven.
+**Exit condition: MET (2026-09-07).** `make dev` boots clean (via `make.ps1` on Windows), `make seed` hits all 7 §10 targets, role-scoped `/command/today` returns materially different payloads per role, and both the gateway fallback (`fallback=true`) and the audit write on a stage transition are proven by query. 836 tests pass. See `docs/W1_STATUS.md`.
 
 ---
 
