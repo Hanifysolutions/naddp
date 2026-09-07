@@ -92,13 +92,14 @@ Ambassador than a missing citation. Excluded permanently unless the site is fixe
 
 ### 4.2 Open questions
 
-**12 remain open** in `docs/OPEN_QUESTIONS.md`; **7 resolved**. None blocks Week 1.
+**13 remain open** in `docs/OPEN_QUESTIONS.md`; **9 resolved**. None blocks Week 1.
 
-- **Q-12 (model-routing table)** — left open *by architect decision*; delivered in the Week 2→3
-  handoff before the Gateway goes live.
-- **Q-06 (may `CONSULAR_SENSITIVE` reach a third-party model?)** — still open. Week 1 implements the
-  **most conservative reading**: `consular_triage` accepts case metadata only and refuses narrative
-  in code, recording the refusal in the trace. Reversible if the architect rules otherwise.
+- **Q-12 (model-routing table)** — **RESOLVED 2026-09-07** as `BUILD_BIBLE.md` §4a: sensitivity is
+  the primary routing key, capability tier secondary. Week 1 already records and renders
+  `model_route`/`route_reason`; wiring the table into the Gateway's stage-4 decision is Week 2.
+- **Q-06 (may `CONSULAR_SENSITIVE` reach a third-party model?)** — **RESOLVED 2026-09-07** as the
+  most restrictive option, via §4a: it never routes external, metadata-only, generation withheld.
+  This is exactly what Week 1 implemented, so **no code change was required**.
 - **Q-01 (exact tile metrics)** — the six tiles use obviously-defensible counts pending a ruling.
 - **Q-02b (role→permission matrix)** — **RESOLVED 2026-09-07.** Architect confirmed the matrix with
   one change: `read:ai_trace` removed from `ADMIN`, because a trace discloses the substance of the

@@ -18,11 +18,12 @@ We are building the **demo vertical slice** from the Architecture doc §19–20 
 
 ## 2. Hero Narrative Thread (drives ALL seed data)
 Dual sector: **Critical Minerals (lithium)** + **Education / Skilled Migration**.
-- Signal: Australia is scaling lithium **midstream/downstream** against a documented resources-sector **processing-skills gap** (public sources). Anchor: Covalent Mt Holland–Kwinana — the *refinery* is ramping toward nameplate while the *concentrator* doubles 380 → 760 ktpa.
-  - ⚠️ **Never conflate concentrator with refinery.** They are different assets and the distinction is load-bearing: as at Sept 2026 no Australian lithium *refinery* is expanding capacity (Albemarle Kemerton is in care and maintenance; Tianqi/IGO Kwinana Phase 2 is halted). Citing a concentrator expansion as a "refinery expansion" is factually wrong and would destroy winning moment #1. Resolved as OPEN_QUESTIONS Q-16.
-- → Opportunity: "AU lithium value-chain partnership + Nigerian skilled-migration training corridor."
-  - ⚠️ This link is **AI-proposed, not reported**: no public source connects an Australian lithium operator to Nigeria. The opportunity renders at *lower* confidence than the signals beneath it, badged "AI-proposed, pending officer qualification" (`opportunities.is_proposed_by_ai = true`). Resolved as OPEN_QUESTIONS Q-17.
-- → Stakeholder: the AU company + a Nigerian counterpart institution.
+
+> **§2 REVISION (2026-09-07, per OPEN_QUESTIONS Q-16/Q-17):** The original "refinery expansion" framing was factually unsupportable — as of Sept 2026 WA lithium *refining* is contracting (Kemerton in care-and-maintenance; Kwinana Phase 2 halted). Reframed below to a citable midstream/downstream + skills-gap narrative. The Nigeria↔Australia corridor is an **AI-proposed synthesis, not a reported fact** (Q-17) — it must render at lower confidence than the signals beneath it.
+
+- **Signal (EVIDENCED, PUBLIC):** Australia is scaling lithium midstream/downstream (e.g. Covalent Mt Holland–Kwinana: refinery ramping to nameplate, concentrator doubling 380→760 ktpa) against a *documented resources-sector processing-skills gap* (Critical Minerals Strategy 2023–2030 ch.6; National Reconstruction Fund resources value-adding). Do NOT conflate concentrator vs refinery stages.
+- **→ Opportunity (AI-PROPOSED, UNCONFIRMED):** "AU lithium value-chain skills partnership + Nigerian skilled-migration training corridor." `is_proposed_by_ai = true`; card shows a confidence badge + "AI-proposed, pending officer qualification". This contrast (hard evidence underneath, labelled AI proposal on top) IS winning moment #1's payoff.
+- → Stakeholder: the AU operator + a Nigerian counterpart institution.
 - → Meeting: Trade Officer preps a pre-read; follow-up email BLOCKS on approval.
 - → Consular: a synthetic passport-renewal case for a Nigerian student in AU (ties migration thread).
 - → Diaspora: search returns BOTH a lithium-processing engineer AND a migration-pathway academic.
@@ -50,6 +51,20 @@ POST (internal) gateway.generate(purpose, data_class, context, user)
 ```
 - **Fallback rule:** if live call errors OR >4s → return cached deterministic snapshot keyed by purpose+scenario. Log fallback in trace. Demo never blocks.
 - Every AI endpoint returns `{ result, evidence, trace_id, approval_status }` — NEVER raw prose (Arch §16).
+
+## 4a. Model-Routing Table (Q-12 RESOLVED 2026-09-07) — Gateway enforces, trace drawer displays
+Sensitivity is the PRIMARY routing key; capability tier is secondary within each band. Trace drawer is a plain badge, not JSON (must be legible to a non-technical Ambassador).
+
+| Data class | Route | Model tier | Retention | Tools | Trace drawer badge |
+|---|---|---|---|---|---|
+| PUBLIC | Approved external (Anthropic API) | Fast: classify/score · Strong: briefs/meeting-prep | No training retention | Read-only allowlist | `PUBLIC · external · [model] · fast\|strong` |
+| MISSION-INTERNAL | Approved external, no-retention | Strong | No retention | Read-only | `INTERNAL · external-noret · [model]` |
+| CONFIDENTIAL | Restricted (flagged "private-in-prod") | Strong | No retention + enhanced logging | Restricted set | `CONFIDENTIAL · restricted · [model] · enhanced-logging` |
+| CONSULAR-SENSITIVE | **Sovereign/private route — in demo: refuse external, metadata-only** | Metadata classification only; NO narrative generation | No external call at all | None (classify only) | `CONSULAR-SENSITIVE · no external route · metadata-only · ⛔ generation withheld` |
+| SECURITY/RESTRICTED | Never routed to any LLM | — | — | — | `RESTRICTED · blocked · no model path` |
+
+- CONSULAR-SENSITIVE never leaves to an external model in the demo — this is the sharpest trust demonstration and aligns with the Q-06 metadata-only triage ruling.
+- "Sovereign/private route" is simulated HONESTLY: the system genuinely refuses the external call + does metadata-only work; production swaps the simulated route for real region-controlled inference with nothing above it changing.
 
 ## 5. Data Zones & Classification (Arch §12) — enforce even in demo
 `PUBLIC` | `MISSION-INTERNAL` | `CONFIDENTIAL` | `CONSULAR-SENSITIVE`
