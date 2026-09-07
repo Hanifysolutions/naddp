@@ -388,7 +388,12 @@ def seed_briefs(
             user_id=None,
             title=spec.title,
             summary=spec.summary,
-            status=BriefStatus.PUBLISHED,
+            # Yesterday's brief is PUBLISHED history; today's role briefs are left at
+            # DRAFT: a brief published before the working day began is not credible, and
+            # generate_brief refuses to overwrite anything a human has touched, so a
+            # pre-approved brief would block the live morning-brief beat entirely. DRAFT is
+            # both the honest state for 'not yet reviewed' and the only one it may replace.
+            status=(BriefStatus.PUBLISHED if spec.days_ago > 0 else BriefStatus.DRAFT),
             generated_by=spec.generated_by,
             trace_id=traces[spec.trace_slug].id if spec.trace_slug else None,
             classification=spec.classification,

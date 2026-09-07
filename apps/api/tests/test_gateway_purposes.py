@@ -229,11 +229,51 @@ def test_scenario_is_filename_safe_and_bounded() -> None:
 
 
 def test_route_records_a_model_and_a_readable_reason() -> None:
+    """Route names are the BAND's, not the purpose's (BUILD_BIBLE section 4a).
+
+    Superseded the Q-12 placeholder, which named the purpose's own lane. 4a routes by data
+    class, so MISSION-INTERNAL is 'external-noret' whatever the purpose.
+    """
     spec = PURPOSES[AiPurpose.MORNING_BRIEF]
     route = route_for(spec, Classification.MISSION_INTERNAL)
-    assert route.route == "standard-brief"
+    assert route.route == "external-noret"
     assert route.model_requested
-    assert "MISSION_INTERNAL" in route.reason
+    assert route.tier == "strong"
+    assert route.live_eligible is True
+    assert "MISSION-INTERNAL" in route.reason
+
+
+def test_public_briefs_take_the_strong_tier_and_scores_the_fast_one() -> None:
+    """Section 4a: capability tier is the SECONDARY key -- fast to score, strong to brief."""
+    brief = route_for(PURPOSES[AiPurpose.MORNING_BRIEF], Classification.PUBLIC)
+    score = route_for(PURPOSES[AiPurpose.OPPORTUNITY_SCORE], Classification.PUBLIC)
+    assert (brief.route, brief.tier) == ("external", "strong")
+    assert (score.route, score.tier) == ("external", "fast")
+    assert brief.model_requested != score.model_requested
+
+
+def test_the_badge_is_the_section_4a_string() -> None:
+    """The drawer renders this verbatim; 4a requires it legible to a non-technical reader."""
+    route = route_for(PURPOSES[AiPurpose.MORNING_BRIEF], Classification.PUBLIC)
+    assert route.badge.startswith("PUBLIC · external · ")
+    assert route.badge.endswith(" · strong")
+    assert route.model_requested is not None
+    assert route.model_requested in route.badge
+
+
+def test_the_tier_never_widens_the_band() -> None:
+    """A 'strong' purpose in a no-external band still gets no external call."""
+    for zone in (Classification.CONSULAR_SENSITIVE, Classification.CONFIDENTIAL):
+        route = route_for(PURPOSES[AiPurpose.MORNING_BRIEF], zone)
+        assert route.model_requested is None
+        assert route.live_eligible is False
+
+
+def test_only_public_and_mission_internal_are_live_eligible() -> None:
+    """This week the Gateway goes live for two bands only; the rest serve deterministically."""
+    spec = PURPOSES[AiPurpose.MORNING_BRIEF]
+    live = {zone for zone in Classification if route_for(spec, zone).live_eligible}
+    assert live == {Classification.PUBLIC, Classification.MISSION_INTERNAL}
 
 
 def test_confidential_context_takes_the_restricted_lane() -> None:
@@ -249,3 +289,18 @@ def test_consular_sensitive_never_requests_an_external_model() -> None:
         route = route_for(spec, Classification.CONSULAR_SENSITIVE)
         assert route.route == "no-external-model"
         assert route.model_requested is None
+        assert route.live_eligible is False
+        assert "no external route" in route.badge
+
+
+def test_consular_triage_never_goes_live_in_any_band() -> None:
+    """Section 4a routes by data class, and consular_triage caps at MISSION_INTERNAL
+    because narrative never enters it -- so the table alone would send its de-identified
+    metadata to an external provider. That is a decision about consular data nobody has
+    taken, so the purpose declines its external lane in every band."""
+    spec = PURPOSES[AiPurpose.CONSULAR_TRIAGE]
+    assert spec.live_eligible is False
+    for zone in Classification:
+        route = route_for(spec, zone)
+        assert route.model_requested is None, zone.value
+        assert route.live_eligible is False, zone.value

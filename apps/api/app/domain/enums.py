@@ -293,9 +293,20 @@ class Jurisdiction(str, Enum):  # noqa: UP042
 
 
 class BriefStatus(str, Enum):  # noqa: UP042
-    """Publication state of a morning brief. A draft is not yet a mission-visible artefact."""
+    """Workflow state of a morning brief: DRAFT -> IN_REVIEW -> APPROVED -> PUBLISHED.
+
+    A brief is a mission product carrying AI-generated analysis over real sources, so it
+    goes through the same shape of review as any other: generated as a DRAFT, submitted
+    IN_REVIEW, APPROVED by a named human, and only then PUBLISHED to the mission. Nothing
+    reaches an Ambassador's screen without a person having approved it.
+
+    ``PUBLISHED`` is terminal. A correction is a new brief, because a published brief is
+    what officers acted on that morning and rewriting it would destroy that record.
+    """
 
     DRAFT = "DRAFT"
+    IN_REVIEW = "IN_REVIEW"
+    APPROVED = "APPROVED"
     PUBLISHED = "PUBLISHED"
 
 
@@ -630,6 +641,23 @@ CASE_TRANSITIONS: Final[Mapping[tuple[CaseStatus, str], CaseStatus]] = MappingPr
 #: case timeline non-monotonic, and that timeline is the record a citizen and an auditor
 #: rely on. A subsequent matter is a new case carrying ``related_case_id``.
 CASE_TERMINAL: Final[frozenset[CaseStatus]] = frozenset({CaseStatus.CLOSED})
+
+#: Brief workflow. Same shape as the other three machines: a table of (from, event) -> to,
+#: so a service cannot invent a transition and a reviewer can read the whole machine.
+BRIEF_TRANSITIONS: Final[Mapping[tuple[BriefStatus, str], BriefStatus]] = MappingProxyType(
+    {
+        (BriefStatus.DRAFT, "submit"): BriefStatus.IN_REVIEW,
+        (BriefStatus.IN_REVIEW, "approve"): BriefStatus.APPROVED,
+        # Sending it back is a first-class outcome, not an error: a brief with a bad
+        # citation must have somewhere to go other than forward.
+        (BriefStatus.IN_REVIEW, "return_to_author"): BriefStatus.DRAFT,
+        (BriefStatus.APPROVED, "publish"): BriefStatus.PUBLISHED,
+        (BriefStatus.APPROVED, "return_to_author"): BriefStatus.DRAFT,
+    }
+)
+
+#: PUBLISHED is terminal. A correction is a new brief; see BriefStatus.
+BRIEF_TERMINAL: Final[frozenset[BriefStatus]] = frozenset({BriefStatus.PUBLISHED})
 
 
 class ChunkCollection(str, Enum):  # noqa: UP042

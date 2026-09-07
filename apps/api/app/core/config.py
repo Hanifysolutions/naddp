@@ -72,6 +72,12 @@ DEFAULT_STORAGE_DIR: Final[Path] = REPO_ROOT / "storage"
 # ---------------------------------------------------------------------------
 DEFAULT_DATABASE_URL: Final[str] = "postgresql+psycopg://naddp:naddp@localhost:5433/naddp"
 DEFAULT_ANTHROPIC_MODEL: Final[str] = "claude-sonnet-5"
+
+#: BUILD_BIBLE section 4a makes capability tier the SECONDARY routing key, under
+#: sensitivity: "Fast: classify/score - Strong: briefs/meeting-prep". The strong tier is
+#: ANTHROPIC_MODEL above; this is the fast lane for scoring and matching, where a brief's
+#: prose quality is not what is being bought.
+DEFAULT_ANTHROPIC_MODEL_FAST: Final[str] = "claude-haiku-4-5"
 DEFAULT_CORS_ORIGINS: Final[tuple[str, ...]] = ("http://localhost:3000",)
 
 # Placeholder only. Booting a non-local APP_ENV with this value is refused.
@@ -125,6 +131,7 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str | None = None
     anthropic_model: str = DEFAULT_ANTHROPIC_MODEL
+    anthropic_model_fast: str = DEFAULT_ANTHROPIC_MODEL_FAST
     ai_gateway_live: bool = False
     ai_gateway_timeout_seconds: float = Field(default=4.0, gt=0.0, le=30.0)
 

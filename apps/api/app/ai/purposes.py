@@ -143,11 +143,27 @@ class ContextPolicy:
 
 @dataclass(frozen=True, slots=True)
 class ModelRoute:
-    """The stage 5 routing decision: what was chosen, and the sentence explaining why."""
+    """The stage 5 routing decision, per ``BUILD_BIBLE.md`` section 4a.
+
+    Sensitivity is the PRIMARY key and capability tier the secondary one, so this carries
+    both, plus the badge the trace drawer renders. The badge is a plain string on purpose:
+    section 4a requires it to be "legible to a non-technical Ambassador", and a drawer that
+    renders JSON fails that test however complete the JSON is.
+    """
 
     route: str
     reason: str
     model_requested: str | None
+    #: "fast" | "strong" | None. None where the route forbids generation entirely.
+    tier: str | None = None
+    #: The section 4a trace-drawer badge, rendered verbatim.
+    badge: str = ""
+    #: Whether an external provider call is permitted on this route AT ALL. False for
+    #: CONSULAR_SENSITIVE (never leaves), for RESTRICTED (never routed), and - this week -
+    #: for CONFIDENTIAL, whose restricted lane is simulated rather than built.
+    live_eligible: bool = False
+    #: Retention posture, recorded so the drawer can state it without inferring it.
+    retention: str = "n/a"
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,6 +181,14 @@ class PurposeSpec:
     scenario_includes_role: bool = False
     #: Sector codes used to narrow stage 3 retrieval when the caller names none.
     default_sector_codes: tuple[str, ...] = ()
+    #: Whether this purpose may EVER make an external call, independent of the band its
+    #: context happens to fall in. Section 4a routes by data class, and consular_triage
+    #: caps at MISSION_INTERNAL precisely because narrative never enters it -- so by the
+    #: table alone its de-identified metadata would route externally. That is a decision
+    #: about consular data that the architect has not taken, and the demo's central claim
+    #: is that consular material is not transmitted off-box. So the purpose is held to the
+    #: deterministic path until someone rules otherwise, and the band table stays intact.
+    live_eligible: bool = True
     summary: str = ""
     #: Zones this purpose may process. Derived, never hand-written -- see the module
     #: docstring on why a rank comparison would be wrong.
@@ -309,6 +333,7 @@ _SPECS: Final[tuple[PurposeSpec, ...]] = (
     PurposeSpec(
         purpose=AiPurpose.CONSULAR_TRIAGE,
         output_schema=ConsularTriageResult,
+        live_eligible=False,
         # NOT CONSULAR_SENSITIVE. Q-06 option (c): the narrative never enters, so what this
         # purpose processes is de-identified process metadata, which is MISSION_INTERNAL.
         max_classification=Classification.MISSION_INTERNAL,
@@ -474,59 +499,169 @@ def scenario_for(spec: PurposeSpec, role: RoleCode, context: GatewayContext) -> 
     return key[:_SCENARIO_MAX_LENGTH] or DEFAULT_SCENARIO
 
 
-def route_for(spec: PurposeSpec, effective_class: Classification) -> ModelRoute:
-    """Stage 5. Decide the model route and write the sentence that explains it.
+#: Section 4a renders the trace-drawer badge with middle dots. The separator is a
+#: constant because the badge is a contract with the drawer and with the VERIFY block,
+#: not incidental formatting.
+BADGE_SEP: Final[str] = " · "
 
-    **PLACEHOLDER RULE -- ``docs/OPEN_QUESTIONS.md`` Q-12 is deferred by architect
-    decision.** The routing *table* arrives in the Week 2 to 3 handoff. What Week 1 owes is
-    the decision *seam* and a route that is visible in the trace drawer
-    (``BUILD_BIBLE.md`` section 5), and that is what this is. The rule implemented:
+#: Which capability tier each purpose takes, per BUILD_BIBLE section 4a: "Fast:
+#: classify/score - Strong: briefs/meeting-prep". Scoring and matching produce a number
+#: and a short rationale, where the strong tier buys little; a brief or a draft
+#: communication is prose an Ambassador reads aloud, where it buys a lot.
+_TIER_BY_PURPOSE: Final[Mapping[AiPurpose, str]] = MappingProxyType(
+    {
+        AiPurpose.MORNING_BRIEF: "strong",
+        AiPurpose.MEETING_PREP: "strong",
+        AiPurpose.MEETING_FOLLOWUP: "strong",
+        AiPurpose.KNOWLEDGE_ANSWER: "strong",
+        AiPurpose.OPPORTUNITY_SCORE: "fast",
+        AiPurpose.DIASPORA_MATCH: "fast",
+        # consular_triage has no tier: its route forbids generation outright.
+        AiPurpose.CONSULAR_TRIAGE: "fast",
+    }
+)
 
-    1. ``CONSULAR_SENSITIVE`` effective classification routes to ``no-external-model``.
-       Unreachable today, because no purpose permits that zone and stage 2 refuses first --
-       it is recorded so the drawer shows the answer to the sharpest question a consular
-       buyer asks, rather than showing nothing because the case never arises.
-    2. ``CONFIDENTIAL`` routes to the purpose's route with a ``restricted-`` prefix, so the
-       escalation is legible at a glance in the drawer.
-    3. Everything else takes the purpose's declared default route.
 
-    The provider model id comes from ``ANTHROPIC_MODEL``; a route that forbids an external
-    model requests none, and ``model_requested`` is ``None`` rather than a name nobody
-    called.
+def tier_for(purpose: AiPurpose) -> str:
+    """Capability tier for ``purpose``. Secondary to sensitivity, never overriding it."""
+    return _TIER_BY_PURPOSE.get(purpose, "strong")
+
+
+def _model_for_tier(tier: str) -> str:
+    settings = get_settings()
+    return settings.anthropic_model_fast if tier == "fast" else settings.anthropic_model
+
+
+def _purpose_withheld(spec: PurposeSpec, effective_class: Classification, tier: str) -> ModelRoute:
+    """A route the BAND would allow but the PURPOSE declines.
+
+    Only reachable where the band is live-eligible, so the withholding is genuinely the
+    purpose's own decision and the badge says so rather than implying the band forbade it.
     """
-    model = get_settings().anthropic_model
-
-    if effective_class is Classification.CONSULAR_SENSITIVE:
-        return ModelRoute(
-            route="no-external-model",
-            reason=(
-                "The material is CONSULAR_SENSITIVE, so no external model was asked. "
-                "Consular case content is not transmitted off-box (docs/OPEN_QUESTIONS.md "
-                "Q-06, conservative reading); only the deterministic mission-local answer "
-                "is available for this zone."
-            ),
-            model_requested=None,
-        )
-
-    if effective_class is Classification.CONFIDENTIAL:
-        return ModelRoute(
-            route=f"restricted-{spec.default_model_route}",
-            reason=(
-                f"Routed to the restricted lane for {spec.purpose.value} because the most "
-                "sensitive item in the assembled context is CONFIDENTIAL, and the "
-                "classification of an answer is the maximum over what it was built from "
-                "(ADR-0006). Routing table deferred as Q-12; this is the Week 1 placeholder "
-                "rule."
-            ),
-            model_requested=model,
-        )
-
     return ModelRoute(
         route=spec.default_model_route,
         reason=(
-            f"Routed to the standard lane for {spec.purpose.value} because the most "
-            f"sensitive item in the assembled context is {effective_class.value}. Routing "
-            "table deferred as Q-12; this is the Week 1 placeholder rule."
+            f"The {effective_class.value} band permits an external call, but "
+            f"{spec.purpose.value} declines it: this purpose works on consular process "
+            "metadata, and no ruling permits that leaving the mission. Section 4a's table "
+            "is unchanged - this purpose simply does not use its external lane."
         ),
-        model_requested=model,
+        model_requested=None,
+        tier=tier,
+        badge=BADGE_SEP.join(
+            [effective_class.value, "purpose withholds external", "metadata-only"]
+        ),
+        live_eligible=False,
+        retention="no external call at all",
     )
+
+
+def route_for(spec: PurposeSpec, effective_class: Classification) -> ModelRoute:
+    """Stage 5. Apply the ``BUILD_BIBLE.md`` section 4a routing table.
+
+    Q-12 is RESOLVED and this is the table, no longer a placeholder. Two rules govern it:
+
+    **Sensitivity is the primary key.** The band is chosen by the *effective* class -- the
+    maximum over everything the answer was built from (ADR-0006), not the class the caller
+    declared. A PUBLIC question answered from a CONFIDENTIAL source is a CONFIDENTIAL
+    answer and routes as one.
+
+    **Capability tier is secondary, and never widens the band.** A "strong" purpose in the
+    CONSULAR_SENSITIVE band still gets no external call; the tier only chooses which model
+    is asked once the band has already permitted asking one.
+
+    THE LIVE GATE. ``live_eligible`` is true for PUBLIC and MISSION_INTERNAL only. That is
+    narrower than section 4a's eventual intent for CONFIDENTIAL, deliberately: 4a routes
+    CONFIDENTIAL to a "restricted (private-in-prod)" lane, and no such lane exists in the
+    demo. Rather than quietly send confidential material down the ordinary external route
+    and label it restricted, the route is marked ineligible and the deterministic answer is
+    served. Section 4a asks for the sovereign route to be "simulated HONESTLY"; this is the
+    same honesty applied one band up.
+
+    RESTRICTED has no ``Classification`` member -- the enum has four zones and 4a names
+    five bands -- so the fifth is unreachable rather than unhandled. If it is ever added,
+    the ``match`` below has no default arm and mypy will fail until this function is
+    updated, which is the failure mode we want.
+    """
+    tier = tier_for(spec.purpose)
+
+    match effective_class:
+        case Classification.CONSULAR_SENSITIVE:
+            return ModelRoute(
+                route="no-external-model",
+                reason=(
+                    "CONSULAR-SENSITIVE never leaves to an external model (BUILD_BIBLE "
+                    "section 4a, and Q-06 resolved to the same answer). No external call "
+                    "was attempted, generation is withheld, and only metadata-level work "
+                    "and the deterministic mission-local answer are available in this zone."
+                ),
+                model_requested=None,
+                tier=None,
+                badge=BADGE_SEP.join(
+                    [
+                        "CONSULAR-SENSITIVE",
+                        "no external route",
+                        "metadata-only",
+                        "generation withheld",
+                    ]
+                ),
+                live_eligible=False,
+                retention="no external call at all",
+            )
+
+        case Classification.CONFIDENTIAL:
+            return ModelRoute(
+                route=f"restricted-{spec.default_model_route}",
+                reason=(
+                    "The most sensitive item in the assembled context is CONFIDENTIAL, so "
+                    "section 4a routes this to the restricted lane with enhanced logging. "
+                    "That lane is flagged private-in-prod and does not exist in the demo, "
+                    "so no external call is made and the deterministic answer is served "
+                    "rather than downgrading the material onto the ordinary external route."
+                ),
+                model_requested=None,
+                tier=tier,
+                badge=BADGE_SEP.join(
+                    ["CONFIDENTIAL", "restricted", _model_for_tier(tier), "enhanced-logging"]
+                ),
+                live_eligible=False,
+                retention="no retention + enhanced logging",
+            )
+
+        case Classification.MISSION_INTERNAL:
+            model = _model_for_tier("strong")
+            if not spec.live_eligible:
+                return _purpose_withheld(spec, effective_class, tier)
+            return ModelRoute(
+                route="external-noret",
+                reason=(
+                    "The most sensitive item in the assembled context is MISSION-INTERNAL. "
+                    "Section 4a routes this to the approved external provider under a "
+                    "no-retention agreement, on the strong tier."
+                ),
+                model_requested=model,
+                # 4a fixes MISSION-INTERNAL at the strong tier regardless of purpose: the
+                # band, not the purpose, decides here.
+                tier="strong",
+                badge=BADGE_SEP.join(["INTERNAL", "external-noret", model]),
+                live_eligible=True,
+                retention="no retention",
+            )
+
+        case Classification.PUBLIC:
+            model = _model_for_tier(tier)
+            if not spec.live_eligible:
+                return _purpose_withheld(spec, effective_class, tier)
+            return ModelRoute(
+                route="external",
+                reason=(
+                    "Everything in the assembled context is PUBLIC, so section 4a routes "
+                    f"this to the approved external provider on the {tier} tier "
+                    f"({'briefs and meeting prep' if tier == 'strong' else 'classify and score'})."
+                ),
+                model_requested=model,
+                tier=tier,
+                badge=BADGE_SEP.join(["PUBLIC", "external", model, tier]),
+                live_eligible=True,
+                retention="no training retention",
+            )

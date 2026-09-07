@@ -69,7 +69,7 @@ import json
 import time
 import uuid
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Final
 
 from pydantic import ValidationError
@@ -110,7 +110,14 @@ from app.ai.schemas import EvidenceRef, GatewayContext, GatewayResult, GroundedR
 from app.core.config import get_settings
 from app.core.ids import new_id
 from app.core.logging import get_logger, get_request_id
-from app.domain.enums import AiPurpose, ApprovalStatus, Classification, RoleCode, dominant
+from app.domain.enums import (
+    AiPurpose,
+    ApprovalStatus,
+    ChunkCollection,
+    Classification,
+    RoleCode,
+    dominant,
+)
 from app.models.ai import AiTrace
 from app.security.principal import Principal
 from app.services.state_machine import ai_actor_scope
@@ -194,6 +201,9 @@ class TraceRecord:
     result_class: Classification = Classification.MISSION_INTERNAL
     model_route: str = "unrouted"
     route_reason: str = "The pipeline stopped before a route was chosen."
+    #: Section 4a capability tier, and the badge the trace drawer renders verbatim.
+    model_tier: str | None = None
+    route_badge: str = ""
     model_requested: str | None = None
     model_used: str | None = None
     live: bool = False
@@ -231,6 +241,8 @@ class TraceRecord:
             result_class=self.result_class,
             model_route=self.model_route,
             route_reason=self.route_reason,
+            model_tier=self.model_tier,
+            route_badge=self.route_badge,
             model_requested=self.model_requested,
             model_used=self.model_used,
             live=self.live,
@@ -346,43 +358,154 @@ class _ProviderResponse:
     output_tokens: int | None
 
 
-def _call_provider(*, model: str, api_key: str, prompt: str, system: str) -> _ProviderResponse:
+def _call_provider(
+    *,
+    model: str,
+    api_key: str,
+    prompt: str,
+    system: str,
+    output_schema: type[GroundedResult],
+    timeout_seconds: float,
+) -> _ProviderResponse:
     """Make the live call. **The lazy ``anthropic`` import lives here and nowhere else.**
 
-    Lazy for three reasons, all of them operational: a contributor with no SDK installed
-    still gets a working application; an import error becomes a fallback rather than a
-    failure to boot; and the test suite never touches the network by accident, because it
-    cannot reach this function with ``AI_GATEWAY_LIVE=false``.
+    Lazy for three reasons, all operational: a contributor with no SDK installed still
+    gets a working application; an import error becomes a fallback rather than a failure to
+    boot; and the test suite never touches the network by accident, because it cannot reach
+    this function with ``AI_GATEWAY_LIVE=false``.
 
-    Not exercised in Week 1 (``AI_GATEWAY_LIVE=false``). Week 2 flips one flag.
+    **Structured output, not prose-then-hope.** ``messages.parse`` with ``output_format``
+    constrains generation to the purpose's schema and returns a validated instance, so a
+    model that would have produced almost-JSON produces the right shape or fails loudly.
+    Stage 7 re-validates anyway -- the constraint is generation-side, the check is ours, and
+    a schema failure is a fallback reason (ADR-0002), not an exception the caller sees.
+
+    **The HTTP timeout is set as well as the outer budget.** ``call_with_budget`` stops
+    *waiting* but cannot stop the request; giving the client the same budget means the
+    socket is closed rather than left running to completion nobody will read. Both are
+    needed: the outer one bounds what the user waits for, the inner one bounds what we pay
+    for.
     """
     import anthropic
 
-    client = anthropic.Anthropic(api_key=api_key)
-    message = client.messages.create(
+    client = anthropic.Anthropic(api_key=api_key, timeout=timeout_seconds, max_retries=0)
+    message = client.messages.parse(
         model=model,
         max_tokens=MAX_OUTPUT_TOKENS,
         system=system,
         messages=[{"role": "user", "content": prompt}],
+        output_format=output_schema,
     )
 
-    text = "".join(block.text for block in message.content if block.type == "text").strip()
-    if not text:
-        msg = "The provider returned no text content; a 200 is not the same as a usable answer."
+    parsed = message.parsed_output
+    if parsed is None:
+        msg = "The provider returned no parsed output; a 200 is not the same as a usable answer."
         raise ValueError(msg)
-
-    parsed: object = json.loads(text)
-    if not isinstance(parsed, dict):
-        msg = f"The provider returned {type(parsed).__name__}, not a JSON object."
-        raise TypeError(msg)
 
     usage = message.usage
     return _ProviderResponse(
-        payload=parsed,
+        payload=parsed.model_dump(mode="json"),
         model_used=message.model,
         input_tokens=usage.input_tokens,
         output_tokens=usage.output_tokens,
     )
+
+
+def _retrieval_query(context: GatewayContext, sectors: Sequence[str], spec: PurposeSpec) -> str:
+    """The text stage 3 searches with.
+
+    Prefers the caller's question where the purpose's policy accepts one, and otherwise
+    derives it from the purpose's OWN declared sector codes -- which no caller can
+    influence. That ordering matters: MORNING_BRIEF accepts no question precisely so that
+    the one artefact an Ambassador reads aloud cannot be steered by caller text, and a
+    query built from caller input would reintroduce the surface the policy closes.
+
+    Slugs are turned back into words because the lexical half of the hybrid stems English,
+    and "skilled-migration" is one unknown token where "skilled migration" is two useful
+    ones.
+    """
+    if context.question:
+        return context.question
+    words = " ".join(code.replace("-", " ").replace("_", " ") for code in sectors)
+    return words or spec.purpose.value.replace("_", " ").lower()
+
+
+def _rank_by_retrieval(
+    session: Session | None,
+    user: Principal,
+    authorised: AuthorisedEvidence,
+    *,
+    query: str,
+) -> tuple[AuthorisedEvidence, dict[str, Any]]:
+    """Reorder the AUTHORISED set by hybrid-retrieval relevance. Never change its membership.
+
+    Composition matters here and the order is not interchangeable. Authorisation runs
+    first, over the citation registry, and produces the set this principal may be shown.
+    Retrieval then runs over the indexed corpus and is used only to *reorder* that set, so
+    the most relevant sources land inside the prompt budget. An id retrieval surfaces which
+    authorisation did not permit is dropped by construction: the ranking is applied by
+    lookup into the authorised set, so an outsider has nothing to be looked up as.
+
+    Doing it the other way round -- retrieve, then filter -- is the classic RAG leak: the
+    top-k is chosen from material the caller cannot see, and what survives the filter is
+    both fewer results than exist and a signal about what was withheld.
+
+    MEMBERSHIP IS PRESERVED, only the order changes. ``AuthorisedEvidence.ids`` is what the
+    stage 8 citation post-check tests against, and narrowing it here would make an answer
+    citing a legitimately authorised source get refused as unauthorised.
+
+    Falls back to the registry's own deterministic ordering when there is no session (the
+    unit suite runs the whole pipeline with no database) or when retrieval returns nothing.
+    """
+    description: dict[str, Any] = {"ranker": "registry order (hero-thread first, then id)"}
+    if session is None or not authorised.entries:
+        return authorised, description
+
+    from app.services.retrieval import RetrievalQuery, hybrid_search
+
+    by_id = {entry.id: entry for entry in authorised.entries}
+    hits = hybrid_search(
+        session,
+        user,
+        RetrievalQuery(
+            text=query,
+            # Public sources and approved knowledge only. A brief is a mission-visible
+            # product; internal notes are not quotable into one without a separate ruling.
+            collections=frozenset({ChunkCollection.PUBLIC_INTELLIGENCE, ChunkCollection.KNOWLEDGE}),
+            limit=EVIDENCE_LIMIT * 3,
+        ),
+        embed,
+    )
+
+    ranked: list[CitationEntry] = []
+    seen: set[str] = set()
+    for hit in hits:
+        entry = by_id.get(hit.evidence_id or "")
+        if entry is not None and entry.id not in seen:
+            seen.add(entry.id)
+            ranked.append(entry)
+
+    retrieved_ids = {hit.evidence_id for hit in hits if hit.evidence_id}
+    description.update(
+        {
+            "ranker": "hybrid (postgres FTS + pgvector cosine, reciprocal rank fusion)",
+            "query": query,
+            "retrieval_hits": len(hits),
+            "hits_inside_authorised_set": len(ranked),
+            "hits_outside_authorised_set_ignored": len(retrieved_ids - set(by_id)),
+            "ranking_applied": (
+                "after authorisation; ordering only, membership of the authorised set is unchanged"
+            ),
+        }
+    )
+    if not ranked:
+        return authorised, description
+
+    # Everything not ranked keeps its registry order behind the ranked head, so the set is
+    # identical and only the prompt slice changes.
+    remainder = [entry for entry in authorised.entries if entry.id not in seen]
+    reordered = tuple(ranked + remainder)
+    return replace(authorised, entries=reordered), description
 
 
 def _classify_provider_error(exc: BaseException) -> FallbackReason:
@@ -624,15 +747,20 @@ def _run_pipeline(
     stage_started = time.perf_counter()
     sectors = context.sector_codes or spec.default_sector_codes
     authorised = authorise_evidence(user, sector_codes=sectors, prompt_limit=EVIDENCE_LIMIT)
-    record.retrieval_filter = dict(authorised.filter_description)
+    authorised, rank_description = _rank_by_retrieval(
+        session,
+        user,
+        authorised,
+        query=_retrieval_query(context, sectors, spec),
+    )
+    record.retrieval_filter = {**authorised.filter_description, **rank_description}
     record.stage(
         "retrieval_authorisation",
         ok=True,
         detail=(
             f"{len(authorised.entries)} authorised source(s) from the citation registry "
-            f"under classifications "
-            f"{authorised.filter_description.get('classifications')}; filter applied before "
-            "selection."
+            f"under classifications {authorised.filter_description.get('classifications')}; "
+            f"filter applied before selection; ordered by {rank_description['ranker']}."
         ),
         started=stage_started,
     )
@@ -678,10 +806,15 @@ def _run_pipeline(
     record.model_route = route.route
     record.route_reason = route.reason
     record.model_requested = route.model_requested
+    record.model_tier = route.tier
+    record.route_badge = route.badge
     record.stage(
         "model_route",
         ok=True,
-        detail=f"route={route.route}; model_requested={route.model_requested or 'none'}",
+        detail=(
+            f"{route.badge}  |  route={route.route}; tier={route.tier or 'none'}; "
+            f"model_requested={route.model_requested or 'none'}; retention={route.retention}"
+        ),
         started=stage_started,
     )
 
@@ -691,9 +824,13 @@ def _run_pipeline(
     reason: FallbackReason | None = None
     provider_detail = ""
 
-    if route.model_requested is None:
+    if not route.live_eligible or route.model_requested is None:
         reason = FallbackReason.LIVE_DISABLED
-        provider_detail = "The route forbids an external model; no call was attempted."
+        provider_detail = (
+            f"The {route.route} route forbids an external model, so none was asked "
+            "(BUILD_BIBLE section 4a). The deterministic answer is the only one available "
+            "in this band."
+        )
     elif not settings.ai_gateway_live:
         reason = FallbackReason.LIVE_DISABLED
         provider_detail = "AI_GATEWAY_LIVE is false; the deterministic path is in use."
@@ -709,6 +846,8 @@ def _run_pipeline(
                     api_key=settings.anthropic_api_key or "",
                     prompt=prompt,
                     system=spec.summary,
+                    output_schema=spec.output_schema,
+                    timeout_seconds=settings.ai_gateway_timeout_seconds,
                 ),
                 seconds=settings.ai_gateway_timeout_seconds,
             )

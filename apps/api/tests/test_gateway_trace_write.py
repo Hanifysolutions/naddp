@@ -92,7 +92,7 @@ def test_a_served_answer_writes_exactly_one_trace_row(transactional_session: Ses
     assert row.scenario == "ambassador"
     assert row.actor_role is RoleCode.AMBASSADOR
     assert row.user_id == principal_for_role(RoleCode.AMBASSADOR).user_id
-    assert row.model_route == "standard-brief"
+    assert row.model_route == "external-noret"
     assert row.route_reason
     assert row.fallback is True
     assert row.fallback_reason in FALLBACK_REASONS

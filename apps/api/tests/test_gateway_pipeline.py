@@ -124,9 +124,10 @@ def test_every_call_records_all_nine_stages() -> None:
 def test_trace_records_the_routing_decision_and_the_reason() -> None:
     """BUILD_BIBLE section 5: the routing decision must be visible, not merely taken."""
     outcome = _go(AiPurpose.MORNING_BRIEF, role=RoleCode.AMBASSADOR)
-    assert outcome.trace.model_route == "standard-brief"
+    assert outcome.trace.model_route == "external-noret"
     assert len(outcome.trace.route_reason) > 40
-    assert "Q-12" in outcome.trace.route_reason
+    # Q-12 is resolved; the reason now cites the section 4a table it applies.
+    assert "Section 4a" in outcome.trace.route_reason
 
 
 def test_trace_records_the_retrieval_filter_that_ran_before_selection() -> None:

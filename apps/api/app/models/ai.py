@@ -361,6 +361,26 @@ class AiTrace(UUIDPrimaryKeyMixin, Base):
             "decision and asserting one -- so it is NOT NULL and must never be boilerplate."
         ),
     )
+    model_tier: Mapped[str | None] = mapped_column(
+        String(16),
+        nullable=True,
+        comment=(
+            "BUILD_BIBLE section 4a capability tier: 'fast' for classify/score, 'strong' "
+            "for briefs and meeting prep. Secondary to sensitivity - the band decides "
+            "whether a model may be asked at all, the tier only decides which one."
+        ),
+    )
+    route_badge: Mapped[str] = mapped_column(
+        String(160),
+        nullable=False,
+        default="",
+        comment=(
+            "The section 4a trace-drawer badge, e.g. 'PUBLIC · external · "
+            "claude-sonnet-5 · strong'. Stored rendered rather than assembled by the "
+            "UI: 4a requires it to be legible to a non-technical Ambassador, and a drawer "
+            "that re-derives it can drift from what the Gateway actually decided."
+        ),
+    )
     model_requested: Mapped[str | None] = mapped_column(
         String(96),
         nullable=True,
