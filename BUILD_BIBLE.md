@@ -18,8 +18,10 @@ We are building the **demo vertical slice** from the Architecture doc §19–20 
 
 ## 2. Hero Narrative Thread (drives ALL seed data)
 Dual sector: **Critical Minerals (lithium)** + **Education / Skilled Migration**.
-- Signal: An Australian lithium refinery expansion (public source) needs processing talent + training pipelines.
+- Signal: Australia is scaling lithium **midstream/downstream** against a documented resources-sector **processing-skills gap** (public sources). Anchor: Covalent Mt Holland–Kwinana — the *refinery* is ramping toward nameplate while the *concentrator* doubles 380 → 760 ktpa.
+  - ⚠️ **Never conflate concentrator with refinery.** They are different assets and the distinction is load-bearing: as at Sept 2026 no Australian lithium *refinery* is expanding capacity (Albemarle Kemerton is in care and maintenance; Tianqi/IGO Kwinana Phase 2 is halted). Citing a concentrator expansion as a "refinery expansion" is factually wrong and would destroy winning moment #1. Resolved as OPEN_QUESTIONS Q-16.
 - → Opportunity: "AU lithium value-chain partnership + Nigerian skilled-migration training corridor."
+  - ⚠️ This link is **AI-proposed, not reported**: no public source connects an Australian lithium operator to Nigeria. The opportunity renders at *lower* confidence than the signals beneath it, badged "AI-proposed, pending officer qualification" (`opportunities.is_proposed_by_ai = true`). Resolved as OPEN_QUESTIONS Q-17.
 - → Stakeholder: the AU company + a Nigerian counterpart institution.
 - → Meeting: Trade Officer preps a pre-read; follow-up email BLOCKS on approval.
 - → Consular: a synthetic passport-renewal case for a Nigerian student in AU (ties migration thread).
