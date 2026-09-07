@@ -18,7 +18,7 @@
     Exit codes propagate from the underlying command, so CI-style usage works:
         .\make.ps1 test; if ($LASTEXITCODE -ne 0) { ... }
 
-    Targets: help, install, db-up, db-down, migrate, dev, seed, demo-reset,
+    Targets: help, install, db-up, db-down, migrate, dev, seed, ingest, demo-reset,
              demo-prewarm, test, lint, typecheck, gen-client, clean.
 
 .EXAMPLE
@@ -356,6 +356,18 @@ $Targets = [ordered]@{
         }
     }
 
+    'ingest' = @{
+        Help = 'Chunk and embed the seeded corpus into the retrieval tables'
+        Run  = {
+            # Part of demo-reset, not an optional extra. The reset drops document_chunks
+            # with the schema and nothing else recreates them - so without this, hybrid
+            # retrieval answers every query with nothing at all, silently, and the first
+            # sign of it is an empty knowledge panel on stage rather than an error
+            # anybody saw coming.
+            Invoke-Step -Exe $Uv -Arguments @('run', 'python', '-m', 'app.cli.ingest') -WorkingDirectory $ApiDir
+        }
+    }
+
     'demo-prewarm' = @{
         Help = 'Generate and cache the hero morning briefs (run AFTER demo-reset)'
         Run  = {
@@ -381,6 +393,7 @@ $Targets = [ordered]@{
             )
             Invoke-Target -Name 'migrate'
             Invoke-Target -Name 'seed'
+            Invoke-Target -Name 'ingest'
             # The AI Gateway memoises snapshots AND misses, and the citation registry
             # with them. A reset that left either warm serves the previous seed's answer
             # against the new seed's evidence ids, which stage 8 then refuses — on stage.

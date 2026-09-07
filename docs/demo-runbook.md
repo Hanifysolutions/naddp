@@ -4,10 +4,14 @@ Short on purpose. This is what you run before an Ambassador is in the room, and 
 
 ```bash
 docker compose up -d db        # Postgres 16 + pgvector on host port 5433
-.\make.ps1 demo-reset          # drop, migrate, seed  -> clean synthetic dataset
-.\make.ps1 demo-prewarm        # generate and cache the hero briefs   <- NEW, W2.3
+.\make.ps1 demo-reset          # drop, migrate, seed, ingest -> clean synthetic dataset
+.\make.ps1 demo-prewarm        # generate and cache the hero briefs
 .\make.ps1 dev                 # api :8000 + web :3000
 ```
+
+`demo-reset` ends with `make ingest` (chunk + embed, 325 chunks). It has to: the reset drops
+`document_chunks` with the schema, and hybrid retrieval with no chunks returns nothing at all
+rather than failing — an empty panel on stage, with no error to warn anybody first.
 
 On Linux/macOS/CI substitute `make <target>`; the targets are identical by design.
 

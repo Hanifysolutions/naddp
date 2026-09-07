@@ -25,15 +25,15 @@ Prompt: `PROMPT_W1_foundation.md`
 
 ---
 
-## Week 2 — Diplomatic Intelligence  ⬜
-- ⬜ Morning brief (role-aware, source-backed, confidence) — Gateway goes LIVE for briefs
-- ⬜ Opportunity Radar: ingest → dedupe → classify → score (explainable)
-- ⬜ Opportunity Pipeline (kanban + state machine + audit on transition)
-- ⬜ Stakeholder 360 (dossier, timeline, linked opportunity)
-- ⬜ Evidence retrieval: hybrid (metadata + FTS + pgvector) with provenance
-- ⬜ `docs/W2_STATUS.md`
+## Week 2 — Diplomatic Intelligence  ✅
+- ✅ Morning brief (role-aware, source-backed, confidence) — Gateway goes LIVE for briefs
+- ✅ Opportunity Radar: ingest → dedupe → classify → score (explainable)
+- ✅ Opportunity Pipeline (kanban + state machine + audit on transition)
+- ✅ Stakeholder 360 (dossier, timeline, linked opportunity)
+- ✅ Evidence retrieval: hybrid (metadata + FTS + pgvector) with provenance
+- ✅ `docs/W2_STATUS.md`
 
-**Exit condition:** every intelligence item has resolving evidence; brief is grounded; scoring is explainable + editable.
+**Exit condition:** every intelligence item has resolving evidence; brief is grounded; scoring is explainable + editable. **Met** — see `docs/W2_STATUS.md`.
 
 ---
 

@@ -34,7 +34,7 @@ DB_USER        ?= naddp
 DB_NAME        ?= naddp
 DB_WAIT_TRIES  ?= 60
 
-.PHONY: help install db-up db-down migrate dev seed demo-reset demo-prewarm test lint typecheck gen-client clean
+.PHONY: help install db-up db-down migrate dev seed ingest demo-reset demo-prewarm test lint typecheck gen-client clean
 
 help: ## Show this help
 	@printf '\nNADDP — Nigeria-Australia Digital Diplomacy Platform (DEMO / SYNTHETIC DATA ONLY)\n\n'
@@ -75,6 +75,13 @@ dev: db-up migrate ## Run db + api (:8000) + web (:3000) together; Ctrl+C stops 
 seed: ## Load the synthetic demo dataset (hero thread + citation registry)
 	$(UV) run --project $(API_DIR) python $(SEED_SCRIPT)
 
+ingest: ## Chunk and embed the seeded corpus into the retrieval tables
+	@# Part of demo-reset, not an optional extra. The reset drops document_chunks with the
+	@# schema, and nothing else recreates them - so without this, hybrid retrieval answers
+	@# every query with nothing at all, silently, and the first sign of it is a knowledge
+	@# panel that is empty on stage rather than an error anybody saw coming.
+	cd $(API_DIR) && $(UV) run python -m app.cli.ingest
+
 demo-reset: ## Drop the schema, re-migrate and re-seed — restores a clean demo state
 	$(MAKE) db-up
 	$(DOCKER_COMPOSE) exec -T $(DB_SERVICE) psql -v ON_ERROR_STOP=1 -U $(DB_USER) -d $(DB_NAME) \
@@ -86,6 +93,7 @@ demo-reset: ## Drop the schema, re-migrate and re-seed — restores a clean demo
 	  -f /docker-entrypoint-initdb.d/001_extensions.sql
 	$(MAKE) migrate
 	$(MAKE) seed
+	$(MAKE) ingest
 	@# The AI Gateway memoises snapshots AND misses, and the citation registry with them.
 	@# A reset that left either warm serves the previous seed's answer against the new
 	@# seed's evidence ids, which stage 8 then refuses — on stage. The caches are
