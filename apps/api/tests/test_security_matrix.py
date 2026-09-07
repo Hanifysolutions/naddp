@@ -376,8 +376,20 @@ def test_admin_is_not_a_content_super_user() -> None:
     """Property (a). The assertion a security reviewer makes first."""
     admin = permissions_for_role(R.ADMIN)
     assert not (admin & ADMIN_FORBIDDEN_READS)
-    assert admin == frozenset(
-        {P.READ_COMMAND, P.READ_AI_TRACE, P.READ_AUDIT, P.ADMIN_USER, P.ADMIN_ROLE}
+    assert admin == frozenset({P.READ_COMMAND, P.READ_AUDIT, P.ADMIN_USER, P.ADMIN_ROLE})
+
+
+def test_admin_cannot_read_an_ai_trace() -> None:
+    """Q-02b ruling, 2026-09-07: the trace drawer is not a way around the compartment wall.
+
+    A trace carries the purpose, the evidence ids and the zone of the answer, so it
+    discloses case and opportunity substance. ADMIN holds no business-domain read; granting
+    it the trace would hand back through the side door exactly what
+    ``test_admin_is_not_a_content_super_user`` denies at the front.
+    """
+    assert not role_has(R.ADMIN, P.READ_AI_TRACE)
+    assert granted_roles(P.READ_AI_TRACE) == frozenset(
+        {R.AMBASSADOR, R.DEPUTY, R.TRADE_OFFICER, R.CONSULAR_OFFICER, R.DIASPORA_OFFICER}
     )
 
 
@@ -429,8 +441,19 @@ def test_approving_an_outbound_communication_is_senior_only() -> None:
     assert not role_has(R.TRADE_OFFICER, P.APPROVE_MEETING_FOLLOWUP)
 
 
-def test_every_role_can_reach_the_command_centre_and_the_trace_drawer() -> None:
+def test_every_role_can_reach_the_command_centre() -> None:
     """Navigation is derived, so a role with no landing surface would render nothing."""
     for role in RoleCode:
         assert role_has(role, P.READ_COMMAND), role.value
+
+
+def test_every_business_domain_role_can_reach_the_trace_drawer() -> None:
+    """A control nobody can inspect is not a control (BUILD_BIBLE §5).
+
+    Every role that can *cause* an AI call can also inspect one. ADMIN causes none and
+    inspects none - see ``test_admin_cannot_read_an_ai_trace``.
+    """
+    for role in RoleCode:
+        if role is R.ADMIN:
+            continue
         assert role_has(role, P.READ_AI_TRACE), role.value

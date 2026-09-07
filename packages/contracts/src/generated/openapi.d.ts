@@ -412,10 +412,12 @@ export interface paths {
          * Read one AI trace
          * @description Return one ``ai_traces`` row.
          *
-         *     All six roles hold ``read:ai_trace``: a routing decision nobody may inspect is not a
-         *     demonstrable control (``BUILD_BIBLE.md`` section 5). Clearance still applies, and it is
-         *     checked against the *dominant* of the zone the call ran in and the zone of the answer it
-         *     produced -- the higher of the two, because a trace discloses something about both.
+         *     The five business-domain roles hold ``read:ai_trace``: a routing decision nobody may
+         *     inspect is not a demonstrable control (``BUILD_BIBLE.md`` section 5). ``ADMIN`` does
+         *     not, because a trace discloses the substance of the call and ADMIN holds no content
+         *     read (Q-02b). Clearance still applies on top, and it is checked against the *dominant*
+         *     of the zone the call ran in and the zone of the answer it produced -- the higher of the
+         *     two, because a trace discloses something about both.
          *
          *     Reading a trace whose zone is privileged appends one ``access.privileged_read`` audit
          *     row; reading an ordinary one writes nothing. The decision is the middleware's, made

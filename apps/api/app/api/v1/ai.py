@@ -9,8 +9,9 @@ snapshot selection or citation checking lives in this module -- all of it is in 
 **Two gates, and both must pass** (ADR-0003 rule 3). The Gateway enforces *classification*
 and never permissions: it will happily run a purpose for anybody cleared for the zone. The
 ``require(...)`` dependency on each route is the other half, and it is what stops ``ADMIN``
--- which holds ``read:ai_trace`` and no content read at all -- from generating a morning
-brief.
+-- which holds no content read at all -- from generating a morning brief. Since the Q-02b
+ruling ``ADMIN`` does not hold ``read:ai_trace`` either, so it cannot reach a trace after
+the fact and read the substance out of it.
 
 **A refusal is HTTP 200.** ``approval_status = BLOCKED`` with ``result = null`` and a
 populated ``explanation`` *is* the contract for a refusal (``docs/OPEN_QUESTIONS.md`` Q-03,
@@ -603,10 +604,12 @@ def read_trace(
 ) -> AiTraceResponse:
     """Return one ``ai_traces`` row.
 
-    All six roles hold ``read:ai_trace``: a routing decision nobody may inspect is not a
-    demonstrable control (``BUILD_BIBLE.md`` section 5). Clearance still applies, and it is
-    checked against the *dominant* of the zone the call ran in and the zone of the answer it
-    produced -- the higher of the two, because a trace discloses something about both.
+    The five business-domain roles hold ``read:ai_trace``: a routing decision nobody may
+    inspect is not a demonstrable control (``BUILD_BIBLE.md`` section 5). ``ADMIN`` does
+    not, because a trace discloses the substance of the call and ADMIN holds no content
+    read (Q-02b). Clearance still applies on top, and it is checked against the *dominant*
+    of the zone the call ran in and the zone of the answer it produced -- the higher of the
+    two, because a trace discloses something about both.
 
     Reading a trace whose zone is privileged appends one ``access.privileged_read`` audit
     row; reading an ordinary one writes nothing. The decision is the middleware's, made

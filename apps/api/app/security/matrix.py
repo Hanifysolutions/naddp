@@ -84,8 +84,14 @@ _SHARED_READS: Final[frozenset[Permission]] = frozenset(
     }
 )
 
-#: The trace drawer. Held by all six roles: a routing decision nobody may inspect is not
-#: a demonstrable control (BUILD_BIBLE.md section 5).
+#: The trace drawer. Held by the five roles that do business-domain work: a routing
+#: decision nobody may inspect is not a demonstrable control (BUILD_BIBLE.md section 5).
+#:
+#: NOT held by ``ADMIN`` (architect ruling on Q-02b, 2026-09-07). A trace carries the
+#: purpose, the evidence ids and the zone of the answer, so it discloses case and
+#: opportunity substance. Granting it to a role that holds no business-domain read would
+#: make the trace drawer a side-channel straight around ADMIN's compartment wall -- the
+#: one property principle 2 exists to protect.
 _AI_TRACE: Final[frozenset[Permission]] = frozenset({Permission.READ_AI_TRACE})
 
 #: Opportunity pipeline work, short of the commitment control. Q-02b row 6.
@@ -284,12 +290,13 @@ ROLE_PERMISSIONS: Final[Mapping[RoleCode, frozenset[Permission]]] = MappingProxy
             | _DIASPORA_SEARCH
             | _KNOWLEDGE_AUTHOR
         ),
-        # Platform administration and audit reading, and NOTHING else. Five permissions.
+        # Platform administration and audit reading, and NOTHING else. Four permissions.
         # It cannot read a case, an opportunity, a stakeholder, a signal or a diaspora
-        # profile; it cannot draft, approve or send a communication; it cannot export.
-        # This is principle 2, and it is the assertion a security reviewer will test
-        # first.
-        RoleCode.ADMIN: (_COMMAND | _AI_TRACE | _ADMINISTRATION),
+        # profile; it cannot draft, approve or send a communication; it cannot export;
+        # and since the Q-02b ruling it cannot open an AI trace either, because a trace
+        # discloses the substance of the call it describes. This is principle 2, and it
+        # is the assertion a security reviewer will test first.
+        RoleCode.ADMIN: (_COMMAND | _ADMINISTRATION),
     }
 )
 

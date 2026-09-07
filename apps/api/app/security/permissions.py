@@ -284,8 +284,10 @@ PERMISSION_SPECS: Final[Mapping[Permission, PermissionSpec]] = MappingProxyType(
                 "Read AI traces",
                 "Open the trace drawer for an AI response: purpose, classification "
                 "routing decision, evidence and whether a cached fallback was served. "
-                "Held by every role, because a control nobody can inspect is not a "
-                "control.",
+                "Held by the five business-domain roles, because a control nobody can "
+                "inspect is not a control. Not held by ADMIN: a trace discloses the "
+                "substance of the call, so it must not become a route around ADMIN's "
+                "lack of any content read.",
                 "governance",
             ),
             # -- opportunity ------------------------------------------------------

@@ -171,10 +171,12 @@ def test_admin_is_not_a_content_super_user_over_the_wire(anonymous: TestClient) 
     assert sorted(body["permissions"]) == [
         "admin:role",
         "admin:user",
-        "read:ai_trace",
         "read:audit",
         "read:command",
     ]
+    # Q-02b ruling: not read:ai_trace either. A trace discloses the substance of the call,
+    # so it must not be reachable by a role that holds no content read.
+    assert "read:ai_trace" not in body["permissions"]
 
 
 def test_sensitive_permissions_are_a_subset_of_the_held_set(anonymous: TestClient) -> None:

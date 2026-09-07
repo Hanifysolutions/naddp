@@ -37,7 +37,7 @@ Observed by direct query after `make demo-reset`.
 Supporting tables: `sources` 64 · `documents` 138 · `organisations` 30 · `interactions` 66 ·
 `actions` 20 · `case_events` 54 · `case_evidence` 12 · `briefs` 5 · `brief_items` 20 ·
 `expertise_tags` 44 · `diaspora_expertise` 49 · `meeting_attendees` 18 · `ai_traces` 10 ·
-`users` 6 · `roles` 6 · `permissions` 40 · `role_permissions` 135 · `user_roles` 6.
+`users` 6 · `roles` 6 · `permissions` 40 · `role_permissions` 134 · `user_roles` 6.
 
 **Q-13 verified by query:** 450 rows over a **56-day** trailing window anchored to `now()`,
 **5.3% denials** (24/456 including live writes), **all six roles** represented, chain intact.
@@ -54,7 +54,7 @@ Supporting tables: `sources` 64 · `documents` 138 · `organisations` 30 · `int
 | 4 | `/v1/command/today` role-scoped | ✅ TRADE_OFFICER sees 5 tiles, consular `null`; CONSULAR_OFFICER sees consular + meetings only |
 | 5 | Gateway fallback with live path disabled | ✅ `fallback=true`, `reason=LIVE_DISABLED`, 9 stages traced, byte-identical across two calls |
 | 6 | Stage transition writes an audit row | ✅ `opportunity.contact_planned`, actor TRADE_OFFICER, `ALLOW`; a guard refusal also wrote a `DENY` row |
-| 7 | `make test` green, CI valid | ✅ **836 tests pass**; ruff, ruff-format and mypy-strict all clean |
+| 7 | `make test` green, CI valid | ✅ **838 tests pass**; ruff, ruff-format and mypy-strict all clean |
 | 8 | `/command` at 1080p | ✅ HTTP 200, DEMO + SYNTHETIC badges and all six tile titles present; production build clean |
 
 **Standing invariants re-checked:** `import anthropic` appears **only** in `app/ai/gateway.py:348`
@@ -100,8 +100,10 @@ Ambassador than a missing citation. Excluded permanently unless the site is fixe
   **most conservative reading**: `consular_triage` accepts case metadata only and refuses narrative
   in code, recording the refusal in the trace. Reversible if the architect rules otherwise.
 - **Q-01 (exact tile metrics)** — the six tiles use obviously-defensible counts pending a ruling.
-- **Q-02b (role→permission matrix)** — decided by me under `[ASSUMPTION]` because P3 could not be
-  built without it. Offered for confirmation; reversal cost is one module and its test matrix.
+- **Q-02b (role→permission matrix)** — **RESOLVED 2026-09-07.** Architect confirmed the matrix with
+  one change: `read:ai_trace` removed from `ADMIN`, because a trace discloses the substance of the
+  call and would otherwise be a side-channel around ADMIN's lack of any content read. Now
+  **40 permissions / 134 grants**; ADMIN holds four.
 
 ---
 
