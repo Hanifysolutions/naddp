@@ -9,7 +9,7 @@
  */
 import createClient from 'openapi-fetch';
 
-import type { paths } from './generated/openapi';
+import type { components, paths } from './generated/openapi';
 
 export type { paths, webhooks, components, operations, $defs } from './generated/openapi';
 
@@ -45,67 +45,47 @@ export function createApiClient(baseUrl: string): ApiClient {
 }
 
 /**
- * The exactly-one shape every AI endpoint returns (BUILD_BIBLE §4). Declared here as a
- * hand-written contract so the web app can depend on it before the API exists; once the
- * API is up, the generated `components['schemas']` version supersedes it and this stays
- * as the documented invariant.
+ * The exactly-one shape every AI endpoint returns (BUILD_BIBLE §4).
+ *
+ * RECONCILED WITH THE GENERATED SCHEMA (`make gen-client`, Phase 6). These three types
+ * were hand-written so the web app could compile before the API existed, and the original
+ * note said the generated `components['schemas']` version supersedes them once the API is
+ * up. It is up, so they are now *derived* rather than mirrored: the API is the authority
+ * and a future field change lands here automatically instead of drifting silently.
+ *
+ * What the reconciliation found:
+ *  - `ApprovalStatus` — identical, all five members including `BLOCKED`. No change but the
+ *    derivation.
+ *  - `EvidenceRef` — same five fields; the API marks `url`, `source` and `citation_id`
+ *    *optional as well as nullable* (Pydantic defaults), which the hand-written interface
+ *    required to be present. That was the one real drift: a wire object omitting `url`
+ *    would not have satisfied the local type.
+ *  - `AiEnvelope` — the API's `GatewayResult` makes `evidence` optional (defaults to `[]`)
+ *    and `explanation` optional-and-nullable. Same drift, same fix. `result` stays generic
+ *    here because the API types it as an open `BaseModel` — the purpose schema decides the
+ *    shape, so the caller supplies it.
  */
-export type ApprovalStatus =
-  /** The action carries no approval requirement. */
-  | 'NOT_REQUIRED'
-  /** Drafted and awaiting a human decision. The consequential action is blocked. */
-  | 'PENDING_APPROVAL'
-  /** A human with the required permission approved it. */
-  | 'APPROVED'
-  /** A human with the required permission rejected it. */
-  | 'REJECTED'
-  /**
-   * The Gateway refused or could not answer, and no deterministic fallback covered the
-   * request (ADR-0002). `result` is null and the UI must say so plainly rather than
-   * render an empty success. This is the state the demo is most likely to hit on stage,
-   * so it has to be representable — omitting it is how a dead-end becomes a blank panel.
-   */
-  | 'BLOCKED';
+export type ApprovalStatus = components['schemas']['ApprovalStatus'];
 
-/** One item of provenance behind an AI answer. Never render an AI claim without these. */
-export interface EvidenceRef {
-  readonly id: string;
-  readonly title: string;
-  readonly url: string | null;
-  readonly source: string | null;
-  /**
-   * Key of the entry in `data/demo-seed/citations.json` this evidence resolved to.
-   *
-   * Usually the same string as `id`; it differs only when an item was matched to the
-   * registry under another key. Additive and nullable, so a consumer written before the
-   * Gateway landed still compiles. Reconciled against
-   * `components['schemas']['EvidenceRef']`, which is the authority.
-   */
-  readonly citation_id: string | null;
-}
+/**
+ * One item of provenance behind an AI answer. Never render an AI claim without these.
+ *
+ * `Readonly` and not a re-declaration: mutating a response object is never correct, and
+ * the field list stays the API's.
+ */
+export type EvidenceRef = Readonly<components['schemas']['EvidenceRef']>;
 
 /**
  * Envelope for every AI response. Raw prose is never a valid AI payload.
  *
- * `result` is nullable because a `BLOCKED` envelope carries no result. Callers must
- * narrow on `approval_status` before reading it; `strict` + `strictNullChecks` make
- * forgetting a compile error rather than a blank panel in front of the Ambassador.
+ * `result` is nullable because a `BLOCKED` envelope carries no result. Callers must narrow
+ * on `approval_status` before reading it; `strict` + `strictNullChecks` make forgetting a
+ * compile error rather than a blank panel in front of the Ambassador. `evidence` is
+ * optional on the wire — read it as `envelope.evidence ?? []`, never assume the array.
  */
-export interface AiEnvelope<TResult> {
+export interface AiEnvelope<TResult>
+  extends Omit<Readonly<components['schemas']['GatewayResult']>, 'result'> {
   readonly result: TResult | null;
-  readonly evidence: readonly EvidenceRef[];
-  readonly trace_id: string;
-  readonly approval_status: ApprovalStatus;
-  /**
-   * Why the Gateway refused, in a sentence a person can read.
-   *
-   * Populated only when `approval_status` is `BLOCKED`, and null otherwise. This is the
-   * text the UI must show instead of an empty panel: a refusal the audience cannot read
-   * looks like a broken demo rather than a control working. Additive and nullable, so an
-   * existing consumer still compiles. Reconciled against
-   * `components['schemas']['GatewayResult']`, which is the authority.
-   */
-  readonly explanation: string | null;
 }
 
 /**
@@ -121,13 +101,26 @@ export type FastApiDetail =
     }>;
 
 /**
- * A normalised, renderable API failure. Deliberately small: a status, a human-readable
- * message, and the trace id when the API supplied one.
+ * A normalised, renderable API failure.
+ *
+ * Shaped against what this API actually emits. Every error leaving it is an RFC 9457
+ * `application/problem+json` document (`apps/api/app/core/errors.py`) carrying `detail`,
+ * `code`, `request_id` and — for an RBAC refusal — `missing_permissions`. Those last two
+ * are the difference between "something went wrong" and "your role does not hold
+ * read:opportunity, and here is the request id that proves it was refused server-side",
+ * which is the sentence this demo needs to be able to say on stage.
  */
 export interface ApiError {
   readonly status: number;
   readonly message: string;
+  /** The `ai_traces` id, when the failure came from an AI endpoint. Usually null. */
   readonly traceId: string | null;
+  /** Correlates this failure with the API log line and any audit row it wrote. */
+  readonly requestId: string | null;
+  /** The API's machine-readable problem code, e.g. `permission_denied`. */
+  readonly code: string | null;
+  /** Permissions the caller was missing, when the refusal named them. Often empty. */
+  readonly missingPermissions: readonly string[];
 }
 
 /** Narrow an unknown thrown/returned value to an {@link ApiError}. */
@@ -141,6 +134,22 @@ export function isApiError(value: unknown): value is ApiError {
   );
 }
 
+/** True when the API refused this call under deny-by-default RBAC or ADR-0006 clearance. */
+export function isDeniedError(error: ApiError): boolean {
+  return (
+    error.status === 401 ||
+    error.status === 403 ||
+    error.code === 'permission_denied' ||
+    error.code === 'classification_denied'
+  );
+}
+
+/** Read a string field, treating an empty string as absent. */
+function readString(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
 /**
  * Turn a non-OK response body into an {@link ApiError} without ever inventing a message.
  * If the body is unreadable we say so rather than pretending the call succeeded.
@@ -148,17 +157,29 @@ export function isApiError(value: unknown): value is ApiError {
 export function toApiError(status: number, body: unknown): ApiError {
   let message = `Request failed with status ${status}.`;
   let traceId: string | null = null;
+  let requestId: string | null = null;
+  let code: string | null = null;
+  let missingPermissions: readonly string[] = [];
 
   if (typeof body === 'object' && body !== null) {
     const record = body as Record<string, unknown>;
 
-    const rawTrace = record['trace_id'];
-    if (typeof rawTrace === 'string' && rawTrace.length > 0) traceId = rawTrace;
+    traceId = readString(record, 'trace_id');
+    requestId = readString(record, 'request_id');
+    code = readString(record, 'code');
+
+    const missing = record['missing_permissions'];
+    if (Array.isArray(missing)) {
+      missingPermissions = missing.filter(
+        (entry): entry is string => typeof entry === 'string',
+      );
+    }
 
     const detail = record['detail'];
     if (typeof detail === 'string' && detail.length > 0) {
       message = detail;
     } else if (Array.isArray(detail)) {
+      // FastAPI's 422: a list of validation problems rather than one sentence.
       const parts = detail
         .map((entry) => {
           if (typeof entry !== 'object' || entry === null) return null;
@@ -172,7 +193,25 @@ export function toApiError(status: number, body: unknown): ApiError {
     message = body.trim();
   }
 
-  return { status, message, traceId };
+  return { status, message, traceId, requestId, code, missingPermissions };
+}
+
+/**
+ * The failure that never reached the API at all: DNS, a refused connection, a CORS block.
+ *
+ * Given its own constructor so callers cannot accidentally report a network failure as an
+ * HTTP status the server never sent. Status 0 means "no response", which is exactly what
+ * happened.
+ */
+export function toNetworkError(message: string): ApiError {
+  return {
+    status: 0,
+    message,
+    traceId: null,
+    requestId: null,
+    code: 'network_unreachable',
+    missingPermissions: [],
+  };
 }
 
 /**
@@ -191,9 +230,24 @@ export const NADDP_ROLES = [
   'CONSULAR_OFFICER',
   'DIASPORA_OFFICER',
   'ADMIN',
-] as const;
+] as const satisfies readonly components['schemas']['RoleCode'][];
 
-export type NaddpRole = (typeof NADDP_ROLES)[number];
+/**
+ * A role identifier. Aliased to the generated `RoleCode` rather than inferred from the
+ * array above, so the *type* can never be narrower than what the API may send.
+ */
+export type NaddpRole = components['schemas']['RoleCode'];
+
+/**
+ * Compile-time proof that the picker offers every role the API defines.
+ *
+ * `satisfies` above catches an invented role; this catches a forgotten one. If the API
+ * adds a seventh `RoleCode`, this alias resolves to `never` and `typecheck` fails with the
+ * missing member named — rather than the picker quietly omitting an identity the demo
+ * needs. Exported because an unused local type alias is itself a lint error.
+ */
+export type RolesCoverApi =
+  Exclude<NaddpRole, (typeof NADDP_ROLES)[number]> extends never ? true : never;
 
 /** Data zones from BUILD_BIBLE §5. Enforced server-side; shown in the UI trace drawer. */
 export const DATA_CLASSIFICATIONS = [
@@ -201,6 +255,50 @@ export const DATA_CLASSIFICATIONS = [
   'MISSION_INTERNAL',
   'CONFIDENTIAL',
   'CONSULAR_SENSITIVE',
-] as const;
+] as const satisfies readonly components['schemas']['Classification'][];
 
-export type DataClassification = (typeof DATA_CLASSIFICATIONS)[number];
+/** Aliased to the generated enum for the same reason as {@link NaddpRole}. */
+export type DataClassification = components['schemas']['Classification'];
+
+/** The classification counterpart of {@link RolesCoverApi}. */
+export type ClassificationsCoverApi =
+  Exclude<DataClassification, (typeof DATA_CLASSIFICATIONS)[number]> extends never
+    ? true
+    : never;
+
+/* ==========================================================================
+ * Response aliases
+ *
+ * One place to see the seam. Every alias below resolves to the generated schema, so a
+ * change to the API's wire shape becomes a compile error in the web app rather than a
+ * runtime surprise on stage. Nothing here declares a field of its own.
+ * ========================================================================== */
+
+/** `GET /v1/session/me` and `POST /v1/session/assume-role`: who am I, and what may I do. */
+export type SessionSummary = components['schemas']['SessionResponse'];
+
+/** `GET /v1/command/today`: the six tiles, each null when its permission is not held. */
+export type CommandTodayResponse = components['schemas']['CommandTodayResponse'];
+
+export type OpportunityTile = components['schemas']['OpportunityTileResponse'];
+export type ConsularTile = components['schemas']['ConsularTileResponse'];
+export type StakeholderTile = components['schemas']['StakeholderTileResponse'];
+export type DiasporaTile = components['schemas']['DiasporaTileResponse'];
+export type IntelligenceTile = components['schemas']['IntelligenceTileResponse'];
+export type MeetingTile = components['schemas']['MeetingTileResponse'];
+
+/** `GET /v1/opportunities`: one page of the pipeline the caller is cleared to read. */
+export type OpportunityPage = components['schemas']['OpportunityPageResponse'];
+export type OpportunitySummary = components['schemas']['OpportunitySummary'];
+export type OpportunityStage = components['schemas']['OpportunityStage'];
+
+/** `GET /v1/audit/events`: one page of the append-only log, newest first. */
+export type AuditEventPage = components['schemas']['AuditEventPageResponse'];
+export type AuditEvent = components['schemas']['AuditEventResponse'];
+export type PolicyResult = components['schemas']['PolicyResult'];
+
+/* --- Domain enums, aliased so an exhaustive label map is a compile-time guarantee --- */
+export type CaseStatus = components['schemas']['CaseStatus'];
+export type ConsentStatus = components['schemas']['ConsentStatus'];
+export type RelationshipStrength = components['schemas']['RelationshipStrength'];
+export type SignalStatus = components['schemas']['SignalStatus'];
