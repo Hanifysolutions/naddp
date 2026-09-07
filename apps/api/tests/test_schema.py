@@ -308,6 +308,15 @@ def _make_audit_event() -> AuditEvent:
     )
 
 
+# These two issue raw SQL rather than mutating the mapped object, and that is the point.
+# ADR-0004 has three enforcement layers, and this file tests the one that actually holds:
+# the database trigger, which fires for every statement from every client. Going through
+# the ORM would instead trip the application-level `before_flush` guard in
+# `app/audit/writer.py` -- a useful layer, tested in `tests/test_audit_writer.py` -- and
+# this file would then never reach the database at all, silently losing the coverage it
+# exists for.
+
+
 def test_audit_events_rejects_update(db: Session) -> None:
     """ADR-0004: an audit log that can be edited is not evidence."""
     event = _make_audit_event()
@@ -315,8 +324,10 @@ def test_audit_events_rejects_update(db: Session) -> None:
     db.flush()
 
     with pytest.raises(IntegrityError) as excinfo, db.begin_nested():
-        event.action = "schema_test.tampered"
-        db.flush()
+        db.execute(
+            text("UPDATE audit_events SET action = 'schema_test.tampered' WHERE id = :id"),
+            {"id": event.id},
+        )
 
     assert "append-only" in str(excinfo.value)
     assert "UPDATE" in str(excinfo.value)
@@ -328,8 +339,7 @@ def test_audit_events_rejects_delete(db: Session) -> None:
     db.flush()
 
     with pytest.raises(IntegrityError) as excinfo, db.begin_nested():
-        db.delete(event)
-        db.flush()
+        db.execute(text("DELETE FROM audit_events WHERE id = :id"), {"id": event.id})
 
     assert "append-only" in str(excinfo.value)
     assert "DELETE" in str(excinfo.value)

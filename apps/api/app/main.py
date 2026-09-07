@@ -11,7 +11,8 @@ through ``gateway.generate(...)``.
 
 from __future__ import annotations
 
-from typing import Final, Literal
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Final, Literal
 
 from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,11 +20,16 @@ from pydantic import BaseModel, Field
 
 from app.api.v1 import router as v1_router
 from app.api.v1.meta import API_PREFIX, API_VERSION
+from app.audit.middleware import AuditMiddleware
+from app.audit.writer import install_audit_immutability_guard
 from app.core.config import Settings, get_settings
 from app.core.db import ping_database
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.request_context import REQUEST_ID_HEADER, RequestContextMiddleware
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from sqlalchemy.orm import Session
 
 APP_TITLE: Final[str] = "NADDP API"
 APP_DESCRIPTION: Final[str] = (
@@ -75,10 +81,32 @@ def _configure_cors(app: FastAPI, settings: Settings) -> None:
     )
 
 
-def create_app() -> FastAPI:
-    """Build and return a fully wired FastAPI application."""
+def create_app(
+    *,
+    audit_session_factory: Callable[[], Session] | None = None,
+) -> FastAPI:
+    """Build and return a fully wired FastAPI application.
+
+    Args:
+        audit_session_factory: Where :class:`~app.audit.middleware.AuditMiddleware` gets the
+            session it appends its rows on. ``None`` -- the production path -- means the
+            process-wide factory, resolved lazily on the first write so that building an app
+            never constructs an engine.
+
+            It is injectable for one reason, and it is not a testing convenience:
+            ``audit_events`` is append-only (ADR-0004), so a row a test suite committed for
+            real could never be deleted. Every 403 assertion in the suite would otherwise
+            leave a permanent ``access.denied`` row in the demo's timeline. A test hands in a
+            factory bound to a transaction it will roll back; nothing else may.
+    """
     settings = get_settings()
     configure_logging(settings.log_level, json_logs=not settings.is_local)
+
+    # Arm the append-only guard before anything can open a session. Importing
+    # `app.audit` already does this; calling it here as well means the process is
+    # protected whether it reached us through an import or through this factory, and
+    # neither path is the one that happens to be load-bearing. Idempotent.
+    install_audit_immutability_guard()
 
     app = FastAPI(
         title=APP_TITLE,
@@ -89,9 +117,27 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
     )
 
-    # add_middleware wraps outermost-last, so CORS ends up outside the request
-    # context middleware and therefore also decorates error responses.
+    # ---- Middleware order -------------------------------------------------
+    # `add_middleware` PREPENDS, so the last one registered ends up OUTERMOST. The
+    # three lines below therefore produce, from the network inwards:
+    #
+    #     CORS  ->  AuditMiddleware  ->  RequestContextMiddleware  ->  routes
+    #
+    # CORS is outermost so that it decorates *every* response including the 403s the
+    # two authorisation gates produce -- a refusal a browser cannot read is a refusal
+    # the UI renders as a network error instead of as "you are not cleared for this" --
+    # and so the audit middleware never sees, and never records, a CORS preflight
+    # rejection.
+    #
+    # The audit middleware sits outside the request-context middleware and still reads
+    # the correlation id, because it takes it from `scope["state"]`, which is shared
+    # across the whole stack, rather than from the contextvar, which
+    # RequestContextMiddleware has already reset by the time control returns outwards.
+    # Its position is otherwise not load-bearing for correctness: every 403 in this API
+    # is produced by Starlette's innermost ExceptionMiddleware, so the status and the
+    # problem document are visible from anywhere outside it.
     app.add_middleware(RequestContextMiddleware)
+    app.add_middleware(AuditMiddleware, session_factory=audit_session_factory)
     _configure_cors(app, settings)
 
     register_exception_handlers(app)
