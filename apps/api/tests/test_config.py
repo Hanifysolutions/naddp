@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.config import (
+    DEFAULT_CORS_ORIGINS,
     KNOWN_PLACEHOLDER_SESSION_SECRETS,
     MIN_SESSION_SECRET_LENGTH,
     PLACEHOLDER_SESSION_SECRET,
@@ -31,6 +32,58 @@ def test_snapshot_path_is_cwd_independent() -> None:
 def test_cors_origins_accepts_a_comma_separated_string() -> None:
     settings = Settings.model_validate({"cors_origins": "http://a.test, http://b.test"})
     assert settings.cors_origins == ["http://a.test", "http://b.test"]
+
+
+def test_the_dev_defaults_cover_every_loopback_spelling_of_the_web_origin() -> None:
+    """All three are the same machine, and the browser picks which one it sends.
+
+    Windows resolves ``localhost`` to ``::1`` before ``127.0.0.1``. Allowing only one
+    spelling makes the demo work or fail on a detail nobody chose, and the failure surfaces
+    as a bare "Failed to fetch" that reads exactly like a bug somewhere else.
+    """
+    # Asserted on the constant rather than on ``Settings()``: conftest pins CORS_ORIGINS for
+    # the suite, so a constructed Settings would report the test environment's value and
+    # this test would pass without the default ever being read.
+    assert set(DEFAULT_CORS_ORIGINS) == {
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://[::1]:3000",
+    }
+    assert Settings(app_env="local").cors_origins  # the default is a usable list
+
+
+def test_the_loopback_defaults_cannot_reach_a_deployed_environment() -> None:
+    """This is what keeps the dev convenience dev-scoped.
+
+    A deployed API carrying these would trust any page served from the reader's own
+    machine. Refusing to boot is the same treatment the placeholder session secret gets,
+    and for the same reason: the mistake is silent and the consequence is not.
+    """
+    with pytest.raises(ValidationError, match="loopback origins"):
+        Settings(
+            app_env="production",
+            demo_session_secret="x" * (MIN_SESSION_SECRET_LENGTH + 1),
+        )
+
+
+def test_a_deployed_environment_boots_with_a_real_origin() -> None:
+    """The other half: the guard is about the loopback defaults, not about deploying."""
+    settings = Settings(
+        app_env="production",
+        demo_session_secret="x" * (MIN_SESSION_SECRET_LENGTH + 1),
+        cors_origins=["https://naddp-demo.example"],
+    )
+    assert settings.cors_origins == ["https://naddp-demo.example"]
+
+
+def test_a_deployed_environment_is_refused_even_one_loopback_origin() -> None:
+    """A real origin alongside a loopback one is still a deployed API trusting a laptop."""
+    with pytest.raises(ValidationError, match="loopback origins"):
+        Settings(
+            app_env="production",
+            demo_session_secret="x" * (MIN_SESSION_SECRET_LENGTH + 1),
+            cors_origins=["https://naddp-demo.example", *DEFAULT_CORS_ORIGINS[:1]],
+        )
 
 
 def test_relative_storage_dir_resolves_against_the_repo_root() -> None:
@@ -84,7 +137,13 @@ def test_short_secret_is_rejected_outside_local_environments() -> None:
 
 
 def test_long_unknown_secret_is_accepted_outside_local_environments() -> None:
-    settings = Settings(app_env="production", demo_session_secret="k" * MIN_SESSION_SECRET_LENGTH)
+    # A real web origin, because a deployed environment now needs one: this test is about
+    # the secret rule, and it should fail for secret reasons or not at all.
+    settings = Settings(
+        app_env="production",
+        demo_session_secret="k" * MIN_SESSION_SECRET_LENGTH,
+        cors_origins=["https://naddp-demo.example"],
+    )
     assert settings.is_local is False
 
 

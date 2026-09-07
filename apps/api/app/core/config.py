@@ -78,7 +78,21 @@ DEFAULT_ANTHROPIC_MODEL: Final[str] = "claude-sonnet-5"
 #: ANTHROPIC_MODEL above; this is the fast lane for scoring and matching, where a brief's
 #: prose quality is not what is being bought.
 DEFAULT_ANTHROPIC_MODEL_FAST: Final[str] = "claude-haiku-4-5"
-DEFAULT_CORS_ORIGINS: Final[tuple[str, ...]] = ("http://localhost:3000",)
+#: Origins the web app is served from during local development.
+#:
+#: All three are the same machine. Which one a browser actually sends depends on what was
+#: typed in the address bar and on how the host resolves ``localhost`` - Windows resolves it
+#: to ``::1`` before ``127.0.0.1`` - so allowing only one of them makes the demo work or
+#: fail depending on a detail nobody chose.
+#:
+#: **Local development only.** These are the *default*; setting ``CORS_ORIGINS`` replaces
+#: them entirely, and :meth:`Settings._check_cors_origins` refuses to boot a non-local
+#: environment that is still carrying them.
+DEFAULT_CORS_ORIGINS: Final[tuple[str, ...]] = (
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://[::1]:3000",
+)
 
 # Placeholder only. Booting a non-local APP_ENV with this value is refused.
 PLACEHOLDER_SESSION_SECRET: Final[str] = "naddp-local-demo-secret-change-me"  # noqa: S105
@@ -219,8 +233,28 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _check_cors_origins(self) -> Settings:
+        """At least one origin, and never the loopback defaults outside a local environment.
+
+        The second half is what keeps the dev convenience dev-scoped. The defaults exist so
+        a developer does not have to think about which loopback spelling their browser
+        happens to send; shipping them would mean a deployed API trusting any page served
+        from the reader's own machine, which is a different and much worse thing. This is
+        the same shape as the placeholder-secret rule above: harmless locally, refused to
+        boot anywhere else, with the fix named in the message.
+        """
         if not self.cors_origins:
             msg = "CORS_ORIGINS must list at least one origin (e.g. http://localhost:3000)."
+            raise ValueError(msg)
+        if self.app_env in LOCAL_APP_ENVS:
+            return self
+        loopback = sorted(set(self.cors_origins) & set(DEFAULT_CORS_ORIGINS))
+        if loopback:
+            msg = (
+                f"CORS_ORIGINS still contains the local-development loopback origins "
+                f"{loopback} while APP_ENV={self.app_env!r}. A deployed API must not trust "
+                "pages served from a reader's own machine. Set CORS_ORIGINS to the real "
+                "web origin, e.g. CORS_ORIGINS=https://naddp-demo.vercel.app"
+            )
             raise ValueError(msg)
         return self
 
