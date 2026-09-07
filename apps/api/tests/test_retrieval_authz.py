@@ -16,7 +16,14 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai.gateway import embed as gateway_embed
-from app.domain.enums import ChunkCollection, Classification, KnowledgeStatus, RoleCode
+from app.domain.enums import (
+    KNOWLEDGE_AUDIENCE_BY_ROLE,
+    ChunkCollection,
+    Classification,
+    KnowledgeAudience,
+    KnowledgeStatus,
+    RoleCode,
+)
 from app.models.knowledge import KnowledgeArticle
 from app.models.retrieval import DocumentChunk
 from app.security.principal import principal_for_role
@@ -263,3 +270,123 @@ def test_both_recall_paths_contribute(db: Session) -> None:
     )
     assert any(h.lexical_rank for h in hits), "the full-text path returned nothing"
     assert any(h.vector_rank for h in hits), "the vector path returned nothing"
+
+
+# ---------------------------------------------------------------------------
+# Audience gate (W2.2.0). Same non-vacuous standard as the classification tests:
+# prove the scoped material exists and reaches SOMEONE before proving it reaches
+# nobody else. An audience filter over a corpus of nothing but ALL_STAFF articles
+# passes for the wrong reason, which is how it shipped in W2.1.
+# ---------------------------------------------------------------------------
+
+KNOWLEDGE_ONLY = frozenset({ChunkCollection.KNOWLEDGE})
+SCOPED_AUDIENCES = [
+    KnowledgeAudience.TRADE,
+    KnowledgeAudience.CONSULAR,
+    KnowledgeAudience.DIASPORA,
+    KnowledgeAudience.SENIOR,
+]
+
+
+def _approved_count(db: Session, audience: KnowledgeAudience) -> int:
+    return (
+        db.scalar(
+            select(func.count(KnowledgeArticle.id)).where(
+                KnowledgeArticle.audience == audience,
+                KnowledgeArticle.status == KnowledgeStatus.APPROVED,
+            )
+        )
+        or 0
+    )
+
+
+def _audiences_returned(db: Session, role: RoleCode) -> set[str]:
+    hits = hybrid_search(
+        db,
+        principal_for_role(role),
+        # A broad query and a deep limit: the gate must hold across the whole knowledge
+        # base, not merely outside the top few results for one lucky phrasing.
+        RetrievalQuery(
+            text="guidance policy pathway process", collections=KNOWLEDGE_ONLY, limit=60
+        ),
+    )
+    return {h.provenance.get("audience", "?") for h in hits}
+
+
+@pytest.mark.parametrize("audience", SCOPED_AUDIENCES)
+def test_every_scoped_audience_has_approved_material(
+    db: Session, audience: KnowledgeAudience
+) -> None:
+    """Guard. Without an APPROVED article per audience the tests below prove nothing."""
+    _require_corpus(db)
+    assert _approved_count(db, audience), (
+        f"no APPROVED article with audience {audience.value}, so the audience-gate tests "
+        "below would pass vacuously. seed_parts/knowledge.py assigns these deliberately."
+    )
+
+
+def test_a_role_receives_its_own_audience_and_all_staff(db: Session) -> None:
+    """The gate must not be 'nobody sees anything', which would be trivially safe."""
+    _require_corpus(db)
+    expected = {
+        RoleCode.TRADE_OFFICER: KnowledgeAudience.TRADE,
+        RoleCode.CONSULAR_OFFICER: KnowledgeAudience.CONSULAR,
+        RoleCode.DIASPORA_OFFICER: KnowledgeAudience.DIASPORA,
+    }
+    for role, audience in expected.items():
+        returned = _audiences_returned(db, role)
+        assert audience.value in returned, f"{role.value} could not reach its own audience"
+        assert KnowledgeAudience.ALL_STAFF.value in returned, (
+            f"{role.value} could not reach ALL_STAFF material"
+        )
+
+
+@pytest.mark.parametrize("role", [RoleCode.TRADE_OFFICER, RoleCode.DIASPORA_OFFICER])
+def test_consular_scoped_guidance_never_reaches_a_non_consular_role(
+    db: Session, role: RoleCode
+) -> None:
+    """The audience gate is independent of clearance.
+
+    CONSULAR-audience articles here are PUBLIC or MISSION_INTERNAL, so a trade officer is
+    *cleared* for every one of them. Only the audience filter keeps them out -- which is
+    exactly the property this test exists to prove, and why it is not a duplicate of the
+    classification tests above.
+    """
+    _require_corpus(db)
+    assert _approved_count(db, KnowledgeAudience.CONSULAR)
+    assert KnowledgeAudience.CONSULAR.value not in _audiences_returned(db, role)
+
+
+@pytest.mark.parametrize("role", [RoleCode.CONSULAR_OFFICER, RoleCode.DIASPORA_OFFICER])
+def test_trade_scoped_guidance_never_reaches_a_non_trade_role(db: Session, role: RoleCode) -> None:
+    _require_corpus(db)
+    assert _approved_count(db, KnowledgeAudience.TRADE)
+    assert KnowledgeAudience.TRADE.value not in _audiences_returned(db, role)
+
+
+@pytest.mark.parametrize(
+    "role", [RoleCode.TRADE_OFFICER, RoleCode.CONSULAR_OFFICER, RoleCode.DIASPORA_OFFICER]
+)
+def test_senior_only_guidance_never_reaches_an_officer_role(db: Session, role: RoleCode) -> None:
+    """SENIOR material is head-of-mission reading; officers are cleared for it and still
+    must not be served it as a grounded source."""
+    _require_corpus(db)
+    assert _approved_count(db, KnowledgeAudience.SENIOR)
+    assert KnowledgeAudience.SENIOR.value not in _audiences_returned(db, role)
+
+
+def test_senior_roles_do_reach_senior_material(db: Session) -> None:
+    _require_corpus(db)
+    for role in (RoleCode.AMBASSADOR, RoleCode.DEPUTY):
+        assert KnowledgeAudience.SENIOR.value in _audiences_returned(db, role)
+
+
+def test_no_role_is_ever_served_an_audience_it_does_not_hold(db: Session) -> None:
+    """The general form, over every role, checked against the matrix itself."""
+    _require_corpus(db)
+    for role in RoleCode:
+        allowed = {a.value for a in KNOWLEDGE_AUDIENCE_BY_ROLE[role]}
+        returned = _audiences_returned(db, role)
+        assert returned <= allowed, (
+            f"{role.value} was served audiences it does not hold: {returned - allowed}"
+        )

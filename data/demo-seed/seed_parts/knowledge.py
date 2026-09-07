@@ -20,7 +20,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Final
 
-from app.domain.enums import Classification, KnowledgeStatus, RoleCode
+from app.domain.enums import (
+    Classification,
+    KnowledgeAudience,
+    KnowledgeStatus,
+    RoleCode,
+)
 from app.models.governance import User
 from app.models.intelligence import Document
 from app.models.knowledge import KnowledgeArticle
@@ -50,11 +55,17 @@ class ArticleSpec:
     tags: tuple[str, ...] = field(default_factory=tuple)
     version: int = 1
     classification: Classification = Classification.MISSION_INTERNAL
+    #: Who the article was written for. INDEPENDENT of classification: clearance answers
+    #: "may this reader see it", audience answers "was it written for them". Defaulting to
+    #: ALL_STAFF would make the audience gate vacuous, which is why every spec below sets
+    #: it explicitly rather than relying on a default.
+    audience: KnowledgeAudience = KnowledgeAudience.ALL_STAFF
 
 
 ARTICLE_SPECS: Final[tuple[ArticleSpec, ...]] = (
     ArticleSpec(
         slug=HERO_ARTICLE,
+        audience=KnowledgeAudience.ALL_STAFF,
         title="Lithium processing skills and the pathways into them",
         summary=(
             "What Australia's lithium midstream and downstream workforce demand actually "
@@ -105,6 +116,7 @@ ARTICLE_SPECS: Final[tuple[ArticleSpec, ...]] = (
     ),
     ArticleSpec(
         slug="concentrator-versus-refinery",
+        audience=KnowledgeAudience.ALL_STAFF,
         title="Concentrator versus refinery: the distinction that must not be blurred",
         summary=(
             "Why 'the refinery is expanding' is a factual error, what is actually "
@@ -136,6 +148,7 @@ ARTICLE_SPECS: Final[tuple[ArticleSpec, ...]] = (
     ),
     ArticleSpec(
         slug="nigerian-lithium-policy-position",
+        audience=KnowledgeAudience.TRADE,
         title="Nigeria's stated position on lithium and local value addition",
         summary="What Nigeria has said publicly about processing, licensing and beneficiation.",
         body=(
@@ -158,6 +171,7 @@ ARTICLE_SPECS: Final[tuple[ArticleSpec, ...]] = (
     ),
     ArticleSpec(
         slug="skilled-migration-instruments-overview",
+        audience=KnowledgeAudience.ALL_STAFF,
         title="Which Australian migration instrument does what",
         summary=(
             "Student, temporary graduate, employer-sponsored and points-tested routes, and "
@@ -184,6 +198,7 @@ ARTICLE_SPECS: Final[tuple[ArticleSpec, ...]] = (
     ),
     ArticleSpec(
         slug="qualification-recognition-sequence",
+        audience=KnowledgeAudience.TRADE,
         title="How a Nigerian engineering qualification is recognised in Australia",
         summary="The sequence, the bodies involved, and what the mission can and cannot do.",
         body=(
@@ -208,6 +223,7 @@ ARTICLE_SPECS: Final[tuple[ArticleSpec, ...]] = (
     ),
     ArticleSpec(
         slug="nigeria-born-population-profile",
+        audience=KnowledgeAudience.DIASPORA,
         title="The Nigeria-born population of Australia: what the census actually says",
         summary="Size, education profile and labour force participation, with the numbers.",
         body=(
@@ -229,6 +245,7 @@ ARTICLE_SPECS: Final[tuple[ArticleSpec, ...]] = (
     ),
     ArticleSpec(
         slug="passport-renewal-guidance",
+        audience=KnowledgeAudience.CONSULAR,
         title="Passport renewal for Nigerians in Australia: how the process runs",
         summary="The contactless application route, the documents required, and the timeline.",
         body=(
@@ -250,6 +267,7 @@ ARTICLE_SPECS: Final[tuple[ArticleSpec, ...]] = (
     ),
     ArticleSpec(
         slug="emergency-travel-document-guidance",
+        audience=KnowledgeAudience.CONSULAR,
         title="Emergency travel documents: when they are issued and on what evidence",
         summary="The reduced-evidence determination, and why it is a determination.",
         body=(
@@ -271,6 +289,7 @@ ARTICLE_SPECS: Final[tuple[ArticleSpec, ...]] = (
     ),
     ArticleSpec(
         slug="wa-battery-strategy-summary",
+        audience=KnowledgeAudience.TRADE,
         title="Western Australia's battery and critical minerals strategy in brief",
         summary="The State's stated downstream ambition and where workforce sits in it.",
         body=(
@@ -290,6 +309,7 @@ ARTICLE_SPECS: Final[tuple[ArticleSpec, ...]] = (
     ),
     ArticleSpec(
         slug="vocational-pathways-battery-sector",
+        audience=KnowledgeAudience.DIASPORA,
         title="Vocational pathways into the battery sector",
         summary="The VET roles, courses and microcredentials that feed battery-chain work.",
         body=(
@@ -310,6 +330,7 @@ ARTICLE_SPECS: Final[tuple[ArticleSpec, ...]] = (
     ),
     ArticleSpec(
         slug="mineral-resources-context",
+        audience=KnowledgeAudience.SENIOR,
         title="Australia's identified mineral resources: the context number",
         summary="Where to get authoritative Australian resource figures, and where not to.",
         body=(
@@ -329,6 +350,7 @@ ARTICLE_SPECS: Final[tuple[ArticleSpec, ...]] = (
     ),
     ArticleSpec(
         slug="citing-sources-in-mission-products",
+        audience=KnowledgeAudience.ALL_STAFF,
         title="Citing sources in mission products: the standard",
         summary="Every claim resolves to a page that says it. What that means in practice.",
         body=(
@@ -352,6 +374,7 @@ ARTICLE_SPECS: Final[tuple[ArticleSpec, ...]] = (
     # -- in review -------------------------------------------------------------
     ArticleSpec(
         slug="student-to-skilled-transition-data",
+        audience=KnowledgeAudience.SENIOR,
         title="Student to skilled transition: what the program reports show",
         summary=(
             "Reading the student and temporary graduate program reports without over-reading them."
@@ -371,6 +394,7 @@ ARTICLE_SPECS: Final[tuple[ArticleSpec, ...]] = (
     ),
     ArticleSpec(
         slug="bilateral-trade-picture",
+        audience=KnowledgeAudience.SENIOR,
         title="The Nigeria-Australia trade picture, honestly stated",
         summary="Goods trade is thin. Why that is not the argument against the relationship.",
         body=(
@@ -387,6 +411,7 @@ ARTICLE_SPECS: Final[tuple[ArticleSpec, ...]] = (
     ),
     ArticleSpec(
         slug="diaspora-consent-handling",
+        audience=KnowledgeAudience.DIASPORA,
         title="Handling diaspora consent: what may be listed and what may be contacted",
         summary="The four consent states and what each permits.",
         body=(
@@ -404,6 +429,7 @@ ARTICLE_SPECS: Final[tuple[ArticleSpec, ...]] = (
     ),
     ArticleSpec(
         slug="consular-sla-basis",
+        audience=KnowledgeAudience.CONSULAR,
         title="Where the consular service levels come from",
         summary="They are demo defaults. Say so.",
         body=(
@@ -421,6 +447,7 @@ ARTICLE_SPECS: Final[tuple[ArticleSpec, ...]] = (
     # -- drafts ----------------------------------------------------------------
     ArticleSpec(
         slug="nigerian-lithium-ore-characterisation",
+        audience=KnowledgeAudience.TRADE,
         title="What is known about Nigerian lithium ore characteristics",
         summary="Draft: peer-reviewed characterisation and what it implies for processing routes.",
         body=(
@@ -436,6 +463,7 @@ ARTICLE_SPECS: Final[tuple[ArticleSpec, ...]] = (
     ),
     ArticleSpec(
         slug="scholarship-instruments-africa",
+        audience=KnowledgeAudience.DIASPORA,
         title="Scholarship instruments available to African applicants",
         summary="Draft: what already exists before the mission proposes anything new.",
         body=(
@@ -451,6 +479,7 @@ ARTICLE_SPECS: Final[tuple[ArticleSpec, ...]] = (
     ),
     ArticleSpec(
         slug="ai-gateway-what-officers-should-know",
+        audience=KnowledgeAudience.ALL_STAFF,
         title="What officers should know about the AI gateway",
         summary="Draft: the envelope, the approval gate, and the fallback.",
         body=(
@@ -468,6 +497,7 @@ ARTICLE_SPECS: Final[tuple[ArticleSpec, ...]] = (
     # -- retired ---------------------------------------------------------------
     ArticleSpec(
         slug="retired-refinery-expansion-briefing",
+        audience=KnowledgeAudience.ALL_STAFF,
         title="RETIRED: earlier briefing that described a refinery expansion",
         summary="Retired because it was wrong. Kept so the correction is visible.",
         body=(
@@ -525,6 +555,7 @@ def seed_knowledge(
             tags=list(spec.tags),
             embedding=None,
             classification=spec.classification,
+            audience=spec.audience,
         )
     ctx.session.flush()
     return articles
