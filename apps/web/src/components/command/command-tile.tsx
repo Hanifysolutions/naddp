@@ -80,7 +80,7 @@ export function CommandTile({ view, children }: CommandTileProps): React.JSX.Ele
 
         {showsBody ? (
           <>
-            <MetricRow metrics={metrics} />
+            <MetricRow metrics={metrics} gridClass={definition.metricGridClass} />
             {distribution === null ? null : <DistributionBars distribution={distribution} />}
             {children}
             {state === 'empty' ? (
@@ -186,11 +186,17 @@ function StateChip({ state }: { state: TileState }): React.JSX.Element | null {
   );
 }
 
-function MetricRow({ metrics }: { metrics: readonly TileMetric[] }): React.JSX.Element | null {
+function MetricRow({
+  metrics,
+  gridClass,
+}: {
+  metrics: readonly TileMetric[];
+  gridClass: string;
+}): React.JSX.Element | null {
   if (metrics.length === 0) return null;
 
   return (
-    <dl className="grid grid-cols-2 gap-x-4 gap-y-3 xl:grid-cols-3">
+    <dl className={cn('grid gap-x-4 gap-y-3', gridClass)}>
       {metrics.map((entry) => (
         <div key={entry.label} className="min-w-0">
           <dt className="truncate text-2xs uppercase tracking-wide text-muted-foreground">

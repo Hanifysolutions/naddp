@@ -19,7 +19,7 @@ export default function CommandLoading(): React.JSX.Element {
   const tiles = buildBoard({ kind: 'loading' });
 
   return (
-    <div className="px-4 py-4 laptop:px-6 laptop:py-6" aria-busy="true">
+    <div className="px-4 py-4 laptop:px-6 laptop:py-5" aria-busy="true">
       <header className="mb-4">
         <Skeleton className="h-6 w-52" />
         <Skeleton className="mt-2 h-4 w-96 max-w-full" />

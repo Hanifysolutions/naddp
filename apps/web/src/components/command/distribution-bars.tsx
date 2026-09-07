@@ -52,7 +52,7 @@ export function DistributionBars({
 
           return (
             <div key={entry.key} className="flex items-center gap-2">
-              <dt className="w-[7.5rem] shrink-0 truncate text-2xs text-muted-foreground">
+              <dt className="w-[6rem] shrink-0 truncate text-2xs text-muted-foreground desk:w-[7.5rem]">
                 {entry.label}
               </dt>
 

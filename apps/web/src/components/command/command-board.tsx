@@ -101,7 +101,7 @@ export function CommandBoard(): React.JSX.Element {
   const zones = today.data?.readable_classifications ?? [];
 
   return (
-    <div className="px-4 py-4 laptop:px-6 laptop:py-6">
+    <div className="px-4 py-4 laptop:px-6 laptop:py-5">
       <header className="mb-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold leading-tight tracking-tight text-foreground">

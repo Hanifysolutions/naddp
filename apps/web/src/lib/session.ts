@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import {
   DATA_CLASSIFICATIONS,
+  DEMO_SESSION_COOKIE,
   NADDP_ROLES,
   type DataClassification,
   type NaddpRole,
@@ -55,8 +56,26 @@ const NO_SESSION = (reason: string): DemoSession => ({
 });
 
 export async function getDemoSession(): Promise<DemoSession> {
+  const jar = cookies();
+
+  /*
+   * No session cookie, no question worth asking.
+   *
+   * The answer is a certain 403, and the API records an `access.denied` audit row for
+   * every unauthenticated probe - correctly, since a denial is an event. But a first page
+   * load by someone who has not yet chosen a role is not a security event, and letting
+   * every anonymous render append a row would bury the denials that do matter under the
+   * demo's own noise. So: answer locally, fail closed, and leave the log for real refusals.
+   *
+   * This reads only the cookie's presence. The value is `httponly` and signed by the API;
+   * this app can neither read nor forge it, and would not be believed if it tried.
+   */
+  if (jar.get(DEMO_SESSION_COOKIE) === undefined) {
+    return NO_SESSION('No demo identity has been assumed yet.');
+  }
+
   // Forward the browser's cookies so the API can validate the signed demo session.
-  const cookieHeader = cookies()
+  const cookieHeader = jar
     .getAll()
     .map((cookie) => `${cookie.name}=${cookie.value}`)
     .join('; ');

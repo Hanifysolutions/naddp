@@ -144,9 +144,25 @@ export interface TileDefinition {
   readonly description: string;
   /** Tailwind column spans for the 12-column executive grid. */
   readonly span: string;
+  /**
+   * Column count for the metric row, as Tailwind classes.
+   *
+   * Declared per tile rather than once for the grid because tiles are different widths at
+   * the same breakpoint: at 1440px a `xl:col-span-3` tile is about 250px of inner width,
+   * where three metric columns would truncate every label, while a `xl:col-span-6` tile
+   * has room for three. Tailwind 3.4 has no container queries without a plugin, so the
+   * tile's own span is the only thing that knows how wide it is.
+   */
+  readonly metricGridClass: string;
   /** Which API tiles this card is built from. */
   readonly sources: readonly ApiTileKey[];
 }
+
+/** Three metric columns from 1280px up. For tiles spanning four columns or more. */
+const WIDE_METRICS = 'grid-cols-2 xl:grid-cols-3';
+
+/** Two columns until 1920px. For the half-width tiles in the top row at 1440px. */
+const NARROW_METRICS = 'grid-cols-2 desk:grid-cols-3';
 
 export interface TileView {
   readonly definition: TileDefinition;
@@ -169,12 +185,18 @@ export interface TileView {
  * The six executive tiles, in reading order.
  *
  * The grid is twelve columns above 1280px, six between 768px and 1280px, one below.
- * Verified against both rehearsal targets (BUILD_BIBLE §11):
+ * MEASURED in headless Chrome against both rehearsal targets (BUILD_BIBLE §11), with an
+ * unseeded database - the worst case, because every tile then carries its "every count is
+ * zero" panel as well as its metrics:
  *
- *   1920x1080  rail 240px + 1680px content -> three tiles per row at `desk:col-span-4`,
- *              two rows, no scrolling to see the whole board.
- *   1440x900   rail 240px + 1200px content -> `xl:` spans give a 6/3/3 top row and a
- *              4/4/4 second row; every metric row still fits three columns.
+ *   1920x1080  rail 240px + content -> three 533px tiles per row, two rows, document
+ *              height exactly 1080px against the 1080px viewport: the whole board, no scroll.
+ *   1440x900   rail 240px + content -> a 6/3/3 top row (561px, 272px, 272px) and a 4/4/4
+ *              second row (368px each). Document height 1303px, so the second row is
+ *              reached by scrolling. That is accepted rather than fixed: shrinking the
+ *              type to fit would cost legibility on a projector, which is the one thing
+ *              this screen cannot trade away. The narrow tiles drop to two metric columns
+ *              at this width (see `metricGridClass`) so no label truncates.
  */
 export const TILE_DEFINITIONS: readonly TileDefinition[] = [
   {
@@ -183,6 +205,7 @@ export const TILE_DEFINITIONS: readonly TileDefinition[] = [
     description:
       'What arrived overnight and what is waiting on a human decision. Signals from the last seven days, meetings in the next seven.',
     span: 'md:col-span-6 xl:col-span-6 desk:col-span-4',
+    metricGridClass: WIDE_METRICS,
     sources: ['intelligence', 'meetings'],
   },
   {
@@ -191,6 +214,7 @@ export const TILE_DEFINITIONS: readonly TileDefinition[] = [
     description:
       'Pipeline movement across the critical-minerals and skilled-migration corridors.',
     span: 'md:col-span-3 xl:col-span-3 desk:col-span-4',
+    metricGridClass: NARROW_METRICS,
     sources: ['opportunities'],
   },
   {
@@ -198,6 +222,7 @@ export const TILE_DEFINITIONS: readonly TileDefinition[] = [
     title: 'Citizen Service Health',
     description: 'Consular caseload, service-level risk and what is paused on the citizen.',
     span: 'md:col-span-3 xl:col-span-3 desk:col-span-4',
+    metricGridClass: NARROW_METRICS,
     sources: ['consular'],
   },
   {
@@ -205,6 +230,7 @@ export const TILE_DEFINITIONS: readonly TileDefinition[] = [
     title: 'Relationship Health',
     description: 'Contact coverage and assessed strength across the stakeholder map.',
     span: 'md:col-span-3 xl:col-span-4',
+    metricGridClass: WIDE_METRICS,
     sources: ['stakeholders'],
   },
   {
@@ -213,6 +239,7 @@ export const TILE_DEFINITIONS: readonly TileDefinition[] = [
     description:
       'Expertise the mission may actually approach. Consent, not clearance, gates a profile.',
     span: 'md:col-span-3 xl:col-span-4',
+    metricGridClass: WIDE_METRICS,
     sources: ['diaspora'],
   },
   {
@@ -221,6 +248,7 @@ export const TILE_DEFINITIONS: readonly TileDefinition[] = [
     description:
       'One governed picture: partnership, casework and diaspora outcomes side by side, each independently authorised.',
     span: 'md:col-span-6 xl:col-span-4',
+    metricGridClass: WIDE_METRICS,
     sources: ['opportunities', 'consular', 'diaspora'],
   },
 ];

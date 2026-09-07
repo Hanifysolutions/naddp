@@ -302,3 +302,15 @@ export type CaseStatus = components['schemas']['CaseStatus'];
 export type ConsentStatus = components['schemas']['ConsentStatus'];
 export type RelationshipStrength = components['schemas']['RelationshipStrength'];
 export type SignalStatus = components['schemas']['SignalStatus'];
+
+/**
+ * Name of the signed demo-session cookie the API issues.
+ *
+ * MIRRORED from `apps/api/app/security/session.py::SESSION_COOKIE_NAME`. The web app never
+ * reads the cookie's *value* - it is `httponly`, and only the API holds the signing secret.
+ * It reads only whether the cookie is present, so a visitor who has never assumed a role
+ * can be answered without a round trip. See `apps/web/src/lib/session.ts` for why that
+ * matters: the API records an `access.denied` audit row for every unauthenticated probe,
+ * and a page load is not worth an audit row.
+ */
+export const DEMO_SESSION_COOKIE = 'naddp_demo_session';
