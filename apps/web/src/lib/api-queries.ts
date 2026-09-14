@@ -3,8 +3,10 @@ import {
   toNetworkError,
   type ApiError,
   type AuditEventPage,
+  type BriefList,
   type CommandTodayResponse,
   type Dossier,
+  type MorningBrief,
   type OpportunityPage,
   type OrganisationList,
   type PipelineBoard,
@@ -223,6 +225,48 @@ export async function fetchPersonDossier(
       params: { path: { stakeholder_id: stakeholderId } },
       signal,
     }),
+  );
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/**
+ * `GET /v1/intelligence/brief` - today's morning brief for the caller. Winning moment #1.
+ *
+ * Takes no parameters and is still identity-scoped: the API picks the brief this role may
+ * read (own brief for an AMBASSADOR or TRADE_OFFICER, the mission-wide one for a DEPUTY or
+ * DIASPORA_OFFICER) and refuses outright for the roles that hold no intelligence grant.
+ * That is why `queryKeys.morningBrief` carries the role - see `lib/query-keys.ts`.
+ *
+ * Throws {@link ApiError} with status 403 when the role does not hold `read:intelligence`
+ * (CONSULAR_OFFICER and ADMIN do not hold it), and 404 when there is no brief this caller
+ * is cleared to read. The two are different answers and the UI must not merge them: a 403
+ * is a statement about the reader, a 404 is a statement about the day.
+ */
+export async function fetchMorningBrief(signal?: AbortSignal): Promise<MorningBrief> {
+  const { data, error, response } = await guard(
+    api.GET('/v1/intelligence/brief', { signal }),
+  );
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/**
+ * `GET /v1/intelligence/briefs` - the caller's brief history, newest first.
+ *
+ * `total` counts the rows returned and nothing else. It is deliberately not a count of
+ * everything that exists, because the difference between the two is exactly how many
+ * briefs the caller is not cleared for, so the UI must never present it as "of N".
+ *
+ * Throws {@link ApiError} with status 403 when the role does not hold `read:intelligence`
+ * (CONSULAR_OFFICER and ADMIN do not hold it), and 404 when no readable brief exists.
+ */
+export async function fetchBriefHistory(
+  limit: number,
+  signal?: AbortSignal,
+): Promise<BriefList> {
+  const { data, error, response } = await guard(
+    api.GET('/v1/intelligence/briefs', { params: { query: { limit } }, signal }),
   );
   if (data === undefined) throw toApiError(response.status, error);
   return data;

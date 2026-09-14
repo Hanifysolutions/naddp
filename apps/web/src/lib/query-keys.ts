@@ -31,4 +31,20 @@ export const queryKeys = {
     ['stakeholders', 'organisation', role, id] as const,
   personDossier: (role: NaddpRole | null, id: string) =>
     ['stakeholders', 'person', role, id] as const,
+  /**
+   * The morning brief. The role is not a convenience here, it is the whole address:
+   * `GET /v1/intelligence/brief` takes no parameters and still returns a different
+   * document per identity - an AMBASSADOR gets their own brief, a DEPUTY gets the
+   * mission-wide one, and a CONSULAR_OFFICER gets a 403. Keyed without the role, a cached
+   * Ambassador brief would paint under a Deputy's name, which is the exact failure the
+   * rule at the top of this file exists to prevent.
+   */
+  morningBrief: (role: NaddpRole | null) => ['intelligence', 'brief', role] as const,
+  /**
+   * The readable brief history. Same reasoning, plus `limit`: the API returns the newest
+   * `limit` rows *the caller may read*, so two roles asking for the same count get
+   * different lists, and one role asking for two counts gets two different lists.
+   */
+  briefHistory: (role: NaddpRole | null, limit: number) =>
+    ['intelligence', 'briefs', role, limit] as const,
 } as const;

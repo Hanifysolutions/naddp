@@ -108,8 +108,7 @@ export const NAV_CATALOGUE: readonly NavItem[] = [
     description: 'Signals and the morning brief, every claim source-backed.',
     icon: 'intelligence',
     permission: 'read:intelligence',
-    availability: 'planned',
-    plannedFor: 'Week 2',
+    availability: 'available',
   },
   {
     href: '/opportunities',

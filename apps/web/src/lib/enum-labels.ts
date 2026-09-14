@@ -1,4 +1,6 @@
 import type {
+  BriefItemType,
+  BriefStatus,
   CaseStatus,
   ConsentStatus,
   DataClassification,
@@ -96,6 +98,40 @@ export const SIGNAL_STATUS_LABELS: Record<SignalStatus, string> = {
 };
 
 export const SIGNAL_STATUS_ORDER = orderedKeys(SIGNAL_STATUS_LABELS);
+
+/**
+ * Morning-brief lifecycle, in approval order.
+ *
+ * DRAFT is where the demo's hero brief actually sits, and the label says "Draft" rather
+ * than anything warmer for that reason: the document was written by the Gateway and no
+ * named human has agreed with it yet. Renaming DRAFT to something that sounds finished
+ * would quietly undo the "AI drafts, humans decide" control this screen is built to show.
+ */
+export const BRIEF_STATUS_LABELS: Record<BriefStatus, string> = {
+  DRAFT: 'Draft',
+  IN_REVIEW: 'In review',
+  APPROVED: 'Approved',
+  PUBLISHED: 'Published',
+};
+
+export const BRIEF_STATUS_ORDER = orderedKeys(BRIEF_STATUS_LABELS);
+
+/**
+ * What a brief item points at, in the order the bounded contexts are read.
+ *
+ * The label names the *record* a reader would open, not the section of the brief - CASE is
+ * captioned "Consular case" because "Case" alone means nothing on a page that also carries
+ * opportunities and meetings.
+ */
+export const BRIEF_ITEM_TYPE_LABELS: Record<BriefItemType, string> = {
+  SIGNAL: 'Signal',
+  OPPORTUNITY: 'Opportunity',
+  CASE: 'Consular case',
+  MEETING: 'Meeting',
+  KNOWLEDGE: 'Knowledge',
+};
+
+export const BRIEF_ITEM_TYPE_ORDER = orderedKeys(BRIEF_ITEM_TYPE_LABELS);
 
 /**
  * Data zones (BUILD_BIBLE §5, ADR-0006).
