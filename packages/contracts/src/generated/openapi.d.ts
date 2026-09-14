@@ -139,6 +139,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/intelligence/brief": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the current morning brief
+         * @description Return today's brief, narrowed to what this caller may read.
+         *
+         *     Role-aware by construction rather than by filtering: the briefs are *different rows*
+         *     built from different material, so two officers calling this endpoint receive materially
+         *     different briefs and not one brief behind a mask. A role with no brief of its own
+         *     receives the mission-wide one and is told so via ``is_mission_wide``.
+         *
+         *     A 404 here means "no brief for today that you may read", and deliberately does not
+         *     distinguish that from "no brief for today at all" -- confirming the existence of a row
+         *     the caller cannot have is the disclosure the 404 exists to avoid.
+         */
+        get: operations["read_brief_v1_intelligence_brief_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/intelligence/briefs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the briefs this caller may read
+         * @description Return the caller's brief history, newest first.
+         *
+         *     ``total`` counts the rows returned and nothing else. It is not a count of everything
+         *     that exists, because the difference between the two is exactly how many briefs the
+         *     caller is not cleared for -- which is the leak the clearance predicate is in the
+         *     ``SELECT`` to prevent.
+         */
+        get: operations["read_brief_history_v1_intelligence_briefs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/opportunities": {
         parameters: {
             query?: never;
@@ -710,6 +764,11 @@ export interface components {
              */
             route_reason: string;
             /**
+             * Route Badge
+             * @description The BUILD_BIBLE section 4a badge as the Gateway rendered it at stage 5, e.g. 'INTERNAL - external-noret - claude-sonnet-5'. Render it opaquely: there are five badge shapes with three or four segments, and the band segment is computed from the effective class over ALL authorised evidence, which is not reconstructable from `data_class` and `result_class` alone. Empty on a row written before the column existed.
+             */
+            route_badge: string;
+            /**
              * Model Requested
              * @description Model the route asked for, if any.
              */
@@ -1093,6 +1152,338 @@ export interface components {
              * @description The cards, highest score first.
              */
             cards: components["schemas"]["BoardCardResponse"][];
+        };
+        /**
+         * BriefEvidenceResponse
+         * @description One citation behind a brief item.
+         *
+         *     ``citation_id`` is the only field guaranteed present: it is the key into
+         *     ``data/demo-seed/citations.json`` that the stage 8 post-check resolved, and
+         *     ``app.services.briefs.generate_brief`` refuses to persist an item citing an id that is
+         *     not ``VERIFIED`` there. Everything else is nullable because the two writers of this
+         *     column disagree (see the module docstring).
+         */
+        BriefEvidenceResponse: {
+            /**
+             * Citation Id
+             * @description Key into data/demo-seed/citations.json. Always present.
+             */
+            citation_id: string;
+            /**
+             * Document Id
+             * @description The ingested documents row this citation was retrieved from, when there was one. Ties the public page to the captured text.
+             */
+            document_id?: string | null;
+            /**
+             * Title
+             * @description Source title. Null on a seeded row, which carries `quote` instead. Fall back to publisher, then citation_id -- never render an empty link label.
+             */
+            title?: string | null;
+            /**
+             * Quote
+             * @description The exact sentence on the public page this item rests on. Null on a Gateway-written row, which carries `title` instead.
+             */
+            quote?: string | null;
+            /**
+             * Url
+             * @description A real public URL, never synthesised (BUILD_BIBLE section 11). Null means there is no openable page: render plain text, never a broken link.
+             */
+            url?: string | null;
+            /**
+             * Publisher
+             * @description Who published the source.
+             */
+            publisher?: string | null;
+        };
+        /**
+         * BriefItemResponse
+         * @description One numbered entry on the brief: the claim, the judgement, and the evidence.
+         *
+         *     ``body`` and ``so_what`` are deliberately separate fields and must be rendered apart.
+         *     ``body`` is the sourced account and is what ``evidence`` supports; ``so_what`` is the
+         *     mission's analytic judgement, which the evidence does not support and does not claim
+         *     to. Collapsing the two is how a brief becomes a summary.
+         */
+        BriefItemResponse: {
+            /**
+             * Id
+             * Format: uuid
+             * @description Internal identifier (a ULID rendered as a UUID).
+             */
+            id: string;
+            /**
+             * Position
+             * @description Render order within the brief, ascending.
+             */
+            position: number;
+            /** @description What this item points at: SIGNAL, OPPORTUNITY, CASE, MEETING or KNOWLEDGE. */
+            item_type: components["schemas"]["BriefItemType"];
+            /** @description The ADR-0006 zone of THIS item. An item you are not cleared for is absent from the list and absent from any count -- never redacted in place. */
+            classification: components["schemas"]["Classification"];
+            /**
+             * Headline
+             * @description The claim, in one line.
+             */
+            headline: string;
+            /**
+             * Body
+             * @description What happened, according to the sources. This is what `evidence` supports.
+             */
+            body: string;
+            /**
+             * So What
+             * @description The mission's analytic judgement. NOT supported by `evidence`. Render it visibly apart from `body`.
+             */
+            so_what: string;
+            /**
+             * Confidence
+             * @description How sure the mission is of this item, 0-100, or null when not assessed. A float rather than a decimal string, so a client can draw it without parsing.
+             */
+            confidence?: number | null;
+            /**
+             * Is Proposed By Ai
+             * @description True when this item rests on an opportunity the platform PROPOSED rather than one a source REPORTED (OPEN_QUESTIONS Q-17). Joined from opportunities.is_proposed_by_ai -- brief_items carries no provenance column of its own. Such an item must render at visibly lower confidence than the evidenced items beside it; that contrast is the payoff of winning moment #1.
+             */
+            is_proposed_by_ai: boolean;
+            /**
+             * Signal Id
+             * @description The signal this item reports, when it is a SIGNAL.
+             */
+            signal_id?: string | null;
+            /**
+             * Opportunity Id
+             * @description The opportunity this item reports, when it is an OPPORTUNITY.
+             */
+            opportunity_id?: string | null;
+            /**
+             * Case Id
+             * @description The consular case this item reports, when it is a CASE.
+             */
+            case_id?: string | null;
+            /**
+             * Meeting Id
+             * @description The meeting this item reports, when it is a MEETING.
+             */
+            meeting_id?: string | null;
+            /**
+             * Evidence
+             * @description Ordered citations behind `body`. Never empty for a generated item: app.services.briefs refuses to persist an uncited one.
+             */
+            evidence: components["schemas"]["BriefEvidenceResponse"][];
+        };
+        /**
+         * BriefItemType
+         * @description What a brief item points at -- the polymorphic target of ``brief_items``.
+         *
+         *     One member per bounded context in ``BUILD_BIBLE.md`` section 8 that produces a
+         *     briefable artefact.
+         * @enum {string}
+         */
+        BriefItemType: "SIGNAL" | "OPPORTUNITY" | "CASE" | "MEETING" | "KNOWLEDGE";
+        /**
+         * BriefListResponse
+         * @description The caller's brief history, newest first.
+         *
+         *     ``total`` counts only what this caller may read, and comes from the same statement that
+         *     returned the rows. A total computed without the clearance predicate would tell the
+         *     reader exactly how many briefs they are not cleared for, which is the leak
+         *     ``app.security.deps.readable_classifications`` exists to prevent.
+         */
+        BriefListResponse: {
+            /**
+             * Items
+             * @description The briefs, newest first.
+             */
+            items: components["schemas"]["BriefSummaryResponse"][];
+            /**
+             * Total
+             * @description How many were returned. Never a count of hidden rows.
+             */
+            total: number;
+        };
+        /**
+         * BriefResponse
+         * @description Today's morning brief for one caller. Winning moment #1.
+         */
+        BriefResponse: {
+            /**
+             * Id
+             * Format: uuid
+             * @description Internal identifier (a ULID rendered as a UUID).
+             */
+            id: string;
+            /**
+             * Brief Date
+             * Format: date
+             * @description The mission day this brief covers.
+             */
+            brief_date: string;
+            /**
+             * Is Today
+             * @description True when brief_date is the API's current UTC date. False means this is the most recent brief that exists, not this morning's -- say so on screen rather than letting a reader assume it is current.
+             */
+            is_today: boolean;
+            /** @description The role this brief was assembled for. Null is the mission-wide brief, which is what a role with no brief of its own receives. */
+            role_scope: components["schemas"]["RoleCode"] | null;
+            /**
+             * Is Mission Wide
+             * @description True when role_scope is null. Say so on screen: a reader is entitled to know they are looking at the mission brief rather than one built for their desk.
+             */
+            is_mission_wide: boolean;
+            /**
+             * Title
+             * @description The brief's headline.
+             */
+            title: string;
+            /**
+             * Summary
+             * @description The standfirst, above the items.
+             */
+            summary: string;
+            /** @description DRAFT -> IN_REVIEW -> APPROVED -> PUBLISHED. A DRAFT has not been through human hands and the screen must say so. */
+            status: components["schemas"]["BriefStatus"];
+            /** @description The brief's own stored zone. Items carry their own and are filtered independently -- this value does not vouch for them. */
+            classification: components["schemas"]["Classification"];
+            /**
+             * Generated By
+             * @description SYSTEM, AI or HUMAN.
+             */
+            generated_by: string;
+            /**
+             * Trace Id
+             * @description The generating ai_traces row. Non-null with `trace` null means the routing decision exists but this role may not inspect it.
+             */
+            trace_id?: string | null;
+            /** @description The routing decision, when this caller may see it. See BriefTraceResponse. */
+            trace?: components["schemas"]["BriefTraceResponse"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description When the brief row was written.
+             */
+            created_at: string;
+            /**
+             * Items
+             * @description In position order, narrowed to the zones this caller is cleared to read.
+             */
+            items: components["schemas"]["BriefItemResponse"][];
+        };
+        /**
+         * BriefStatus
+         * @description Workflow state of a morning brief: DRAFT -> IN_REVIEW -> APPROVED -> PUBLISHED.
+         *
+         *     A brief is a mission product carrying AI-generated analysis over real sources, so it
+         *     goes through the same shape of review as any other: generated as a DRAFT, submitted
+         *     IN_REVIEW, APPROVED by a named human, and only then PUBLISHED to the mission. Nothing
+         *     reaches an Ambassador's screen without a person having approved it.
+         *
+         *     ``PUBLISHED`` is terminal. A correction is a new brief, because a published brief is
+         *     what officers acted on that morning and rewriting it would destroy that record.
+         * @enum {string}
+         */
+        BriefStatus: "DRAFT" | "IN_REVIEW" | "APPROVED" | "PUBLISHED";
+        /**
+         * BriefSummaryResponse
+         * @description One brief in the history rail: no items, no evidence, no trace.
+         */
+        BriefSummaryResponse: {
+            /**
+             * Id
+             * Format: uuid
+             * @description Internal identifier (a ULID rendered as a UUID).
+             */
+            id: string;
+            /**
+             * Brief Date
+             * Format: date
+             * @description The mission day this brief covers.
+             */
+            brief_date: string;
+            /** @description The role it was assembled for. Null is the mission-wide brief. */
+            role_scope: components["schemas"]["RoleCode"] | null;
+            /**
+             * Is Mission Wide
+             * @description True when role_scope is null.
+             */
+            is_mission_wide: boolean;
+            /**
+             * Title
+             * @description The brief's headline.
+             */
+            title: string;
+            /** @description Its workflow state. */
+            status: components["schemas"]["BriefStatus"];
+            /** @description Its stored zone. */
+            classification: components["schemas"]["Classification"];
+            /**
+             * Generated By
+             * @description SYSTEM, AI or HUMAN.
+             */
+            generated_by: string;
+            /**
+             * Is Today
+             * @description True when brief_date is the API's current UTC date.
+             */
+            is_today: boolean;
+        };
+        /**
+         * BriefTraceResponse
+         * @description The BUILD_BIBLE section 4a routing decision behind an AI-generated brief.
+         *
+         *     Present only when the caller holds ``read:ai_trace`` AND clears
+         *     ``dominant(data_class, result_class)`` -- the same two gates
+         *     ``GET /v1/ai/traces/{trace_id}`` applies, re-applied by
+         *     ``app.services.briefs.trace_for_brief`` so that embedding the badge here is not a
+         *     side-channel around them. When the caller fails either gate the field is ``null`` while
+         *     ``BriefResponse.trace_id`` stays populated: the routing decision exists, and this role
+         *     may not inspect it.
+         */
+        BriefTraceResponse: {
+            /**
+             * Trace Id
+             * Format: uuid
+             * @description The ai_traces row this brief was generated by.
+             */
+            trace_id: string;
+            /**
+             * Route Badge
+             * @description The section 4a badge exactly as the Gateway rendered it at stage 5, e.g. 'INTERNAL - external-noret - claude-sonnet-5'. Render it as an opaque string. Do NOT parse it: there are five badge shapes with three or four segments and the first segment is not always a classification display name. Empty when the row predates the column -- render 'routing not recorded', never rebuild it.
+             */
+            route_badge: string;
+            /** @description The zone the call was declared to run in. */
+            data_class: components["schemas"]["Classification"];
+            /** @description The zone of the answer that came back. */
+            result_class: components["schemas"]["Classification"];
+            /**
+             * Model Route
+             * @description The route chosen at stage 5.
+             */
+            model_route: string;
+            /**
+             * Route Reason
+             * @description One sentence saying why that route was chosen.
+             */
+            route_reason: string;
+            /**
+             * Model Requested
+             * @description The model the route asked for, if any.
+             */
+            model_requested?: string | null;
+            /**
+             * Model Used
+             * @description The model that actually answered. Null on a fallback: a deterministic snapshot was authored by no model, and naming one would be a fabrication.
+             */
+            model_used?: string | null;
+            /**
+             * Fallback
+             * @description True when the deterministic snapshot was served instead of a live call (CLAUDE.md rule 2.5). Render it as its own chip, never folded into the badge.
+             */
+            fallback: boolean;
+            /**
+             * Fallback Reason
+             * @description Why the fallback was used, when it was.
+             */
+            fallback_reason?: string | null;
         };
         /**
          * CaseStatus
@@ -1500,6 +1891,11 @@ export interface components {
             url?: string | null;
             /** Source */
             source?: string | null;
+            /**
+             * Quote
+             * @description The exact claim the cited page carries, taken verbatim from that entry's `supports_claims` in data/demo-seed/citations.json. Never paraphrased and never synthesised: a quotation an Ambassador cannot find on the page is attribution laundering (CLAUDE.md 2.6). None when the registry records no claim for the entry.
+             */
+            quote?: string | null;
             /**
              * Citation Id
              * @description Key of the entry in data/demo-seed/citations.json this evidence resolved to. Defaults to `id`, which is the same string for every registry-backed item.
@@ -2583,6 +2979,79 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    read_brief_v1_intelligence_brief_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Today's brief for the caller's role, or the mission-wide brief when their desk has none. Every item carries resolving citations. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BriefResponse"];
+                };
+            };
+            /** @description You do not hold read:intelligence, or have no session. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No brief at all that you are cleared to read. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    read_brief_history_v1_intelligence_briefs_get: {
+        parameters: {
+            query?: {
+                /** @description Maximum briefs to return, newest first. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's own and mission-wide briefs, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BriefListResponse"];
+                };
+            };
+            /** @description You do not hold read:intelligence, or have no session. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

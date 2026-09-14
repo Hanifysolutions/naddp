@@ -313,6 +313,38 @@ export type TimelineEntry = components['schemas']['TimelineEntryResponse'];
 export type ResolvedSource = components['schemas']['ResolvedSourceResponse'];
 export type InteractionType = components['schemas']['InteractionType'];
 
+/**
+ * `GET /v1/intelligence/brief`: the morning brief. Winning moment #1.
+ *
+ * `MorningBriefItem.is_proposed_by_ai` is the field that carries the honesty contrast
+ * (OPEN_QUESTIONS Q-17): the hero corridor is a synthesis the platform proposed, not a fact
+ * a source reported, and it must render at visibly lower confidence than the evidenced
+ * signals beside it. Derive that comparison from the items themselves - never hard-code a
+ * threshold, and never key off the headline text.
+ *
+ * `confidence` is 0-100 and nullable. Null means "not assessed" and is not zero.
+ */
+export type MorningBrief = components['schemas']['BriefResponse'];
+export type MorningBriefItem = components['schemas']['BriefItemResponse'];
+export type BriefEvidence = components['schemas']['BriefEvidenceResponse'];
+export type BriefStatus = components['schemas']['BriefStatus'];
+export type BriefItemType = components['schemas']['BriefItemType'];
+
+/**
+ * The BUILD_BIBLE section 4a routing decision embedded in a brief.
+ *
+ * Null when the caller does not hold `read:ai_trace` or does not clear the trace's zone -
+ * the API decided that, and the client must not second-guess it. `route_badge` is rendered
+ * opaquely: there are five badge shapes with three or four segments, so parsing it is a
+ * bug. An empty string means the row predates the column; show "routing not recorded"
+ * rather than reconstructing a badge the Gateway never emitted.
+ */
+export type BriefTrace = components['schemas']['BriefTraceResponse'];
+
+/** `GET /v1/intelligence/briefs`: the caller's readable brief history, newest first. */
+export type BriefList = components['schemas']['BriefListResponse'];
+export type BriefSummary = components['schemas']['BriefSummaryResponse'];
+
 /** `GET /v1/audit/events`: one page of the append-only log, newest first. */
 export type AuditEventPage = components['schemas']['AuditEventPageResponse'];
 export type AuditEvent = components['schemas']['AuditEventResponse'];
