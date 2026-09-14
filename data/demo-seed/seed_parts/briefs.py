@@ -360,6 +360,11 @@ def _evidence_json(
             {
                 "citation_id": citation.id,
                 "document_id": str(documents[citation.id].id),
+                # Q-23 (architect, 2026-09-14): all six keys, matching
+                # app.services.briefs.generate_brief exactly. `title` was the field this
+                # writer used to omit, which made a seeded item render differently from a
+                # generated one.
+                "title": citation.title,
                 "quote": citation.claim(claim_index),
                 "url": citation.url,
                 "publisher": citation.publisher,

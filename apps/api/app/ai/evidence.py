@@ -79,6 +79,10 @@ class CitationEntry:
     sector_codes: frozenset[str]
     hero_thread: bool
     status: str
+    #: The claims this page actually supports, verbatim from the registry. The first is
+    #: rendered as the evidence quote so a generated brief item cites the same kind of
+    #: material a seeded one does -- one evidence shape, not two (OPEN_QUESTIONS Q-23).
+    supports_claims: tuple[str, ...] = ()
 
     @property
     def verified(self) -> bool:
@@ -93,6 +97,7 @@ class CitationEntry:
             url=self.url,
             source=self.publisher,
             citation_id=self.id,
+            quote=self.supports_claims[0] if self.supports_claims else None,
         )
 
 
@@ -184,6 +189,11 @@ def _coerce_entry(raw: object) -> CitationEntry | None:
         sector_codes=sector_codes,
         hero_thread=bool(raw.get("hero_thread")),
         status=status,
+        supports_claims=tuple(
+            claim
+            for claim in (raw.get("supports_claims") or [])
+            if isinstance(claim, str) and claim
+        ),
     )
 
 

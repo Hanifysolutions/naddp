@@ -23,7 +23,7 @@ import json
 from dataclasses import dataclass
 from typing import Final
 
-from app.core.config import snapshot_path
+from app.core.config import get_settings, snapshot_path
 from app.domain.enums import AiPurpose, ApprovalStatus, Classification, RoleCode
 from app.models.ai import AiTrace
 from app.models.governance import User
@@ -43,6 +43,53 @@ _ROUTES: Final[dict[AiPurpose, str]] = {
     AiPurpose.KNOWLEDGE_ANSWER: "standard-grounded",
     AiPurpose.DIASPORA_MATCH: "standard-analysis",
 }
+
+#: The one purpose whose route forbids an external call outright, so the band would permit
+#: generation but the purpose declines it (``app/ai/purposes.py`` ``_purpose_withheld``).
+#: Kept as data for the same reason as ``_ROUTES``.
+_WITHHOLDS_EXTERNAL: Final[frozenset[AiPurpose]] = frozenset({AiPurpose.CONSULAR_TRIAGE})
+
+#: BUILD_BIBLE section 4a renders the trace-drawer badge with middle dots. Mirrors
+#: ``app.ai.purposes.BADGE_SEP``; the badge is a contract with the drawer, not formatting.
+_BADGE_SEP: Final[str] = " · "
+
+
+def _strong_model() -> str:
+    """The model the MISSION-INTERNAL band asks for.
+
+    Read from settings rather than written out, so the seeded badge cannot drift from what
+    ``route_for()`` would emit when ``ANTHROPIC_MODEL`` changes. ``app.core.config`` is
+    already in this module's import graph via ``snapshot_path``, so this costs nothing the
+    seed was not already paying -- unlike importing ``app.ai.purposes``, which is what the
+    note above ``_ROUTES`` declines to do.
+    """
+    return get_settings().anthropic_model
+
+
+def _badge(purpose: AiPurpose, data_class: Classification) -> str:
+    """The section 4a badge this call would have carried.
+
+    Every seeded trace runs in the MISSION-INTERNAL band, where 4a fixes the strong tier
+    regardless of purpose and the badge is three segments with no tier -- only the PUBLIC
+    arm carries a fourth. A purpose that withholds the external call gets the withheld
+    badge instead, which states the *purpose* declined rather than implying the band
+    forbade it.
+    """
+    if purpose in _WITHHOLDS_EXTERNAL:
+        return _BADGE_SEP.join(
+            [data_class.value, "purpose withholds external", "metadata-only"]
+        )
+    if data_class is Classification.MISSION_INTERNAL:
+        return _BADGE_SEP.join(["INTERNAL", "external-noret", _strong_model()])
+    if data_class is Classification.PUBLIC:
+        return _BADGE_SEP.join(["PUBLIC", "external", _strong_model(), "strong"])
+    if data_class is Classification.CONFIDENTIAL:
+        return _BADGE_SEP.join(
+            ["CONFIDENTIAL", "restricted", _strong_model(), "enhanced-logging"]
+        )
+    return _BADGE_SEP.join(
+        ["CONSULAR-SENSITIVE", "no external route", "metadata-only"]
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,6 +207,7 @@ def seed_traces(ctx: SeedContext, users: dict[RoleCode, User]) -> dict[str, AiTr
     for spec in TRACE_SPECS:
         evidence = _snapshot_evidence(spec.purpose, spec.scenario)
         route = _ROUTES[spec.purpose]
+        withheld = spec.purpose in _WITHHOLDS_EXTERNAL
         traces[spec.slug] = ctx.upsert(
             AiTrace,
             ctx.register("ai_trace", spec.slug),
@@ -171,13 +219,21 @@ def seed_traces(ctx: SeedContext, users: dict[RoleCode, User]) -> dict[str, AiTr
             data_class=spec.data_class,
             result_class=spec.result_class,
             model_route=route,
+            route_badge=_badge(spec.purpose, spec.data_class),
             route_reason=(
-                f"Routed to the {route} lane for {spec.purpose.value} because the most "
-                f"sensitive item in the assembled context is {spec.data_class.value}. "
-                "Routing table deferred as OPEN_QUESTIONS Q-12; this is the Week 1 "
-                "placeholder rule."
+                (
+                    f"The {spec.data_class.value} band permits an external call, but "
+                    f"{spec.purpose.value} declines it: this purpose works on process "
+                    "metadata only, so no narrative is sent anywhere."
+                )
+                if withheld
+                else (
+                    "The most sensitive item in the assembled context is "
+                    f"{spec.data_class.value}. Section 4a routes this to the approved "
+                    "external provider under a no-retention agreement, on the strong tier."
+                )
             ),
-            model_requested=None,
+            model_requested=None if withheld else _strong_model(),
             model_used=None,
             live=False,
             fallback=True,

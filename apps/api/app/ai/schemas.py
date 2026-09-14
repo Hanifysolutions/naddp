@@ -112,6 +112,17 @@ class EvidenceRef(BaseModel):
     title: Label
     url: str | None = None
     source: str | None = None
+    quote: str | None = Field(
+        default=None,
+        max_length=600,
+        description=(
+            "The exact claim the cited page carries, taken verbatim from that entry's "
+            "`supports_claims` in data/demo-seed/citations.json. Never paraphrased and "
+            "never synthesised: a quotation an Ambassador cannot find on the page is "
+            "attribution laundering (CLAUDE.md 2.6). None when the registry records no "
+            "claim for the entry."
+        ),
+    )
     citation_id: str | None = Field(
         default=None,
         description=(

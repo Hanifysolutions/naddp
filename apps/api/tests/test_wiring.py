@@ -45,6 +45,8 @@ EXPECTED_ROUTES: Final[tuple[tuple[str, str], ...]] = (
     ("GET", "/v1/session/me"),
     ("POST", "/v1/session/end"),
     ("GET", "/v1/command/today"),
+    ("GET", "/v1/intelligence/brief"),
+    ("GET", "/v1/intelligence/briefs"),
     ("GET", "/v1/opportunities"),
     ("GET", "/v1/opportunities/board"),
     ("GET", "/v1/opportunities/{opportunity_id}"),

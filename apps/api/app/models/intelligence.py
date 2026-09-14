@@ -677,8 +677,12 @@ class Brief(UUIDPrimaryKeyMixin, TimestampMixin, ClassifiedMixin, Base):
         default=BriefStatus.DRAFT,
         index=True,
         comment=(
-            "DRAFT is not a mission-visible artefact; only PUBLISHED briefs appear on the "
-            "dashboard. Indexed because the dashboard query filters on it."
+            "DRAFT -> IN_REVIEW -> APPROVED -> PUBLISHED. Scope note (OPEN_QUESTIONS "
+            "Q-25, resolved 2026-09-14): only PUBLISHED briefs feed the COMMAND-CENTRE "
+            "health tiles -- a draft is not a mission fact to count. The Intelligence "
+            "workspace deliberately shows a DRAFT and badges it, because the unapproved "
+            "state is exactly what makes the human-approval gate visible on the brief "
+            "itself. Indexed because the tile query filters on it."
         ),
     )
     generated_by: Mapped[str] = mapped_column(

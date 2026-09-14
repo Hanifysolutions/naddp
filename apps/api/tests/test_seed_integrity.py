@@ -397,6 +397,64 @@ def test_every_brief_item_evidence_entry_resolves(db: Session) -> None:
     assert not offenders, f"brief evidence that does not resolve: {offenders[:10]}"
 
 
+#: The keys every ``brief_items.evidence`` entry carries, whichever writer produced it.
+#: ``app.services.briefs.generate_brief`` and ``data/demo-seed/seed_parts/briefs.py`` used
+#: to disagree -- the Gateway emitted ``title`` and no ``quote``, the seed emitted ``quote``
+#: and no ``title`` -- so the same brief rendered differently depending on provenance. That
+#: drift survived because the resolution test above only ever looked at ``citation_id`` and
+#: ``document_id``. Resolved as OPEN_QUESTIONS Q-23 (architect, 2026-09-14): one shape, and
+#: this constant is what stops it separating again.
+BRIEF_EVIDENCE_KEYS: Final[frozenset[str]] = frozenset(
+    {"citation_id", "document_id", "title", "quote", "url", "publisher"}
+)
+
+
+def test_every_brief_item_evidence_entry_carries_the_unified_display_shape(
+    db: Session,
+) -> None:
+    """Every evidence entry carries all six keys, and the display fields are populated.
+
+    The three display fields are asserted non-empty rather than merely present, because a
+    present-but-empty ``title`` renders as a blank link label and a present-but-empty
+    ``url`` renders as a dead anchor -- both of which are worse on stage than an honest
+    absence, and neither of which a key-presence check would catch.
+    """
+    offenders: list[str] = []
+    for headline, evidence in db.execute(select(BriefItem.headline, BriefItem.evidence)):
+        for entry in evidence or []:
+            missing = BRIEF_EVIDENCE_KEYS - set(entry)
+            if missing:
+                offenders.append(f"{headline[:40]!r}: missing {sorted(missing)}")
+            for field in ("title", "url", "publisher"):
+                if not str(entry.get(field) or "").strip():
+                    offenders.append(f"{headline[:40]!r}: {field} is empty")
+            quote = str(entry.get("quote") or "").strip()
+            if not quote:
+                offenders.append(f"{headline[:40]!r}: quote is empty")
+    assert not offenders, f"brief evidence with a broken display shape: {offenders[:10]}"
+
+
+def test_every_brief_item_quote_is_carried_by_its_citation(db: Session) -> None:
+    """A quote must be one the registry says that page actually supports.
+
+    This is the attribution-laundering check (``evals/grounding/README.md``): a brief item
+    may only put words in a source's mouth that ``citations.json`` records the source as
+    supporting. Paraphrasing here would be indistinguishable from fabrication to a reader
+    who opens the link.
+    """
+    registry = citation_registry()
+    offenders: list[str] = []
+    for headline, evidence in db.execute(select(BriefItem.headline, BriefItem.evidence)):
+        for entry in evidence or []:
+            quote = str(entry.get("quote") or "").strip()
+            citation = registry.get(str(entry.get("citation_id", "")))
+            if citation is None or not quote:
+                continue
+            if quote not in citation.supports_claims:
+                offenders.append(f"{headline[:40]!r}: {quote[:60]!r} not in {citation.id!r}")
+    assert not offenders, f"brief quotes their citation does not support: {offenders[:10]}"
+
+
 def test_knowledge_article_citations_are_verified(db: Session) -> None:
     """A grounded answer cannot rest on a source that was never checked."""
     registry = citation_registry()

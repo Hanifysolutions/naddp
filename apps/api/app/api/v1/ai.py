@@ -164,6 +164,16 @@ class AiTraceResponse(BaseModel):
     result_class: Classification = Field(description="The zone of the answer that came back.")
     model_route: str = Field(description="The route chosen at stage 5.")
     route_reason: str = Field(description="One sentence saying why that route was chosen.")
+    route_badge: str = Field(
+        description=(
+            "The BUILD_BIBLE section 4a badge as the Gateway rendered it at stage 5, e.g. "
+            "'INTERNAL - external-noret - claude-sonnet-5'. Render it opaquely: there are "
+            "five badge shapes with three or four segments, and the band segment is "
+            "computed from the effective class over ALL authorised evidence, which is not "
+            "reconstructable from `data_class` and `result_class` alone. Empty on a row "
+            "written before the column existed."
+        )
+    )
     model_requested: str | None = Field(description="Model the route asked for, if any.")
     model_used: str | None = Field(description="Model that actually answered. Null on fallback.")
     live: bool = Field(description="True when a live provider call was attempted.")
@@ -647,6 +657,7 @@ def read_trace(
         result_class=trace.result_class,
         model_route=trace.model_route,
         route_reason=trace.route_reason,
+        route_badge=trace.route_badge,
         model_requested=trace.model_requested,
         model_used=trace.model_used,
         live=trace.live,

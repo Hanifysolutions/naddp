@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Protocol
 
-from sqlalchemy import select
+from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
 from app.audit.writer import write_audit_event
@@ -45,17 +45,25 @@ from app.domain.enums import (
     Classification,
     PolicyResult,
     RoleCode,
+    dominant,
 )
 from app.models.ai import AiTrace
 from app.models.intelligence import Brief, BriefItem, Document
+from app.models.opportunities import Opportunity
+from app.security.deps import readable_classifications
 from app.security.permissions import Permission
 from app.security.principal import Principal
 
 __all__ = [
     "BriefGenerationError",
     "GenerateFn",
+    "ai_proposed_opportunity_ids",
     "brief_for",
     "generate_brief",
+    "latest_brief",
+    "list_briefs",
+    "readable_items",
+    "trace_for_brief",
     "transition_brief",
 ]
 
@@ -129,6 +137,161 @@ def brief_for(session: Session, *, brief_date: date, role: RoleCode) -> Brief | 
     return session.scalars(
         select(Brief).where(Brief.brief_date == brief_date, Brief.role_scope == role)
     ).one_or_none()
+
+
+def _visible_briefs(principal: Principal) -> Select[tuple[Brief]]:
+    """The base ``SELECT`` for every brief ``principal`` may read.
+
+    Both predicates are in the SQL and neither is optional (``CLAUDE.md`` rule 5: the
+    authorisation filter runs *before* the query, not over its results):
+
+    * **Clearance.** ``classification IN (cleared zones)``, so a brief in a zone this role
+      does not hold is not merely hidden -- it is never selected, and cannot be differenced
+      out of a count.
+    * **Scope.** ``role_scope = my role OR role_scope IS NULL``. A brief assembled for
+      another desk is not this caller's to read even when they clear its zone, which is why
+      an ``AMBASSADOR`` -- who holds the consular compartment -- still does not receive the
+      ``CONSULAR_OFFICER`` brief.
+
+    Returned as a ``Select`` rather than executed so callers add their own narrowing to the
+    same statement instead of filtering rows in Python afterwards.
+    """
+    return select(Brief).where(
+        Brief.classification.in_(readable_classifications(principal)),
+        or_(Brief.role_scope == principal.role, Brief.role_scope.is_(None)),
+    )
+
+
+def latest_brief(session: Session, principal: Principal) -> Brief | None:
+    """Return the most recent brief ``principal`` may read: their desk's, else the mission's.
+
+    **Latest, not today's, and that is the whole point.** A brief is a dated product, so a
+    strict ``brief_date == today`` lookup returns nothing the moment the demo is run on any
+    day other than the one the seed was loaded on -- which put a 404 on the flagship screen
+    and is precisely the dead end ``BUILD_BIBLE.md`` section 0 forbids. Ordering by date
+    instead means the page always has something true to show; the router reports
+    ``brief_date`` and ``is_today`` so a brief from last week is *labelled* as one rather
+    than passed off as this morning's.
+
+    **Two orderings, in this priority.** Date descending first: freshness dominates, so
+    today's mission-wide brief outranks yesterday's role brief. Then
+    ``role_scope IS NULL`` ascending, which puts a non-NULL ``role_scope`` (false, 0) ahead
+    of the mission-wide one (true, 1): on a date where the caller's own desk has a brief,
+    that is the one they get.
+
+    **The mission-wide fallback is a product decision** (``docs/OPEN_QUESTIONS.md``
+    Q-W3.1b), not an implied one. Four roles hold ``read:intelligence`` and only two have a
+    brief of their own in the seed, so without it ``DEPUTY`` and ``DIASPORA_OFFICER`` would
+    dead-end too. A reader is told which one they got: the router sets ``is_mission_wide``.
+
+    Distinct from :func:`brief_for`, which stays strict because :func:`generate_brief`
+    depends on its exact-role, exact-date semantics to decide whether it is replacing a
+    draft. Note that ``brief_for`` can never return a mission-wide brief at all: SQL
+    equality never matches ``NULL``.
+    """
+    return session.scalars(
+        _visible_briefs(principal)
+        .order_by(Brief.brief_date.desc(), Brief.role_scope.is_(None).asc())
+        .limit(1)
+    ).first()
+
+
+def list_briefs(session: Session, principal: Principal, *, limit: int = 20) -> list[Brief]:
+    """Return the briefs ``principal`` may read, newest first.
+
+    Ties on a date put the caller's own brief above the mission-wide one, which is the
+    order a reader expects: their desk first, the mission behind it.
+    """
+    return list(
+        session.scalars(
+            _visible_briefs(principal)
+            .order_by(
+                Brief.brief_date.desc(),
+                Brief.role_scope.is_(None).asc(),
+            )
+            .limit(limit)
+        )
+    )
+
+
+def readable_items(session: Session, principal: Principal, brief: Brief) -> list[BriefItem]:
+    """Return the items of ``brief`` that ``principal`` is cleared to read, in order.
+
+    **Not ``brief.items``.** ``briefs.classification`` is a stored column that nothing
+    recomputes as the max over its items, so the parent's zone does not vouch for a child's:
+    a brief could carry an item in a zone the reader does not hold. The clearance predicate
+    is therefore applied to ``brief_items`` independently and in SQL, and an item the caller
+    may not read is absent from the list rather than redacted in place -- a redaction is
+    still a disclosure that something is there.
+    """
+    return list(
+        session.scalars(
+            select(BriefItem)
+            .where(
+                BriefItem.brief_id == brief.id,
+                BriefItem.classification.in_(readable_classifications(principal)),
+            )
+            .order_by(BriefItem.position)
+        )
+    )
+
+
+def ai_proposed_opportunity_ids(
+    session: Session,
+    principal: Principal,
+    items: Sequence[BriefItem],
+) -> set[uuid.UUID]:
+    """Return which of ``items``' opportunities the platform *proposed* rather than read.
+
+    This is the generic mechanism behind ``BriefItemResponse.is_proposed_by_ai`` and
+    therefore behind winning moment #1's payoff (``docs/OPEN_QUESTIONS.md`` Q-17): the hero
+    corridor is an AI synthesis with no public source connecting the two countries, and it
+    must render at lower confidence than the evidenced signals beneath it. ``brief_items``
+    carries no provenance column of its own, so the flag is joined from
+    ``opportunities.is_proposed_by_ai`` -- the row where Q-17 puts it.
+
+    One query for the whole brief, not one per item. Clearance-filtered like every other
+    read here: on the seeded data the predicate changes nothing (the hero opportunity is
+    ``MISSION_INTERNAL``, and an item citing it is classified at least as highly), so
+    complying with the rule costs nothing and leaves no exception to justify.
+    """
+    ids = {item.opportunity_id for item in items if item.opportunity_id is not None}
+    if not ids:
+        return set()
+    return set(
+        session.scalars(
+            select(Opportunity.id).where(
+                Opportunity.id.in_(ids),
+                Opportunity.is_proposed_by_ai.is_(True),
+                Opportunity.classification.in_(readable_classifications(principal)),
+            )
+        )
+    )
+
+
+def trace_for_brief(session: Session, principal: Principal, brief: Brief) -> AiTrace | None:
+    """Return the ``ai_traces`` row behind ``brief``, if this caller may inspect it.
+
+    Embedding the routing decision in the brief payload saves the UI a second request, but
+    it must not become a way around ``GET /v1/ai/traces/{trace_id}``. Both of that route's
+    gates are therefore re-applied here: the ``read:ai_trace`` permission, and clearance
+    against the *dominant* of the zone the call ran in and the zone of the answer -- the
+    higher of the two, because a trace discloses something about both.
+
+    Returns ``None`` rather than raising on a refusal. A routing decision this role may not
+    see is absent from the brief, not an error on it; the router still reports
+    ``trace_id``, so the UI can say the decision exists and is withheld.
+    """
+    if brief.trace_id is None:
+        return None
+    if not principal.has(Permission.READ_AI_TRACE):
+        return None
+    trace = session.get(AiTrace, brief.trace_id)
+    if trace is None:
+        return None
+    if not principal.may_read(dominant(trace.data_class, trace.result_class)):
+        return None
+    return trace
 
 
 def _item_type(raw: str) -> BriefItemType:
@@ -278,6 +441,10 @@ def generate_brief(
                         # column, whichever writer filled it.
                         "document_id": documents_by_citation.get(ref.id),
                         "title": ref.title,
+                        # Q-23 (architect, 2026-09-14): ONE evidence shape for seeded and
+                        # generated items alike. Both writers emit all six keys, so the
+                        # brief renders identically whichever produced the row.
+                        "quote": ref.quote,
                         "url": ref.url,
                         "publisher": ref.source,
                     }
