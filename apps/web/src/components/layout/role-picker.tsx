@@ -4,7 +4,13 @@ import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { LoaderCircle, TriangleAlert } from 'lucide-react';
-import { isApiError, NADDP_ROLES, toApiError, type ApiError, type NaddpRole } from '@naddp/contracts';
+import {
+  isApiError,
+  NADDP_ROLES,
+  toApiError,
+  type ApiError,
+  type NaddpRole,
+} from '@naddp/contracts';
 
 import {
   Select,
@@ -137,9 +143,7 @@ export function RolePicker({
   const handleChange = React.useCallback(
     (value: string): void => {
       if (!isNaddpRole(value)) {
-        setError(
-          toApiError(0, { detail: `"${value}" is not a role this API defines.` }),
-        );
+        setError(toApiError(0, { detail: `"${value}" is not a role this API defines.` }));
         return;
       }
       void assume(value);
@@ -163,8 +167,26 @@ export function RolePicker({
             aria-describedby={error === null ? undefined : errorId}
             aria-invalid={error !== null}
             className={cn(
-              'h-8 w-[13.5rem] bg-card text-sm',
-              error !== null && 'border-destructive',
+              /*
+               * The picker sits ON the --slate-900 command bar, so it takes the dark
+               * surface rather than the card fill it used to have.
+               *
+               * --slate-400 as the border is a NON-TEXT use of the token globals.css
+               * restricts: as the control's boundary it measures 4.09:1 against the bar,
+               * clearing the 3:1 SC 1.4.11 asks of a component edge, where --slate-700
+               * would have managed only 1.49:1. The label text is white (14.29:1) and
+               * the placeholder --slate-300 (4.61:1).
+               */
+              'h-8 w-[13.5rem] border-slate-400 bg-slate-900 text-sm text-white shadow-none',
+              'hover:bg-ink data-[placeholder]:text-slate-300',
+              'focus:ring-accent-on-dark focus:ring-offset-slate-900',
+              /*
+               * The failed state adds --risk, which is only 2.43:1 on this bar - enough
+               * to be seen as a change, not enough to BE the boundary. The light hairline
+               * therefore stays underneath it as a ring, and the failure itself is
+               * carried by the alert below in words and an icon, never by colour.
+               */
+              error !== null && 'border-risk ring-1 ring-slate-400',
             )}
           >
             <SelectValue placeholder="Choose a demo role" />
@@ -184,7 +206,7 @@ export function RolePicker({
 
         {pending ? (
           <span
-            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            className="flex items-center gap-1.5 text-xs text-slate-300"
             role="status"
           >
             <LoaderCircle aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />
@@ -194,40 +216,61 @@ export function RolePicker({
       </div>
 
       {error === null ? null : (
+        /*
+          The panel hangs off the bar and over the --paper work area, and it is held
+          there by a --risk hairline at 5.55:1 rather than by a drop shadow: hierarchy in
+          this system comes from colour and rule, not from card chrome.
+        */
         <div
           id={errorId}
           role="alert"
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[22rem] rounded-md border border-destructive/50 bg-popover p-3 text-popover-foreground shadow-lg"
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[22rem] rounded-md border border-risk/60 bg-popover p-3 text-popover-foreground"
         >
           <p className="flex items-start gap-2 text-sm font-medium">
             <TriangleAlert
               aria-hidden="true"
-              className="mt-0.5 h-4 w-4 shrink-0 text-destructive"
+              className="mt-0.5 h-4 w-4 shrink-0 text-risk"
             />
             <span>
               Could not switch role
               {error.status > 0 ? ` (HTTP ${error.status})` : ''}
             </span>
           </p>
-          <p className="mt-1.5 pl-6 text-sm leading-snug text-muted-foreground">
+          <p className="mt-1.5 pl-6 text-sm leading-snug text-slate-700">
             {error.message}
           </p>
-          {error.missingPermissions.length === 0 ? null : (
-            <p className="mt-1.5 pl-6 font-mono text-2xs text-muted-foreground">
-              missing {error.missingPermissions.join(', ')}
-            </p>
+          {/*
+            Diagnostics as labelled fields, not as `missing X` / `request Y` runs of
+            monospace. The LABEL is prose and stays in the body face; only the VALUE is an
+            identifier, and identifiers are the one thing monospace still exists for here.
+          */}
+          {error.missingPermissions.length === 0 &&
+          error.requestId === null &&
+          error.traceId === null ? null : (
+            <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 pl-6 text-2xs">
+              {error.missingPermissions.length === 0 ? null : (
+                <>
+                  <dt className="text-slate-700">Missing permissions</dt>
+                  <dd className="break-words font-mono">
+                    {error.missingPermissions.join(', ')}
+                  </dd>
+                </>
+              )}
+              {error.requestId === null ? null : (
+                <>
+                  <dt className="text-slate-700">Request</dt>
+                  <dd className="break-all font-mono">{error.requestId}</dd>
+                </>
+              )}
+              {error.traceId === null ? null : (
+                <>
+                  <dt className="text-slate-700">Trace</dt>
+                  <dd className="break-all font-mono">{error.traceId}</dd>
+                </>
+              )}
+            </dl>
           )}
-          {error.requestId === null ? null : (
-            <p className="mt-1.5 pl-6 font-mono text-2xs text-muted-foreground">
-              request {error.requestId}
-            </p>
-          )}
-          {error.traceId === null ? null : (
-            <p className="mt-1.5 pl-6 font-mono text-2xs text-muted-foreground">
-              trace {error.traceId}
-            </p>
-          )}
-          <p className="mt-2 pl-6 text-2xs leading-snug text-muted-foreground">
+          <p className="mt-2 pl-6 text-2xs leading-snug text-slate-700">
             The identity shown above is unchanged. Nothing was assumed.
           </p>
         </div>

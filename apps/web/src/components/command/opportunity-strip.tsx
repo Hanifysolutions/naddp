@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatCount } from '@/lib/command-view';
 import { OPPORTUNITY_STAGE_LABELS } from '@/lib/enum-labels';
+import { cn } from '@/lib/utils';
 
 /**
  * The rows behind the pipeline counts.
@@ -42,7 +43,7 @@ export function OpportunityStrip({
 
   if (error !== null) {
     return (
-      <p className="flex items-start gap-1.5 text-2xs leading-snug text-destructive">
+      <p className="flex items-start gap-1.5 text-2xs leading-snug text-risk">
         <TriangleAlert aria-hidden="true" className="mt-0.5 h-3 w-3 shrink-0" />
         <span>
           The pipeline rows could not be loaded ({error.message}). The counts above came
@@ -66,18 +67,30 @@ export function OpportunityStrip({
 
   return (
     <section aria-label="Most recently updated opportunities" className="min-w-0">
-      <p className="mb-1.5 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
+      <p className="mb-1.5 text-label text-slate-700">
         Most recently updated
-        <span className="ml-1 font-normal normal-case tracking-normal">
+        <span className="tabular ml-1">
           ({formatCount(data.items.length)} of {formatCount(data.total)})
         </span>
       </p>
 
+      {/*
+       * An AI-proposed row carries the proposed tick as well as the badge. That is a state
+       * this list genuinely holds - a record nobody has qualified yet - so it earns a
+       * structural marker; the evidenced rows keep the same left padding so the column
+       * still reads as a column.
+       */}
       <ul className="space-y-1.5">
         {data.items.map((item) => (
-          <li key={item.id} className="flex items-start justify-between gap-2">
+          <li
+            key={item.id}
+            className={cn(
+              'flex items-start justify-between gap-2 pl-2',
+              item.is_proposed_by_ai && 'tick-proposed',
+            )}
+          >
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-xs leading-snug text-foreground">
+              <span className="block truncate text-xs leading-snug text-ink">
                 {item.title}
               </span>
               <span className="mt-0.5 flex flex-wrap items-center gap-1">
@@ -100,10 +113,19 @@ export function OpportunityStrip({
  * Deliberately worded as a limitation rather than a feature. "Pending officer
  * qualification" is the state the record is actually in: a machine drew a line between two
  * facts, and no human has yet agreed with it.
+ *
+ * The `proposed` variant is the Q-17 honesty colour and is deliberately the quietest badge
+ * in the kit - a violet tint rather than a fill - so a proposed item reads as cooler and
+ * more subordinate than the evidenced rows beside it (DESIGN_SYSTEM.md --proposed). It was
+ * previously the `warning` fill, which said the wrong thing twice over: it shouted louder
+ * than the evidenced items it is subordinate to, and it borrowed the colour this app
+ * reserves for an SLA at risk. This badge is the verbatim twin of the one on the
+ * Intelligence page, down to the variant: the same claim has to reach the reader in the
+ * same words and the same colour on both screens, or they will trust whichever is kinder.
  */
 function AiProposedBadge(): React.JSX.Element {
   return (
-    <Badge variant="warning" className="gap-1 text-2xs font-medium">
+    <Badge variant="proposed" className="gap-1 text-2xs font-medium">
       <Bot aria-hidden="true" className="h-3 w-3" />
       AI-proposed
       <span className="sr-only">

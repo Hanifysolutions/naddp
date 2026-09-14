@@ -1,6 +1,6 @@
 import * as React from 'react';
 import type { Metadata, Viewport } from 'next';
-import { Inter, JetBrains_Mono } from 'next/font/google';
+import { Inter, Inter_Tight, JetBrains_Mono } from 'next/font/google';
 
 import { Providers } from '@/app/providers';
 import { cn } from '@/lib/utils';
@@ -8,11 +8,24 @@ import { cn } from '@/lib/utils';
 import './globals.css';
 
 /**
- * Inter for the interface, JetBrains Mono for identifiers, trace ids and any place a
- * number must be scanned character by character. Both are self-hosted by next/font, so
- * there is no third-party font request at runtime - which is also what lets the CSP keep
- * `font-src 'self' data:`.
+ * Three faces, each with one job (DESIGN_SYSTEM.md "Typography").
+ *
+ * Inter Tight is the display face: headings and every data figure. A serious
+ * grotesque, tighter than Inter at large sizes, which is what stops a big figure
+ * reading as a marketing statistic. Inter carries body and labels. JetBrains Mono
+ * is reserved for identifiers, trace ids and anything scanned character by
+ * character - never for a data LABEL, which DESIGN_SYSTEM.md lists as an
+ * anti-goal.
+ *
+ * All three are self-hosted by next/font, so there is no third-party font request
+ * at runtime - which is also what lets the CSP keep `font-src 'self' data:`.
  */
+const interTight = Inter_Tight({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-display',
+});
+
 const inter = Inter({
   subsets: ['latin'],
   display: 'swap',
@@ -51,8 +64,8 @@ export const viewport: Viewport = {
   // Never block zoom: WCAG 2.2 SC 1.4.4 (Resize Text).
   maximumScale: 5,
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: 'hsl(210 30% 97%)' },
-    { media: '(prefers-color-scheme: dark)', color: 'hsl(215 42% 8%)' },
+    { media: '(prefers-color-scheme: light)', color: 'hsl(220 23% 97%)' },
+    { media: '(prefers-color-scheme: dark)', color: 'hsl(222 38% 11%)' },
   ],
 };
 
@@ -64,6 +77,7 @@ export default function RootLayout({
       <body
         className={cn(
           'min-h-screen bg-background font-sans text-foreground',
+          interTight.variable,
           inter.variable,
           jetbrainsMono.variable,
         )}

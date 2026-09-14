@@ -11,7 +11,9 @@ import { cn } from '@/lib/utils';
  *
  *  - **One hue, not a categorical palette.** These bars encode magnitude within a single
  *    series, so colour carries no identity - the row label does. A palette here would
- *    invite the reader to compare hues that mean nothing.
+ *    invite the reader to compare hues that mean nothing. The hue is `--chart-1`, which
+ *    Mission Slate resolves to the accent, so a bar is the same colour as the live figure
+ *    it sits under (globals.css "Data series").
  *  - **Every value is written out.** The bar is a secondary encoding; the number beside it
  *    is the primary one. That makes the chart legible to a screen reader, in forced-colours
  *    mode, and in a photograph of a projector screen, which is the actual viewing
@@ -36,7 +38,7 @@ export function DistributionBars({
 
   return (
     <section className={cn('min-w-0', className)} aria-label={caption}>
-      <p className="mb-1.5 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
+      <p className="mb-1.5 text-label text-slate-700">
         {caption}
         <span className="sr-only">
           {peak > 0
@@ -48,30 +50,35 @@ export function DistributionBars({
       <dl className="space-y-1">
         {entries.map((entry) => {
           const width =
-            entry.value === null || peak === 0 ? 0 : Math.round((entry.value / peak) * 100);
+            entry.value === null || peak === 0
+              ? 0
+              : Math.round((entry.value / peak) * 100);
 
           return (
             <div key={entry.key} className="flex items-center gap-2">
-              <dt className="w-[6rem] shrink-0 truncate text-2xs text-muted-foreground desk:w-[7.5rem]">
+              <dt className="w-[6rem] shrink-0 truncate text-2xs text-slate-700 desk:w-[7.5rem]">
                 {entry.label}
               </dt>
 
               <div
                 aria-hidden="true"
-                className="h-2 min-w-0 flex-1 overflow-hidden rounded-[3px] bg-muted"
+                className="h-2 min-w-0 flex-1 overflow-hidden rounded-[3px] bg-line"
               >
                 {width > 0 ? (
                   <div
-                    className="h-full rounded-[3px] bg-[hsl(var(--chart-1))]"
+                    className="h-full rounded-[3px] bg-chart-1"
                     style={{ width: `${width}%` }}
                   />
                 ) : null}
               </div>
 
-              <dd className="tabular w-9 shrink-0 text-right font-mono text-2xs text-foreground">
+              {/* Tabular, never mono: the figures align because they are tabular, which is
+                  a different thing from the monospace face this design system keeps for
+                  identifiers and trace ids. */}
+              <dd className="tabular w-9 shrink-0 text-right text-2xs text-ink">
                 {entry.value === null ? (
                   <>
-                    <span aria-hidden="true" className="text-muted-foreground">
+                    <span aria-hidden="true" className="text-slate-700">
                       &mdash;
                     </span>
                     <span className="sr-only">not reported</span>

@@ -54,9 +54,7 @@ export default function GlobalRouteError({
           </p>
 
           <div className="rounded-md border border-border bg-muted p-3">
-            <p className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Reported error
-            </p>
+            <p className="text-label font-medium text-slate-700">Reported error</p>
             <p className="mt-1 break-words font-mono text-xs text-foreground">
               {error.message.length > 0 ? error.message : 'No message was provided.'}
             </p>

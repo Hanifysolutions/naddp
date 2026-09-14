@@ -12,6 +12,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { OPPORTUNITY_STAGE_LABELS } from '@/lib/enum-labels';
 
 /**
  * Confirm a stage transition, with the reason that will reach the audit row.
@@ -24,6 +25,10 @@ import {
  * The dialog states plainly that the act is recorded. That is not a warning - it is the
  * product working - and an officer who is surprised by it afterwards was not told clearly
  * enough beforehand.
+ *
+ * The sentences below name stages and data zones by their display labels rather than by
+ * their enum members. The wire values are unchanged and still travel with the request; what
+ * changed is that a diplomat reads "Contact planned", not `CONTACT_PLANNED`.
  */
 export interface TransitionDialogProps {
   card: BoardCard;
@@ -34,15 +39,16 @@ export interface TransitionDialogProps {
 }
 
 const EVENT_SENTENCE: Readonly<Record<string, string>> = {
-  qualify: 'Qualify this opportunity and move it to QUALIFIED.',
-  plan_contact: 'Record that an approach is planned, moving it to CONTACT_PLANNED.',
-  record_contact: 'Record that contact was made, moving it to CONTACTED.',
-  schedule_meeting: 'Record a scheduled meeting, moving it to MEETING.',
+  qualify: 'Qualify this opportunity and move it to Qualified.',
+  plan_contact: 'Record that an approach is planned, moving it to Contact planned.',
+  record_contact: 'Record that contact was made, moving it to Contacted.',
+  schedule_meeting: 'Record a scheduled meeting, moving it to Meeting.',
   enter_negotiation:
-    'Open negotiation. The classification is raised to at least CONFIDENTIAL on entry, which may remove this opportunity from the view of colleagues who can see it now.',
-  partner: 'Commit the mission to a partnership. This is terminal and cannot be reopened.',
-  close: 'Close this opportunity. CLOSED is terminal and cannot be reopened.',
-  dismiss: 'Dismiss this opportunity. CLOSED is terminal and cannot be reopened.',
+    'Open negotiation. The classification is raised to at least Confidential on entry, which may remove this opportunity from the view of colleagues who can see it now.',
+  partner:
+    'Commit the mission to a partnership. This is terminal and cannot be reopened.',
+  close: 'Close this opportunity. Closed is terminal and cannot be reopened.',
+  dismiss: 'Dismiss this opportunity. Closed is terminal and cannot be reopened.',
   revert: 'Step this opportunity back one stage to correct a mis-advance.',
 };
 
@@ -61,9 +67,11 @@ export function TransitionDialog({
     <Sheet open onOpenChange={(open) => (open ? undefined : onCancel())}>
       <SheetContent side="right" className="w-full sm:max-w-md">
         <SheetHeader>
-          <SheetTitle>{EVENT_SENTENCE[event] ?? `Fire "${event}" on this opportunity.`}</SheetTitle>
+          <SheetTitle>
+            {EVENT_SENTENCE[event] ?? `Fire "${event}" on this opportunity.`}
+          </SheetTitle>
           <SheetDescription>
-            {card.title} — currently at {card.stage}.
+            {card.title} — currently at {OPPORTUNITY_STAGE_LABELS[card.stage]}.
           </SheetDescription>
         </SheetHeader>
 
@@ -75,8 +83,14 @@ export function TransitionDialog({
           }}
         >
           {consequential ? (
-            <p className="flex gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
-              <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+            // A terminal transition is a state worth marking structurally, so it carries the
+            // --warn tick. The icon is --warn (borders and icons only, SC 1.4.11) and the
+            // words are --warn-ink, the AA-safe warn for text.
+            <p className="tick-warn flex gap-2 rounded-r-md bg-warn/5 p-3 text-sm text-warn-ink">
+              <AlertTriangle
+                aria-hidden="true"
+                className="mt-0.5 size-4 shrink-0 text-warn"
+              />
               <span>
                 This is a terminal transition. It cannot be undone from this screen — a
                 revived opportunity is a new row, not a reopened one.
@@ -85,7 +99,7 @@ export function TransitionDialog({
           ) : null}
 
           <div className="space-y-1.5">
-            <label htmlFor="transition-reason" className="text-sm font-medium">
+            <label htmlFor="transition-reason" className="text-sm font-medium text-ink">
               Reason
             </label>
             <textarea
@@ -95,17 +109,25 @@ export function TransitionDialog({
               rows={4}
               required
               autoFocus
-              className="w-full rounded-md border border-input bg-background p-2 text-sm shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              // No local focus ring: globals.css declares one for every :focus-visible so no
+              // control in the app can ship without a visible indicator.
+              className="w-full rounded-md border border-input bg-background p-2 text-sm"
               placeholder="What changed, and what is it based on?"
             />
-            <p className="text-xs text-muted-foreground">
-              Written to the append-only audit log against your name, with the stage before
-              and after. Every consequential transition is recorded (BUILD_BIBLE §6).
+            <p className="text-label text-slate-700">
+              Written to the append-only audit log against your name, with the stage
+              before and after. Every consequential transition is recorded (BUILD_BIBLE
+              §6).
             </p>
           </div>
 
           <div className="flex justify-end gap-2 pb-4">
-            <Button type="button" variant="ghost" onClick={onCancel} disabled={submitting}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={onCancel}
+              disabled={submitting}
+            >
               Cancel
             </Button>
             <Button type="submit" disabled={trimmed.length === 0 || submitting}>

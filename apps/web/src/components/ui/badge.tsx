@@ -17,14 +17,21 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        default: 'border-transparent bg-primary text-primary-foreground shadow-sm',
+        default: 'border-transparent bg-primary text-primary-foreground',
         secondary: 'border-transparent bg-secondary text-secondary-foreground',
-        destructive:
-          'border-transparent bg-destructive text-destructive-foreground shadow-sm',
-        success: 'border-transparent bg-success text-success-foreground shadow-sm',
-        warning: 'border-transparent bg-warning text-warning-foreground shadow-sm',
-        demo: 'border-demo-border bg-demo text-demo-foreground shadow-sm',
-        outline: 'border-input text-foreground',
+        destructive: 'border-transparent bg-destructive text-destructive-foreground',
+        success: 'border-transparent bg-success text-success-foreground',
+        warning: 'border-transparent bg-warning text-warning-foreground',
+        demo: 'border-demo-border bg-demo text-demo-foreground',
+        outline: 'border-line text-slate-700',
+        /*
+         * AI-proposed. The Q-17 honesty colour, and deliberately the QUIETEST
+         * variant here: a tint rather than a fill, so a proposed item reads as
+         * cooler and more subordinate than the evidenced items beside it. The
+         * gap is carried chromatically as well as numerically
+         * (DESIGN_SYSTEM.md --proposed).
+         */
+        proposed: 'border-proposed/35 bg-proposed-weak text-proposed',
       },
     },
     defaultVariants: {
@@ -34,8 +41,7 @@ const badgeVariants = cva(
 );
 
 export interface BadgeProps
-  extends React.HTMLAttributes<HTMLSpanElement>,
-    VariantProps<typeof badgeVariants> {}
+  extends React.HTMLAttributes<HTMLSpanElement>, VariantProps<typeof badgeVariants> {}
 
 function Badge({ className, variant, ...props }: BadgeProps): React.JSX.Element {
   return <span className={cn(badgeVariants({ variant }), className)} {...props} />;

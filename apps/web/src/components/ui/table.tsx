@@ -72,7 +72,9 @@ const TableHead = React.forwardRef<
     ref={ref}
     scope={scope}
     className={cn(
-      'h-9 px-3 text-left align-middle text-2xs font-semibold uppercase tracking-wide text-muted-foreground [&:has([role=checkbox])]:pr-0',
+      // Sentence case, not tracked-out caps (DESIGN_SYSTEM.md anti-goals). A
+      // column header is a quiet label; the data under it is the loud part.
+      'h-9 px-3 text-left align-middle text-label font-medium text-slate-700 [&:has([role=checkbox])]:pr-0',
       className,
     )}
     {...props}

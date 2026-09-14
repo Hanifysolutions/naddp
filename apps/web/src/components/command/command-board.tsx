@@ -10,7 +10,11 @@ import { AuditTrailStrip } from '@/components/command/audit-trail-strip';
 import { OpportunityStrip } from '@/components/command/opportunity-strip';
 import { useDemoSession } from '@/components/layout/session-provider';
 import { Badge } from '@/components/ui/badge';
-import { fetchAuditEvents, fetchCommandToday, fetchOpportunities } from '@/lib/api-queries';
+import {
+  fetchAuditEvents,
+  fetchCommandToday,
+  fetchOpportunities,
+} from '@/lib/api-queries';
 import {
   buildBoard,
   COMMAND_GRID_CLASS,
@@ -104,10 +108,11 @@ export function CommandBoard(): React.JSX.Element {
     <div className="px-4 py-4 laptop:px-6 laptop:py-5">
       <header className="mb-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold leading-tight tracking-tight text-foreground">
-            Command centre
-          </h1>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+          {/* `tracking-tight` is not repeated here: globals.css already sets the display
+              face and its -0.011em on every h1-h4, and a second tracking utility would
+              overwrite that with a tighter value the type scale was not drawn for. */}
+          <h1 className="text-xl font-semibold leading-tight text-ink">Command centre</h1>
+          <p className="mt-1 max-w-3xl text-sm text-slate-700">
             One governed picture of the mission. Every figure is counted by the API under
             your permissions and your clearance before it is returned - a tile you may not
             read is never queried, and never shown as zero.
@@ -117,9 +122,9 @@ export function CommandBoard(): React.JSX.Element {
         <div className="flex flex-col items-start gap-1.5 laptop:items-end">
           {zones.length === 0 ? null : (
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-2xs uppercase tracking-wide text-muted-foreground">
-                Counted across
-              </span>
+              {/* A quiet sentence-case label, not a tracked-out eyebrow: the clearance
+                  zones are the substance here and the word "across" is only grammar. */}
+              <span className="text-label text-slate-700">Counted across</span>
               {zones.map((zone) => (
                 <Badge key={zone} variant="outline" className="text-2xs font-medium">
                   {CLASSIFICATION_LABELS[zone]}
@@ -156,13 +161,13 @@ export function CommandBoard(): React.JSX.Element {
         <CommandTile view={byId['mission-outcomes']} />
       </section>
 
-      <p className="mt-4 flex items-start gap-2 text-2xs leading-relaxed text-muted-foreground">
+      <p className="mt-4 flex items-start gap-2 text-2xs leading-relaxed text-slate-700">
         <Sparkles aria-hidden="true" className="mt-0.5 h-3 w-3 shrink-0" />
         <span>
           Every record in this environment is synthetic. Counts come from{' '}
           <code className="font-mono">GET /v1/command/today</code>, which applies the
-          permission and classification predicates inside its SQL; nothing on this screen is
-          computed in the browser beyond formatting.
+          permission and classification predicates inside its SQL; nothing on this screen
+          is computed in the browser beyond formatting.
         </span>
       </p>
     </div>
@@ -187,7 +192,9 @@ function asApiError(error: unknown): ApiError {
   return {
     status: 0,
     message:
-      error instanceof Error ? error.message : 'The request failed for an unknown reason.',
+      error instanceof Error
+        ? error.message
+        : 'The request failed for an unknown reason.',
     traceId: null,
     requestId: null,
     code: null,
@@ -203,7 +210,9 @@ function asApiError(error: unknown): ApiError {
  * missing - a bug that would otherwise render as a silently absent card.
  */
 function indexTiles(tiles: readonly TileView[]): Readonly<Record<TileId, TileView>> {
-  const index = new Map<TileId, TileView>(tiles.map((tile) => [tile.definition.id, tile]));
+  const index = new Map<TileId, TileView>(
+    tiles.map((tile) => [tile.definition.id, tile]),
+  );
   const required: readonly TileId[] = [
     'today',
     'opportunity-health',
@@ -229,6 +238,11 @@ function indexTiles(tiles: readonly TileView[]): Readonly<Record<TileId, TileVie
  * Rendered only once data has arrived, and formatted in the viewer's locale on the client.
  * A dashboard without a timestamp invites the audience to assume it is live; this one says
  * exactly how old it is.
+ *
+ * A timestamp is a figure, not an identifier, so it takes tabular figures and not the mono
+ * face - mono is kept for identifiers and trace ids alone (DESIGN_SYSTEM.md anti-goals).
+ * The refresh state is its own sentence rather than a middle-dot fragment appended to
+ * one: the dot was doing the work that a full stop and a verb should do.
  */
 function GeneratedAt({
   value,
@@ -258,9 +272,8 @@ function GeneratedAt({
   if (formatted === null) return null;
 
   return (
-    <p className="font-mono text-2xs text-muted-foreground">
-      Counted {formatted}
-      {isFetching ? ' · refreshing' : ''}
+    <p className="tabular text-2xs text-slate-700">
+      Counted {formatted}.{isFetching ? ' Refreshing now.' : ''}
     </p>
   );
 }

@@ -33,7 +33,7 @@ import {
 } from '@/components/ui/table';
 import { fetchPipelineBoard, transitionOpportunity } from '@/lib/api-queries';
 import { formatAud } from '@/lib/command-view';
-import { CLASSIFICATION_LABELS } from '@/lib/enum-labels';
+import { CLASSIFICATION_LABELS, OPPORTUNITY_STAGE_LABELS } from '@/lib/enum-labels';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
@@ -54,21 +54,14 @@ import { cn } from '@/lib/utils';
  * Both views render the same `BoardCard[]`. The table exists because a kanban is a poor way
  * to compare eleven opportunities on value or next action, and the demo audience will want
  * to do exactly that.
+ *
+ * **Colour is spent only on state** (DESIGN_SYSTEM.md). A stage is a position in a workflow,
+ * not a condition, so no column is tinted for being a column; the semantic tokens appear only
+ * where something is actually true of a row - overdue in `--risk`, a refused commitment in
+ * `--warn`, an AI-proposed opportunity in `--proposed`.
  */
 
 type ViewMode = 'board' | 'table';
-
-/** Where a stage sits on the "is this progressing" scale, for the column accent only. */
-const COLUMN_ACCENT: Readonly<Record<string, string>> = {
-  DETECTED: 'border-t-muted-foreground/40',
-  QUALIFIED: 'border-t-info/60',
-  CONTACT_PLANNED: 'border-t-info/60',
-  CONTACTED: 'border-t-info/60',
-  MEETING: 'border-t-warning/60',
-  NEGOTIATION: 'border-t-warning/60',
-  PARTNERED: 'border-t-success/70',
-  CLOSED: 'border-t-muted-foreground/30',
-};
 
 function retryUnlessRefused(failureCount: number, error: unknown): boolean {
   if (isApiError(error) && (error.status === 403 || error.status === 404)) return false;
@@ -89,7 +82,9 @@ export function PipelineBoard(): React.JSX.Element {
   const role = session.role;
   const queryClient = useQueryClient();
   const [view, setView] = React.useState<ViewMode>('board');
-  const [pending, setPending] = React.useState<{ card: BoardCard; event: string } | null>(null);
+  const [pending, setPending] = React.useState<{ card: BoardCard; event: string } | null>(
+    null,
+  );
   const [refusal, setRefusal] = React.useState<string | null>(null);
 
   const board = useQuery({
@@ -161,7 +156,9 @@ export function PipelineBoard(): React.JSX.Element {
       <Alert variant={forbidden ? 'warning' : 'destructive'} role="status">
         {forbidden ? <Ban aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}
         <AlertTitle>
-          {forbidden ? 'This role may not read the pipeline' : 'The pipeline could not be loaded'}
+          {forbidden
+            ? 'This role may not read the pipeline'
+            : 'The pipeline could not be loaded'}
         </AlertTitle>
         <AlertDescription>
           {isApiError(error) ? error.message : 'The API did not answer.'}
@@ -175,11 +172,11 @@ export function PipelineBoard(): React.JSX.Element {
   return (
     <div className="space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Opportunity pipeline</h1>
-          <p className="text-sm text-muted-foreground">
-            {data.total} opportunit{data.total === 1 ? 'y' : 'ies'} you are cleared to read,{' '}
-            {data.open_total} open, {formatAud(data.pipeline_value_aud)} estimated (
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold text-ink">Opportunity pipeline</h1>
+          <p className="tabular max-w-[72ch] text-sm text-slate-700">
+            {data.total} opportunit{data.total === 1 ? 'y' : 'ies'} you are cleared to
+            read, {data.open_total} open, {formatAud(data.pipeline_value_aud)} estimated (
             {formatAud(data.weighted_pipeline_value_aud)} probability-weighted).
             {data.overdue_next_action > 0
               ? ` ${data.overdue_next_action} overdue next action${
@@ -188,7 +185,7 @@ export function PipelineBoard(): React.JSX.Element {
               : ''}
           </p>
         </div>
-        <div className="flex items-center gap-1 rounded-md border border-border p-1">
+        <div className="flex items-center gap-1 rounded-lg border border-line p-1">
           <Button
             variant={view === 'board' ? 'secondary' : 'ghost'}
             size="sm"
@@ -219,7 +216,10 @@ export function PipelineBoard(): React.JSX.Element {
       )}
 
       {view === 'board' ? (
-        <BoardView columns={data.columns} onFire={(card, event) => setPending({ card, event })} />
+        <BoardView
+          columns={data.columns}
+          onFire={(card, event) => setPending({ card, event })}
+        />
       ) : (
         <TableView columns={data.columns} />
       )}
@@ -251,40 +251,52 @@ function BoardView({
     // a laptop, and a page that scrolls sideways loses the rail and the DEMO badge.
     <div className="overflow-x-auto pb-2">
       <div className="flex min-w-max gap-3">
-        {columns.map((column) => (
-          <section
-            key={column.stage}
-            aria-label={`${column.label}, ${column.count} opportunities`}
-            className={cn(
-              'w-72 shrink-0 rounded-md border border-t-4 border-border bg-muted/30 p-2',
-              COLUMN_ACCENT[column.stage] ?? 'border-t-border',
-            )}
-          >
-            <header className="flex items-baseline justify-between px-1 pb-2">
-              <h2 className="text-sm font-semibold">
-                {column.label}
-                {column.is_terminal ? (
-                  <span className="ml-1 text-xs font-normal text-muted-foreground">terminal</span>
+        {columns.map((column) => {
+          // The stage enum is the server's; the caption is ours. `column.label` arrives
+          // Title Cased ("Contact Planned") and DESIGN_SYSTEM.md asks for sentence case
+          // everywhere, so the shared label map captions both the column and its
+          // accessible name, which keeps the two from drifting apart.
+          const label = OPPORTUNITY_STAGE_LABELS[column.stage];
+          return (
+            <section
+              key={column.stage}
+              aria-label={`${label}, ${column.count} opportunities`}
+              className="w-72 shrink-0 rounded-lg border border-line bg-muted/40 p-2"
+            >
+              <header className="space-y-0.5 px-1 pb-2">
+                <div className="flex items-baseline justify-between gap-2">
+                  <h2 className="text-sm font-semibold text-ink">
+                    {label}
+                    {column.is_terminal ? (
+                      <span className="ml-1.5 text-label font-normal text-slate-700">
+                        terminal
+                      </span>
+                    ) : null}
+                  </h2>
+                  <span className="tabular text-label font-medium text-slate-700">
+                    {column.count}
+                  </span>
+                </div>
+                {column.value_estimate_aud > 0 ? (
+                  <p className="tabular text-label text-slate-700">
+                    Estimated {formatAud(column.value_estimate_aud)}
+                  </p>
                 ) : null}
-              </h2>
-              <span className="text-xs tabular-nums text-muted-foreground">
-                {column.count}
-                {column.value_estimate_aud > 0 ? ` · ${formatAud(column.value_estimate_aud)}` : ''}
-              </span>
-            </header>
-            <div className="space-y-2">
-              {column.cards.length === 0 ? (
-                <p className="px-1 py-6 text-center text-xs text-muted-foreground">
-                  Nothing at this stage.
-                </p>
-              ) : (
-                column.cards.map((card) => (
-                  <OpportunityCard key={card.id} card={card} onFire={onFire} />
-                ))
-              )}
-            </div>
-          </section>
-        ))}
+              </header>
+              <div className="space-y-2">
+                {column.cards.length === 0 ? (
+                  <p className="px-1 py-6 text-center text-label text-slate-700">
+                    Nothing at this stage.
+                  </p>
+                ) : (
+                  column.cards.map((card) => (
+                    <OpportunityCard key={card.id} card={card} onFire={onFire} />
+                  ))
+                )}
+              </div>
+            </section>
+          );
+        })}
       </div>
     </div>
   );
@@ -299,42 +311,49 @@ function OpportunityCard({
 }): React.JSX.Element {
   const commitmentGate = card.gated_events.find((gate) => gate.is_commitment);
   return (
-    <Card className="gap-0 py-3">
-      <CardHeader className="px-3 pb-2">
+    // Q-17: an AI-proposed opportunity carries the --proposed state tick as well as its
+    // badge, so the honesty gap is structural and survives a glance down the column.
+    //
+    // Spelled as border utilities rather than as the `.tick-proposed` component class:
+    // Card already sets `border border-line`, and a utility beats a components-layer rule,
+    // so the named tick would be painted over in hairline grey and silently do nothing.
+    <Card className={cn('p-3', card.is_proposed_by_ai && 'border-l-2 border-l-proposed')}>
+      <CardHeader className="space-y-1 p-0">
         <div className="flex items-start justify-between gap-2">
-          <h3 className="text-sm font-medium leading-snug">{card.title}</h3>
+          <h3 className="text-sm font-medium leading-snug text-ink">{card.title}</h3>
           {card.score === null ? null : (
-            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs font-semibold tabular-nums">
+            <span className="tabular shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-label font-semibold text-ink">
+              <span className="sr-only">Score </span>
               {Math.round(card.score)}
             </span>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-1 pt-1">
-          <Badge variant="outline" className="text-[10px]">
+        <div className="flex flex-wrap items-center gap-1">
+          <Badge variant="outline" className="text-2xs font-medium">
             {CLASSIFICATION_LABELS[card.classification]}
           </Badge>
           {card.is_proposed_by_ai ? (
             // Q-17: the hero opportunity is the platform's own proposition, not a reported
             // fact. It has to read that way everywhere it appears, not only on its detail.
-            <Badge variant="warning" className="text-[10px]">
+            <Badge variant="proposed" className="text-2xs font-medium">
               <Sparkles aria-hidden="true" className="size-3" /> AI-proposed
             </Badge>
           ) : null}
         </div>
       </CardHeader>
-      <CardContent className="space-y-1.5 px-3 text-xs text-muted-foreground">
+      <CardContent className="space-y-1.5 p-0 pt-2 text-xs text-slate-700">
         <p className="flex items-center gap-1.5">
-          <User aria-hidden="true" className="size-3.5 shrink-0" />
-          <span className="truncate">{card.owner_name ?? 'Unowned'}</span>
-          {card.counterpart_name === null ? null : (
-            <span className="truncate">· {card.counterpart_name}</span>
-          )}
+          <User aria-hidden="true" className="size-3.5 shrink-0 text-slate-400" />
+          <span className="truncate">Owner: {card.owner_name ?? 'unassigned'}</span>
         </p>
+        {card.counterpart_name === null ? null : (
+          <p className="truncate pl-5">Counterpart: {card.counterpart_name}</p>
+        )}
         {card.organisation_id === null || card.organisation_name === null ? null : (
-          <p className="truncate">
+          <p className="truncate pl-5">
             <Link
               href={`/stakeholders/organisations/${card.organisation_id}`}
-              className="underline underline-offset-2 hover:text-foreground"
+              className="text-accent underline underline-offset-2"
             >
               {card.organisation_name}
             </Link>
@@ -343,39 +362,80 @@ function OpportunityCard({
         <p
           className={cn(
             'flex items-center gap-1.5',
-            card.next_action_overdue && 'font-medium text-destructive',
+            card.next_action_overdue && 'font-medium text-risk',
           )}
         >
-          <CalendarClock aria-hidden="true" className="size-3.5 shrink-0" />
-          {card.next_action_at === null
-            ? 'No next action scheduled'
-            : `Next action ${formatDate(card.next_action_at)}`}
-          {card.next_action_overdue ? ' · overdue' : ''}
+          <CalendarClock
+            aria-hidden="true"
+            className={cn(
+              'size-3.5 shrink-0',
+              card.next_action_overdue ? 'text-risk' : 'text-slate-400',
+            )}
+          />
+          <span className="tabular">
+            Next action:{' '}
+            {card.next_action_at === null
+              ? 'none scheduled'
+              : formatDate(card.next_action_at)}
+            {/* The word carries the state as well as the colour does (WCAG 1.4.1). */}
+            {card.next_action_overdue ? ', overdue' : ''}
+          </span>
         </p>
         <p className="flex items-center gap-1.5">
-          <FileText aria-hidden="true" className="size-3.5 shrink-0" />
-          {card.evidence_count} citation{card.evidence_count === 1 ? '' : 's'}
-          {card.value_estimate_aud === null
-            ? ''
-            : ` · ${formatAud(card.value_estimate_aud)}${
-                card.probability === null ? '' : ` at ${Math.round(card.probability)}%`
-              }`}
+          <FileText aria-hidden="true" className="size-3.5 shrink-0 text-slate-400" />
+          <span className="tabular">
+            Evidence: {card.evidence_count} citation{card.evidence_count === 1 ? '' : 's'}
+          </span>
         </p>
+        {card.value_estimate_aud === null ? null : (
+          <p className="tabular pl-5">
+            Estimated value: {formatAud(card.value_estimate_aud)}
+            {card.probability === null
+              ? ''
+              : ` at ${Math.round(card.probability)}% probability`}
+          </p>
+        )}
       </CardContent>
       {card.available_events.length === 0 && commitmentGate === undefined ? null : (
-        <div className="flex flex-wrap gap-1 px-3 pt-2">
-          {card.available_events.map((event) => (
-            <Button key={event} size="sm" variant="outline" onClick={() => onFire(card, event)}>
-              {EVENT_LABELS[event] ?? event}
-            </Button>
-          ))}
+        <div className="space-y-2 pt-3">
+          {card.available_events.length === 0 ? null : (
+            <div className="flex flex-wrap gap-1">
+              {card.available_events.map((event) => (
+                <Button
+                  key={event}
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onFire(card, event)}
+                >
+                  {EVENT_LABELS[event] ?? event}
+                </Button>
+              ))}
+            </div>
+          )}
           {commitmentGate === undefined ? null : (
             // Shown, disabled, with the reason - never hidden. BUILD_BIBLE section 6
             // requires the demo to SHOW a never-autonomous control refusing, and an
             // absent button is indistinguishable from an absent feature.
-            <Button size="sm" variant="outline" disabled title={commitmentGate.reason}>
-              <Lock aria-hidden="true" className="size-3.5" /> {commitmentGate.label}
-            </Button>
+            //
+            // The reason is now rendered as text rather than left in a `title`: a disabled
+            // control takes no pointer events, so that tooltip could never be read, and a
+            // refusal nobody can read is not a refusal anybody can trust. The --warn tick
+            // and the lock icon mark the state; the words are --warn-ink, which is the
+            // AA-safe warn (--warn itself is border/icon only), and the kit's disabled
+            // opacity is overridden so the contrast that was measured is the one shipped.
+            <div className="tick-warn space-y-1.5 rounded-r-md bg-warn/5 p-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled
+                className="border-warn/60 text-warn-ink disabled:opacity-100"
+              >
+                <Lock aria-hidden="true" className="text-warn" /> {commitmentGate.label}
+              </Button>
+              <p className="text-2xs leading-snug text-warn-ink">
+                {commitmentGate.reason}
+              </p>
+            </div>
           )}
         </div>
       )}
@@ -400,13 +460,13 @@ function TableView({ columns }: { columns: readonly BoardColumn[] }): React.JSX.
   const rows = columns.flatMap((column) => column.cards);
   if (rows.length === 0) {
     return (
-      <p className="py-10 text-center text-sm text-muted-foreground">
+      <p className="py-10 text-center text-sm text-slate-700">
         No opportunities you are cleared to read.
       </p>
     );
   }
   return (
-    <div className="overflow-x-auto rounded-md border border-border">
+    <div className="overflow-x-auto rounded-lg border border-line">
       <Table>
         <TableHeader>
           <TableRow>
@@ -424,23 +484,29 @@ function TableView({ columns }: { columns: readonly BoardColumn[] }): React.JSX.
           {rows.map((card) => (
             <TableRow key={card.id}>
               <TableCell className="max-w-[22rem]">
-                <span className="font-medium">{card.title}</span>
+                <span className="font-medium text-ink">{card.title}</span>
                 {card.is_proposed_by_ai ? (
-                  <Badge variant="warning" className="ml-2 text-[10px]">
+                  <Badge variant="proposed" className="ml-2 text-2xs font-medium">
                     AI-proposed
                   </Badge>
                 ) : null}
-                <span className="block text-xs text-muted-foreground">
-                  {CLASSIFICATION_LABELS[card.classification]} · {card.sector_code}
+                {/* Two discrete fields separated by space rather than by a middle dot: the
+                    data zone the row sits in, and the sector it is filed under. The sector
+                    code is the taxonomy's own identifier and stays verbatim. */}
+                <span className="mt-0.5 flex flex-wrap items-center gap-x-3 text-label text-slate-700">
+                  <span>{CLASSIFICATION_LABELS[card.classification]}</span>
+                  <span>Sector {card.sector_code}</span>
                 </span>
               </TableCell>
-              <TableCell className="whitespace-nowrap text-sm">{card.stage}</TableCell>
+              <TableCell className="whitespace-nowrap text-sm">
+                {OPPORTUNITY_STAGE_LABELS[card.stage]}
+              </TableCell>
               <TableCell className="text-sm">{card.owner_name ?? '—'}</TableCell>
               <TableCell className="text-sm">
                 {card.organisation_id !== null && card.organisation_name !== null ? (
                   <Link
                     href={`/stakeholders/organisations/${card.organisation_id}`}
-                    className="underline underline-offset-2"
+                    className="text-accent underline underline-offset-2"
                   >
                     {card.counterpart_name ?? card.organisation_name}
                   </Link>
@@ -452,17 +518,25 @@ function TableView({ columns }: { columns: readonly BoardColumn[] }): React.JSX.
                 {card.score === null ? '—' : Math.round(card.score)}
               </TableCell>
               <TableCell className="text-right tabular-nums">
-                {card.value_estimate_aud === null ? '—' : formatAud(card.value_estimate_aud)}
+                {card.value_estimate_aud === null
+                  ? '—'
+                  : formatAud(card.value_estimate_aud)}
               </TableCell>
               <TableCell
                 className={cn(
-                  'whitespace-nowrap text-sm',
-                  card.next_action_overdue && 'font-medium text-destructive',
+                  'whitespace-nowrap text-sm tabular-nums',
+                  card.next_action_overdue && 'font-medium text-risk',
                 )}
               >
                 {formatDate(card.next_action_at)}
+                {/* Overdue is stated, not only coloured (WCAG 1.4.1). */}
+                {card.next_action_overdue ? (
+                  <span className="block text-label font-medium text-risk">Overdue</span>
+                ) : null}
               </TableCell>
-              <TableCell className="text-right tabular-nums">{card.evidence_count}</TableCell>
+              <TableCell className="text-right tabular-nums">
+                {card.evidence_count}
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>

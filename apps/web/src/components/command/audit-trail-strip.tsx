@@ -4,6 +4,7 @@ import type { ApiError, AuditEventPage } from '@naddp/contracts';
 
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
 
 /**
  * The newest rows of the append-only audit log, for the roles that may read it.
@@ -34,7 +35,7 @@ export function AuditTrailStrip({
 
   if (error !== null) {
     return (
-      <p className="flex items-start gap-1.5 text-2xs leading-snug text-destructive">
+      <p className="flex items-start gap-1.5 text-2xs leading-snug text-risk">
         <TriangleAlert aria-hidden="true" className="mt-0.5 h-3 w-3 shrink-0" />
         <span>The audit trail could not be loaded ({error.message}).</span>
       </p>
@@ -55,14 +56,27 @@ export function AuditTrailStrip({
 
   return (
     <section aria-label="Most recent governed actions" className="min-w-0">
-      <p className="mb-1.5 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
-        Most recent governed actions
-      </p>
+      <p className="mb-1.5 text-label text-slate-700">Most recent governed actions</p>
+      {/*
+       * Every row carries a semantic left tick, because on this strip the allow/deny
+       * outcome IS the content - the tick is the structural carrier of the one fact the
+       * log exists to record, not an ornament. It is never the only carrier: the badge
+       * says the same word and the action names itself underneath.
+       */}
       <ul className="space-y-1">
         {data.events.map((event) => (
-          <li key={event.id} className="flex items-start gap-2">
+          <li
+            key={event.id}
+            className={cn(
+              'flex items-start gap-2 pl-2',
+              event.policy_result === 'DENY' ? 'tick-risk' : 'tick-ok',
+            )}
+          >
             {event.policy_result === 'DENY' ? (
-              <Badge variant="destructive" className="mt-px shrink-0 text-2xs font-medium">
+              <Badge
+                variant="destructive"
+                className="mt-px shrink-0 text-2xs font-medium"
+              >
                 Denied
               </Badge>
             ) : (
@@ -71,10 +85,12 @@ export function AuditTrailStrip({
               </Badge>
             )}
             <span className="min-w-0 flex-1">
-              <span className="block truncate font-mono text-2xs text-muted-foreground">
+              {/* The action is an identifier, which is one of the two things mono is still
+                  for in this design system. */}
+              <span className="block truncate font-mono text-2xs text-slate-700">
                 {event.action}
               </span>
-              <span className="block truncate text-xs leading-snug text-foreground">
+              <span className="block truncate text-xs leading-snug text-ink">
                 {event.summary}
               </span>
             </span>

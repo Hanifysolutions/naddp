@@ -101,38 +101,40 @@ export function OrganisationIndex(): React.JSX.Element {
   return (
     <div className="space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Stakeholders</h1>
-          <p className="text-sm text-muted-foreground">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold text-ink">Stakeholders</h1>
+          <p className="tabular max-w-[72ch] text-sm text-slate-700">
             {organisations.data.total} organisation
-            {organisations.data.total === 1 ? '' : 's'} you are cleared to read. Open one for
-            its dossier: people, contact history, linked opportunities and sources.
+            {organisations.data.total === 1 ? '' : 's'} you are cleared to read. Open one
+            for its dossier: people, contact history, linked opportunities and sources.
           </p>
         </div>
         <label className="relative">
           <span className="sr-only">Filter organisations by name or sector</span>
           <Search
             aria-hidden="true"
-            className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-slate-400"
           />
           <input
             type="search"
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
             placeholder="Filter by name or sector"
-            className="w-64 rounded-md border border-input bg-background py-1.5 pl-8 pr-2 text-sm shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            // No local focus ring: globals.css declares one for every :focus-visible, so no
+            // control in the app can ship without a visible indicator.
+            className="w-64 rounded-md border border-input bg-background py-1.5 pl-8 pr-2 text-sm"
           />
         </label>
       </header>
 
       {rows.length === 0 ? (
-        <p className="py-10 text-center text-sm text-muted-foreground">
+        <p className="py-10 text-center text-sm text-slate-700">
           {needle.length === 0
             ? 'No organisations you are cleared to read.'
             : `Nothing matches "${filter.trim()}".`}
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
+        <div className="overflow-x-auto rounded-lg border border-line">
           <Table>
             <TableHeader>
               <TableRow>
@@ -152,13 +154,16 @@ export function OrganisationIndex(): React.JSX.Element {
                   <TableCell className="max-w-[20rem]">
                     <Link
                       href={`/stakeholders/organisations/${row.id}`}
-                      className="font-medium underline underline-offset-2"
+                      className="font-medium text-accent underline underline-offset-2"
                     >
                       {row.name}
                     </Link>
                     {row.sectors.length === 0 ? null : (
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {row.sectors.join(' · ')}
+                      // A list, joined as a list. The middle dot was a structural device
+                      // pretending to be punctuation; sector codes are the taxonomy's own
+                      // identifiers and stay verbatim.
+                      <span className="block truncate text-label text-slate-700">
+                        {row.sectors.join(', ')}
                       </span>
                     )}
                   </TableCell>
@@ -170,19 +175,21 @@ export function OrganisationIndex(): React.JSX.Element {
                     {row.strongest_relationship === null ? (
                       '—'
                     ) : (
-                      <Badge variant="outline" className="text-[10px]">
+                      <Badge variant="outline" className="text-2xs font-medium">
                         {RELATIONSHIP_STRENGTH_LABELS[row.strongest_relationship]}
                       </Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{row.people_count}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {row.people_count}
+                  </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {row.interaction_count}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {row.opportunity_count}
                   </TableCell>
-                  <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                  <TableCell className="whitespace-nowrap text-sm tabular-nums text-slate-700">
                     {formatDate(row.last_contact_at)}
                   </TableCell>
                 </TableRow>
