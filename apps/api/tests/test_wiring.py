@@ -75,6 +75,7 @@ EXPECTED_ROUTES: Final[tuple[tuple[str, str], ...]] = (
     ("GET", "/v1/knowledge"),
     ("GET", "/v1/knowledge/articles/{slug}"),
     ("GET", "/v1/diaspora"),
+    ("GET", "/v1/outcomes"),
     ("GET", "/v1/audit/events"),
     ("GET", "/v1/audit/chain"),
 )
@@ -185,6 +186,7 @@ def test_the_v1_prefix_is_applied_once_and_only_by_main(
         ("/v1/consular/dashboard", "consular"),
         ("/v1/knowledge", "knowledge"),
         ("/v1/diaspora", "diaspora"),
+        ("/v1/outcomes", "outcomes"),
         ("/v1/ai/morning-brief", "ai"),
         ("/v1/audit/events", "governance"),
     ],

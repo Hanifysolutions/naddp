@@ -501,6 +501,19 @@ export type DiasporaSelectionRule = components['schemas']['DiasporaSelectionRule
  */
 export type DiasporaMatchRequest = components['schemas']['DiasporaMatchRequest'];
 
+/**
+ * `GET /v1/outcomes`: the Unified Outcomes board. Each section and each hero-thread step carries
+ * its own `authorisation`, because each is counted in its own bounded context under its own check.
+ * A withheld section has no figures and no zones, a withheld figure has `value: null`, and neither
+ * is ever a zero. Tones and counts are decided by the server; render them, do not derive them.
+ */
+export type OutcomesBoard = components['schemas']['OutcomesBoardResponse'];
+export type OutcomeSection = components['schemas']['OutcomeSectionResponse'];
+export type OutcomeFigure = components['schemas']['OutcomeFigureResponse'];
+export type OutcomeAuthorisation = components['schemas']['AuthorisationResponse'];
+export type HeroThread = components['schemas']['HeroThreadResponse'];
+export type ThreadStep = components['schemas']['ThreadStepResponse'];
+
 /* --- Domain enums, aliased so an exhaustive label map is a compile-time guarantee --- */
 export type CaseStatus = components['schemas']['CaseStatus'];
 export type ConsentStatus = components['schemas']['ConsentStatus'];

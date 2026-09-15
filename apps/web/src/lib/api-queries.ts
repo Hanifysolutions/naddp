@@ -28,6 +28,7 @@ import {
   type MorningBrief,
   type OpportunityPage,
   type OrganisationList,
+  type OutcomesBoard,
   type PipelineBoard,
   type SessionSummary,
   type TransitionResponse,
@@ -601,6 +602,19 @@ export async function searchDiaspora(body: DiasporaMatchRequest): Promise<AiEnve
   const { data, error, response } = await guard(api.POST('/v1/ai/diaspora/match', { body }));
   if (data === undefined) throw toApiError(response.status, error);
   return { ...data, result: data.result ?? null };
+}
+
+/**
+ * `GET /v1/outcomes` - the Unified Outcomes board for this role.
+ *
+ * Held by every role (`read:command`); what comes back is decided domain by domain. A section
+ * this role may not read arrives with its authorisation refused and no figures - a refusal to
+ * render as one, never as zeros.
+ */
+export async function fetchOutcomesBoard(signal?: AbortSignal): Promise<OutcomesBoard> {
+  const { data, error, response } = await guard(api.GET('/v1/outcomes', { signal }));
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
 }
 
 export type { ApiError };

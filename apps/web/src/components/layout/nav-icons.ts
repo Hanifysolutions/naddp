@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   Target,
   Users,
+  Waypoints,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -22,6 +23,7 @@ import type { NavIconName } from '@/lib/nav';
  */
 export const NAV_ICONS: Readonly<Record<NavIconName, LucideIcon>> = {
   command: LayoutDashboard,
+  outcomes: Waypoints,
   intelligence: Radar,
   opportunities: Target,
   stakeholders: Users,

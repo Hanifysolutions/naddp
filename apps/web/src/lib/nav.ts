@@ -51,6 +51,7 @@ export type Permission = (typeof PERMISSIONS)[number];
 /** Icon keys, resolved to Lucide components by the client-side icon registry. */
 export type NavIconName =
   | 'command'
+  | 'outcomes'
   | 'intelligence'
   | 'opportunities'
   | 'stakeholders'
@@ -99,6 +100,14 @@ export const NAV_CATALOGUE: readonly NavItem[] = [
     label: 'Command centre',
     description: 'Executive overview across every mission function.',
     icon: 'command',
+    permission: 'read:command',
+    availability: 'available',
+  },
+  {
+    href: '/outcomes',
+    label: 'Unified outcomes',
+    description: 'Mission outcomes in one frame, each domain under its own authorisation.',
+    icon: 'outcomes',
     permission: 'read:command',
     availability: 'available',
   },

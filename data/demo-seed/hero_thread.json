@@ -1,0 +1,17 @@
+{
+  "$schema_version": "1.0",
+  "notes": "The hero thread the Unified Outcomes board follows (BUILD_BIBLE s2): one corridor traced across five bounded contexts. Anchors are seed slugs, resolved to the loaded dataset's keys through manifest.json (written by make seed). Naming an anchor here grants nothing: each step is read by its own context, under its own permission and the caller's clearance, and an anchor the caller may not read renders as withheld or not found. Synthetic data only.",
+  "id": "lithium-skills-corridor",
+  "title": "Lithium processing skills and skilled-migration corridor",
+  "anchors": {
+    "opportunity": "opp-au-lithium-ng-skills-corridor",
+    "stakeholder": "stk-covalent-external-affairs",
+    "meeting": "mtg-covalent-lithium-bilateral",
+    "diaspora_search": "hero-lithium-skills-corridor",
+    "case": "case-hero-passport-renewal"
+  },
+  "diaspora_facets": [
+    { "label": "Lithium-processing engineer", "expertise_tag": "XP_LITHIUM_PROCESSING_ENG" },
+    { "label": "Migration-pathway academic", "expertise_tag": "XP_MIGRATION_PATHWAY_ACADEMIC" }
+  ]
+}

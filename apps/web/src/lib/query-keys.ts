@@ -84,4 +84,6 @@ export const queryKeys = {
     ['knowledge', 'article', role, slug] as const,
   /** The consented diaspora directory, in counts. Scope differs by role, so keyed by role. */
   diasporaOverview: (role: NaddpRole | null) => ['diaspora', 'overview', role] as const,
+  /** The Unified Outcomes board. Composed per role, so keyed by role. */
+  outcomesBoard: (role: NaddpRole | null) => ['outcomes', 'board', role] as const,
 } as const;

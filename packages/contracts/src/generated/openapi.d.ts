@@ -655,6 +655,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/outcomes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The Unified Outcomes board for the current role
+         * @description Return mission outcomes, each section counted in its own context under its own check.
+         *
+         *     A section the caller may not read comes back with its authorisation refused, no figures and no
+         *     zones -- it was never queried -- and a thread step the caller may not read comes back withheld.
+         *     Neither is ever reported as zero.
+         */
+        get: operations["read_outcomes_v1_outcomes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ai/morning-brief": {
         parameters: {
             query?: never;
@@ -1411,6 +1435,27 @@ export interface components {
              * @description The preceding row's digest in ULID order. Null for the genesis row only; a null anywhere else is itself evidence of a break.
              */
             prev_event_hash: string | null;
+        };
+        /**
+         * AuthorisationResponse
+         * @description The check one section, figure or step was counted under.
+         */
+        AuthorisationResponse: {
+            /**
+             * Required Permissions
+             * @description All of these were required.
+             */
+            required_permissions: string[];
+            /**
+             * Missing Permissions
+             * @description Which of them the caller does not hold.
+             */
+            missing_permissions: string[];
+            /**
+             * Granted
+             * @description True when nothing is missing.
+             */
+            granted: boolean;
         };
         /** BaseModel */
         BaseModel: Record<string, never>;
@@ -3147,6 +3192,18 @@ export interface components {
             db: "up" | "down";
         };
         /**
+         * HeroThreadResponse
+         * @description The corridor, followed across contexts, each step governed separately.
+         */
+        HeroThreadResponse: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Steps */
+            steps: components["schemas"]["ThreadStepResponse"][];
+        };
+        /**
          * IntelligenceTileResponse
          * @description Signal flow. Present only for a caller holding ``read:intelligence``.
          */
@@ -4000,6 +4057,109 @@ export interface components {
             opportunity_count: number;
         };
         /**
+         * OutcomeFigureResponse
+         * @description One outcome figure.
+         */
+        OutcomeFigureResponse: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /**
+             * Value
+             * @description Null only when this figure's own authorisation was refused. Never a stand-in zero.
+             */
+            value: number | null;
+            /**
+             * Of
+             * @description Denominator, for an 'N of M' figure.
+             */
+            of?: number | null;
+            /**
+             * Detail
+             * @description What the figure counts, in one sentence.
+             */
+            detail: string;
+            /**
+             * Tone
+             * @description State, decided by the server.
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "risk" | "proposed";
+            authorisation: components["schemas"]["AuthorisationResponse"];
+        };
+        /**
+         * OutcomeSectionResponse
+         * @description One bounded context's outcomes.
+         */
+        OutcomeSectionResponse: {
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "bilateral" | "citizen_service" | "diaspora" | "relationships" | "meetings";
+            /** Title */
+            title: string;
+            /**
+             * Bounded Context
+             * @description The context that counted these figures.
+             */
+            bounded_context: string;
+            /** Summary */
+            summary: string;
+            authorisation: components["schemas"]["AuthorisationResponse"];
+            /**
+             * Tone
+             * @description The section's state tick: risk, warn or neutral.
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "risk" | "proposed";
+            /**
+             * Counted Across
+             * @description The zones every figure here was counted across. Empty when withheld.
+             */
+            counted_across: components["schemas"]["Classification"][];
+            /**
+             * Figures
+             * @description Empty when the section's authorisation was refused: nothing was queried.
+             */
+            figures: components["schemas"]["OutcomeFigureResponse"][];
+            /**
+             * Href
+             * @description The screen these figures summarise.
+             */
+            href?: string | null;
+        };
+        /**
+         * OutcomesBoardResponse
+         * @description The Unified Outcomes board for the calling principal.
+         */
+        OutcomesBoardResponse: {
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /**
+             * Readable Classifications
+             * @description The zones your clearance admits. Each section applies them itself.
+             */
+            readable_classifications: components["schemas"]["Classification"][];
+            /**
+             * Domains Readable
+             * @description Sections whose authorisation was granted.
+             */
+            domains_readable: number;
+            /**
+             * Domains Total
+             * @description Sections on the board.
+             */
+            domains_total: number;
+            /** Sections */
+            sections: components["schemas"]["OutcomeSectionResponse"][];
+            thread: components["schemas"]["HeroThreadResponse"];
+        };
+        /**
          * PersonRefResponse
          * @description A named officer: who drafted, submitted, approved, sent or discarded something.
          */
@@ -4431,6 +4591,55 @@ export interface components {
              * @description Keys into PreReadResponse.evidence, by citation_id. Only ids that resolved to a VERIFIED registry entry are listed, so every one can be rendered as a link.
              */
             citation_ids: string[];
+        };
+        /**
+         * ThreadFactResponse
+         * @description One labelled fact on a thread step.
+         */
+        ThreadFactResponse: {
+            /** Label */
+            label: string;
+            /** Value */
+            value: string;
+        };
+        /**
+         * ThreadStepResponse
+         * @description One context's place on the hero thread.
+         */
+        ThreadStepResponse: {
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "opportunity" | "stakeholder" | "meeting" | "diaspora" | "consular";
+            /** Title */
+            title: string;
+            /** Bounded Context */
+            bounded_context: string;
+            authorisation: components["schemas"]["AuthorisationResponse"];
+            /**
+             * Found
+             * @description Null when withheld (never asked); false when not among the records you are cleared to read; true otherwise.
+             */
+            found: boolean | null;
+            /** Headline */
+            headline?: string | null;
+            /** Facts */
+            facts: components["schemas"]["ThreadFactResponse"][];
+            /** Note */
+            note?: string | null;
+            /**
+             * Tone
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "risk" | "proposed";
+            /**
+             * Trace Id
+             * @description The AI trace behind this step, when an AI call produced it (section 4a).
+             */
+            trace_id?: string | null;
+            /** Href */
+            href?: string | null;
         };
         /**
          * TimelineEntryResponse
@@ -5640,6 +5849,33 @@ export interface operations {
                 };
             };
             /** @description You do not hold read:diaspora_profile, or have no session. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    read_outcomes_v1_outcomes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Outcomes by bounded context, each under its own authorisation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutcomesBoardResponse"];
+                };
+            };
+            /** @description You do not hold read:command, or have no session. */
             403: {
                 headers: {
                     [name: string]: unknown;

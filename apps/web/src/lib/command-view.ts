@@ -261,6 +261,7 @@ export const TILE_DEFINITIONS: readonly TileDefinition[] = [
     span: 'md:col-span-6 xl:col-span-4',
     metricGridClass: WIDE_METRICS,
     sources: ['opportunities', 'consular', 'diaspora'],
+    href: '/outcomes',
   },
 ];
 
