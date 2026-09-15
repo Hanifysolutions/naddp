@@ -37,15 +37,15 @@ Prompt: `PROMPT_W1_foundation.md`
 
 ---
 
-## Week 3 — AI + Citizen Operations  🟡
+## Week 3 — AI + Citizen Operations  ✅
 - ✅ Meeting Copilot: pre-read + follow-up draft — **follow-up SEND blocks on human approval** (winning moment #2)
 - ✅ Consular dashboard (volumes, ageing, SLA-risk) — business-day clock that pauses on the citizen; the near-breach urgent case is surfaced first after the breaches
 - ✅ Case workspace + full case state machine + immutable case_events timeline — metadata-only AI triage on the CONSULAR-SENSITIVE no-external-model route; a named officer confirms
-- ⬜ Grounded knowledge answers (approved-only; refuse/escalate when source absent)
-- ⬜ Gateway LIVE for all purposes; trace drawer shows classification + model route
-- ⬜ `docs/W3_STATUS.md`
+- ✅ Grounded knowledge answers (approved-only; refuse/escalate when source absent) — filtered before retrieval, approved text quoted and cited, and a refusal that cites nothing and names an officer
+- ✅ Gateway LIVE for all purposes; trace drawer shows classification + model route — live-capable wherever section 4a permits a model; CONSULAR-SENSITIVE is metadata-only by design; the demo runs with the live path off and says so on every trace
+- ✅ `docs/W3_STATUS.md`
 
-**Exit condition:** synthetic passport case runs NEW→RESOLVED with audit; a consequential action is visibly blocked; knowledge answerer refuses when no source.
+**Exit condition:** synthetic passport case runs NEW→RESOLVED with audit; a consequential action is visibly blocked; knowledge answerer refuses when no source. **Met** — see `docs/W3_STATUS.md`.
 
 ---
 
