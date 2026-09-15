@@ -1,8 +1,9 @@
 # Week 4 — Unified Story + Hardening · Status (progress so far)
 
-**Date:** 2026-09-15 · **Branch:** `week4-unified` · **Scope so far:** `PROMPT_W4.1`–`PROMPT_W4.2`
-**Verdict:** Two of the week's features are complete: diaspora capability search, and the Unified
-Outcomes board (winning moment #3). The hardening half of the week has not started: the demo-reset
+**Date:** 2026-09-15 · **Branch:** `week4-unified` · **Scope so far:** `PROMPT_W4.1`–`PROMPT_W4.3`
+**Verdict:** All three of the week's features are complete: diaspora capability search, the Unified
+Outcomes board (winning moment #3), and the Governance page, backed by an audit hash chain that
+can no longer fork. Every nav item is now live. The hardening half of the week has not started: the demo-reset
 and fallback pass, the security pass, citation verification, the dry-run and deploy. This document
 is updated at the end of the week.
 
@@ -17,9 +18,11 @@ laptop + 1080p.* **Not yet met.** The feature scope for the three winning moment
 |---|---|---|
 | W4.1 Diaspora search | `b2038b8` | Consent-gated capability search. The consent predicate sits in the WHERE clause of the only statement that loads profiles, so a profile without consent is never read, ranked or counted. Location is coarse (state and country), results are candidates only, and no contact or outreach route exists. The hero search returns both the lithium-processing engineer and the migration-pathway academic. The seed adds two strong skills matches whose consent is not given or has been withdrawn, which prove the exclusion. |
 | W4.2 Unified Outcomes | `0464ca0` | `GET /v1/outcomes` and the `/outcomes` board. Each of five domains is counted by its own module under its own authorisation, and the composer never queries. The lithium / skilled-migration corridor is traced across five contexts, from opportunity to stakeholder to meeting to diaspora experts to consular case. Withheld domains render as refusals, never as zeros. |
+| W4.3 Governance + chain hardening | `58537f8` | `/governance`: the append-only audit log in plain language (actor, action, object, Allowed or Denied, classification, time), filtered and keyset-paged by the API, with an on-demand "Verify audit chain" action. The chain can no longer fork: a unique link index, plus a writer that re-links on conflict, resolves `docs/W1_STATUS.md` §6 item 1. Every nav item is live. |
 
-**Tests:** 1558 API tests are collected and all pass, including 42 in `tests/test_diaspora_search.py` and
-35 in `tests/test_outcomes_board.py`. `ruff`, `ruff format` and `mypy` pass. Web `tsc` and `next lint`
+**Tests:** 1566 API tests pass, including 42 in `tests/test_diaspora_search.py`, 35 in
+`tests/test_outcomes_board.py`, 6 in `tests/test_audit_chain_concurrency.py` and 2 in
+`tests/test_audit_labels.py`. `ruff`, `ruff format` and `mypy` pass. Web `tsc` and `next lint`
 are clean against the regenerated OpenAPI client.
 
 ---
@@ -49,6 +52,18 @@ Checked with `tests/test_outcomes_board.py`, and again by direct calls against t
 
 ---
 
+### W4.3 — Governance page and audit chain hardening
+Checked with `tests/test_audit_chain_concurrency.py`, `tests/test_audit_api.py` and
+`tests/test_audit_labels.py`, and again by direct calls against the development API:
+
+| Property | Result |
+|---|---|
+| Concurrent audit writes keep the chain linear | A burst of 48 writes from 6 connections lands every row in one chain, with no fork, no gap, one genesis and one head, and `verify_chain` reports it intact. A writer holding a stale head re-links behind the winner. The interleaving is deterministic, and the loser's id was minted before the winner's. Two writers racing for an empty chain cannot both become the genesis row. A writer blocked past its budget refuses with a 503 and never writes out of order. The live table carries `uq_audit_events_prev_event_hash … NULLS NOT DISTINCT` and refuses a forged second claim and a second genesis. |
+| `GET /v1/audit/chain` over the seeded and live events | Intact over all 477 events in the log, after the migration and live API writes. |
+| Plain-language actions, Allowed and Denied | Entries read "Role assumed", "Access refused", "Sensitive record read" and "Partnership concluded", and a denied entry gets a refused phrasing. The live log holds 446 Allowed and 34 Denied entries. The command-centre strip uses the same label map. |
+| Role scoping | AMBASSADOR, DEPUTY and ADMIN can read the log. TRADE_OFFICER, CONSULAR_OFFICER and DIASPORA_OFFICER get 403 `permission_denied`: a refusal, not a crash. A direct call as TRADE_OFFICER got 403, missing `read:audit`. |
+| Found while hardening | The test harness's session-scoped audit transaction (writes rolled back, never committed) stayed open for the whole run, so it held the chain's head throughout. The old lock let later writers fork past it; the unique index now refuses them. `tests/conftest.py` rolls it back after each test that used it, and its rows are still never committed. |
+
 ## 3. Decisions and assumptions recorded this week
 
 - **A-18.** Diaspora search is consent-gated in the query. Ranking is explainable: rarity-weighted
@@ -58,6 +73,13 @@ Checked with `tests/test_outcomes_board.py`, and again by direct calls against t
   The outcome metrics are a provisional answer to Q-01. Hero-thread anchors are named by seed slug
   in `data/demo-seed/hero_thread.json` and resolved through `manifest.json`. The board is not an
   audited read, following the A-09 / A-15 precedent.
+
+- **`docs/W1_STATUS.md` §6 item 1 resolved (W4.3).** The hash chain cannot fork. The best-effort
+  advisory lock, which wrote unlocked once its budget ran out, is replaced by a unique index on
+  `prev_event_hash` and a writer that re-links inside a savepoint when it loses the race. The
+  wait is bounded by `lock_timeout`, and past its budget the writer raises `AuditChainBusyError`
+  (503) rather than write out of order. The migration refuses to run over a chain that already
+  forks.
 
 ## 4. Known gaps and `TODO_VERIFY`
 
