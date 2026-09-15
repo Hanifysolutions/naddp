@@ -535,6 +535,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/consular/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The consular command dashboard
+         * @description Return the dashboard over the cases this caller is cleared to read.
+         */
+        get: operations["read_dashboard_v1_consular_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/consular/cases/{case_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one consular case
+         * @description Return one case. Never the subject's name; evidence as metadata only.
+         */
+        get: operations["read_case_v1_consular_cases__case_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/consular/cases/{case_id}/transition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fire a workflow event on a consular case
+         * @description Fire one event. A human acts; an AI trace, if given, is recorded as provenance only.
+         */
+        post: operations["transition_case_endpoint_v1_consular_cases__case_id__transition_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ai/morning-brief": {
         parameters: {
             query?: never;
@@ -669,17 +729,17 @@ export interface paths {
         put?: never;
         /**
          * Propose a consular triage
-         * @description Propose a case type, priority and rationale from case **metadata only**.
+         * @description Propose a priority and next steps from case **metadata only**, with no model.
          *
-         *     The call is declared ``MISSION_INTERNAL`` and not ``CONSULAR_SENSITIVE``, and that is
-         *     the whole design rather than a shortcut. ``docs/OPEN_QUESTIONS.md`` Q-06 option (c):
-         *     the case narrative never enters the Gateway, so what this purpose processes is
-         *     de-identified process metadata -- type, age, SLA state, status. The caller still had to
-         *     clear ``CONSULAR_SENSITIVE`` to load the case at all, which is where the compartment
-         *     check happened.
+         *     The call is declared ``CONSULAR_SENSITIVE`` -- the zone the case is in -- so
+         *     ``BUILD_BIBLE.md`` section 4a routes it to "no external route - metadata-only - generation
+         *     withheld". On that route the Gateway asks no model at all: the proposal is mission-local
+         *     rules over the six metadata fields (``app.ai.metadata_triage``), and the trace badge says
+         *     so. This reverses the W1 assumption A-12, which declared the call ``MISSION_INTERNAL``;
+         *     ``docs/OPEN_QUESTIONS.md`` Q-06 option (c) is what still keeps the narrative out.
          *
          *     It proposes and returns ``PENDING_APPROVAL``. It never fires a case event and never
-         *     makes a determination (``BUILD_BIBLE.md`` section 6).
+         *     makes a determination (``BUILD_BIBLE.md`` section 6): the officer confirms triage.
          */
         post: operations["triage_case_v1_ai_consular_cases__case_id__triage_post"];
         delete?: never;
@@ -885,6 +945,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AgeingBucketResponse */
+        AgeingBucketResponse: {
+            /** Label */
+            label: string;
+            /** Count */
+            count: number;
+        };
         /**
          * AiPurpose
          * @description The closed set of AI Gateway purposes.
@@ -1087,6 +1154,19 @@ export interface components {
          * @enum {string}
          */
         ApprovalStatus: "NOT_REQUIRED" | "PENDING_APPROVAL" | "APPROVED" | "REJECTED" | "BLOCKED";
+        /** AssignableOfficerResponse */
+        AssignableOfficerResponse: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Full Name */
+            full_name: string;
+            /** Title */
+            title: string;
+            role: components["schemas"]["RoleCode"];
+        };
         /**
          * AssumeRoleRequest
          * @description Which of the six demo roles to become.
@@ -1753,6 +1833,55 @@ export interface components {
             fallback_reason?: string | null;
         };
         /**
+         * CaseEventType
+         * @description Entry kind on the immutable consular case timeline.
+         *
+         *     ``case_events`` is the citizen-summarisable record, written in the same transaction as
+         *     the governance ``audit_events`` row (``docs/workflows.md`` section 3) and carrying no
+         *     content the citizen may not see.
+         * @enum {string}
+         */
+        CaseEventType: "CREATED" | "STATUS_CHANGE" | "NOTE" | "EVIDENCE_ADDED" | "ASSIGNMENT" | "DETERMINATION" | "COMMUNICATION" | "SLA_BREACH";
+        /**
+         * CaseRowResponse
+         * @description One open case on the dashboard queue, most at risk first. No subject name.
+         */
+        CaseRowResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Public Ref
+             * @description Opaque citizen-facing reference (ADR-0007).
+             */
+            public_ref: string;
+            /**
+             * Subject Reference
+             * @description Synthetic mission file token.
+             */
+            subject_reference: string | null;
+            /** Case Type Code */
+            case_type_code: string;
+            /** Case Type Label */
+            case_type_label: string;
+            status: components["schemas"]["CaseStatus"];
+            /** @description As confirmed by a human; NORMAL until triage. */
+            priority: components["schemas"]["Priority"];
+            /** Channel */
+            channel: string;
+            /**
+             * Opened At
+             * Format: date-time
+             */
+            opened_at: string;
+            /** Assigned Officer Name */
+            assigned_officer_name: string | null;
+            classification: components["schemas"]["Classification"];
+            sla: components["schemas"]["SlaResponse"];
+        };
+        /**
          * CaseStatus
          * @description Consular case state. ``BUILD_BIBLE.md`` section 9, ``docs/workflows.md`` section 3.
          *
@@ -1761,6 +1890,180 @@ export interface components {
          * @enum {string}
          */
         CaseStatus: "NEW" | "TRIAGED" | "ASSIGNED" | "AWAITING_CITIZEN" | "IN_REVIEW" | "ESCALATED" | "RESOLVED" | "CLOSED";
+        /**
+         * CaseTimelineEntryResponse
+         * @description One immutable ``case_events`` row.
+         */
+        CaseTimelineEntryResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            event_type: components["schemas"]["CaseEventType"];
+            from_status: components["schemas"]["CaseStatus"] | null;
+            to_status: components["schemas"]["CaseStatus"] | null;
+            /** Note */
+            note: string;
+            /** Actor Name */
+            actor_name: string | null;
+            actor_role: components["schemas"]["RoleCode"] | null;
+            /** Is System */
+            is_system: boolean;
+            /**
+             * Ai Informed
+             * @description An AI trace informed this entry. The actor is still the named human.
+             */
+            ai_informed: boolean;
+        };
+        /**
+         * CaseTransitionRequest
+         * @description Fire one event on a case. The client sends an event, never a target status.
+         */
+        CaseTransitionRequest: {
+            /**
+             * Event
+             * @example assign
+             */
+            event: string;
+            /**
+             * Reason
+             * @description Required by the events docs/workflows.md section 3 marks with a pencil. For resolve it is the determination; for close, the close reason. A NUL is a 422.
+             */
+            reason?: string | null;
+            /** @description Optional precondition: 409 unless the case is still here. */
+            expected_status?: components["schemas"]["CaseStatus"] | null;
+            /** @description triage: the priority the officer confirms. Required there. */
+            priority?: components["schemas"]["Priority"] | null;
+            /**
+             * Case Type Code
+             * @description triage: the case type the officer confirms, if it differs.
+             */
+            case_type_code?: string | null;
+            /**
+             * Assignee User Id
+             * @description assign / reassign: the accountable officer.
+             */
+            assignee_user_id?: string | null;
+            /**
+             * Triage Trace Id
+             * @description triage: the AI triage trace that informed the officer's decision, if one did. The server verifies it is a CONSULAR_TRIAGE trace about THIS case and records it as provenance. It never supplies a value: the priority is the officer's.
+             */
+            triage_trace_id?: string | null;
+        };
+        /** CaseTransitionResponse */
+        CaseTransitionResponse: {
+            /**
+             * Case Id
+             * Format: uuid
+             */
+            case_id: string;
+            /** Event */
+            event: string;
+            from_status: components["schemas"]["CaseStatus"];
+            to_status: components["schemas"]["CaseStatus"];
+            /** Applied */
+            applied: boolean;
+            /** Audit Action */
+            audit_action: string | null;
+            /** Audit Event Id */
+            audit_event_id: string | null;
+            /** Occurred At */
+            occurred_at: string | null;
+            case: components["schemas"]["CaseWorkspaceResponse"];
+        };
+        /**
+         * CaseWorkspaceResponse
+         * @description One case in full, for a caller cleared to read it. No subject name, no document bytes.
+         */
+        CaseWorkspaceResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Public Ref */
+            public_ref: string;
+            /** Subject Reference */
+            subject_reference: string | null;
+            /** Case Type Code */
+            case_type_code: string;
+            /** Case Type Label */
+            case_type_label: string;
+            status: components["schemas"]["CaseStatus"];
+            priority: components["schemas"]["Priority"];
+            /** Channel */
+            channel: string;
+            /** Country */
+            country: string;
+            /**
+             * Summary
+             * @description The officer's precis. Shown to cleared staff; NEVER sent to the AI triage.
+             */
+            summary: string;
+            /**
+             * Opened At
+             * Format: date-time
+             */
+            opened_at: string;
+            classification: components["schemas"]["Classification"];
+            /** Requires Human Determination */
+            requires_human_determination: boolean;
+            /** Assigned User Id */
+            assigned_user_id: string | null;
+            /** Assigned Officer Name */
+            assigned_officer_name: string | null;
+            /** Determination */
+            determination: string | null;
+            /** Determined By Name */
+            determined_by_name: string | null;
+            /** Determined At */
+            determined_at: string | null;
+            /** Close Reason */
+            close_reason: string | null;
+            /** Closed By Name */
+            closed_by_name: string | null;
+            /** Closed At */
+            closed_at: string | null;
+            sla: components["schemas"]["SlaResponse"];
+            /** Evidence */
+            evidence: components["schemas"]["EvidenceItemResponse"][];
+            /** Checklist */
+            checklist: components["schemas"]["ChecklistItemResponse"][];
+            /**
+             * Timeline
+             * @description Oldest first. Append-only.
+             */
+            timeline: components["schemas"]["CaseTimelineEntryResponse"][];
+            /**
+             * Available Events
+             * @description Events legal now that this caller holds the permission for. Advisory.
+             */
+            available_events: string[];
+            /**
+             * Reason Required Events
+             * @description Of available_events, those the server refuses without a reason.
+             */
+            reason_required_events: string[];
+            /**
+             * Control Events
+             * @description Of available_events, the BUILD_BIBLE section 6 human determinations.
+             */
+            control_events: string[];
+            /** Gated Events */
+            gated_events: components["schemas"]["GatedCaseEventResponse"][];
+            /** Assignable Officers */
+            assignable_officers: components["schemas"]["AssignableOfficerResponse"][];
+            /** Event Labels */
+            event_labels: {
+                [key: string]: string;
+            };
+        };
         /**
          * ChainVerificationResponse
          * @description The result of walking the hash chain.
@@ -1801,6 +2104,21 @@ export interface components {
              * @description What disagreed, in words: a mismatched link means a row was altered or removed at or before this position; a mismatched digest means this row was altered.
              */
             reason: string | null;
+        };
+        /** ChecklistItemResponse */
+        ChecklistItemResponse: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "evidence" | "step";
+            /** Label */
+            label: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "verified" | "received" | "missing" | "done" | "pending";
         };
         /**
          * Classification
@@ -1862,6 +2180,49 @@ export interface components {
          * @enum {string}
          */
         ConsentStatus: "NOT_GIVEN" | "GIVEN_DIRECTORY_ONLY" | "GIVEN_CONTACTABLE" | "WITHDRAWN";
+        /**
+         * ConsularDashboardResponse
+         * @description Caseload, ageing and SLA risk over the cases the caller is cleared to read.
+         */
+        ConsularDashboardResponse: {
+            /** Total */
+            total: number;
+            /** Open Total */
+            open_total: number;
+            /**
+             * Awaiting Triage
+             * @description Cases in NEW: nobody has confirmed them yet.
+             */
+            awaiting_triage: number;
+            /** By Status */
+            by_status: {
+                [key: string]: number;
+            };
+            /**
+             * By Sla State
+             * @description Open cases only.
+             */
+            by_sla_state: {
+                [key: string]: number;
+            };
+            /**
+             * Ageing
+             * @description Open cases by chargeable age.
+             */
+            ageing: components["schemas"]["AgeingBucketResponse"][];
+            /** By Type */
+            by_type: components["schemas"]["TypeVolumeResponse"][];
+            /**
+             * Queue
+             * @description Open cases ordered breached, due soon, on track, then paused.
+             */
+            queue: components["schemas"]["CaseRowResponse"][];
+            /**
+             * Measured At
+             * Format: date-time
+             */
+            measured_at: string;
+        };
         /**
          * ConsularTileResponse
          * @description Consular casework. Present only for a caller holding ``read:consular_case``.
@@ -2142,6 +2503,32 @@ export interface components {
             timeline_truncated: boolean;
         };
         /**
+         * EvidenceItemResponse
+         * @description Evidence metadata. Never the stored object, its URI or the officer's notes.
+         */
+        EvidenceItemResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Label
+             * @description What kind of document this is.
+             */
+            label: string;
+            evidence_type: components["schemas"]["EvidenceType"];
+            /** Verified */
+            verified: boolean;
+            /**
+             * Received At
+             * Format: date-time
+             */
+            received_at: string;
+            /** Verified At */
+            verified_at: string | null;
+        };
+        /**
          * EvidenceRef
          * @description One item of provenance behind an AI answer.
          *
@@ -2169,6 +2556,15 @@ export interface components {
              */
             citation_id?: string | null;
         };
+        /**
+         * EvidenceType
+         * @description Kind of artefact attached to a consular case.
+         *
+         *     Every attachment to a case is ``CONSULAR_SENSITIVE`` under ADR-0006 whatever its type;
+         *     this enum describes the artefact, never its sensitivity.
+         * @enum {string}
+         */
+        EvidenceType: "DOCUMENT" | "PHOTO" | "FORM" | "CORRESPONDENCE" | "IDENTITY_PROOF" | "OTHER";
         /**
          * FollowupAction
          * @description What the API offers a caller to *ask for* on one meeting follow-up.
@@ -2527,6 +2923,22 @@ export interface components {
             occurred_at?: string | null;
             /** @description The follow-up as it now stands. */
             followup: components["schemas"]["FollowupResponse"];
+        };
+        /** GatedCaseEventResponse */
+        GatedCaseEventResponse: {
+            /** Event */
+            event: string;
+            /** Label */
+            label: string;
+            /** Permission */
+            permission: string;
+            /**
+             * Is Control
+             * @description A BUILD_BIBLE section 6 non-autonomous control.
+             */
+            is_control: boolean;
+            /** Reason */
+            reason: string;
         };
         /**
          * GatedEventResponse
@@ -3456,6 +3868,15 @@ export interface components {
             confidence?: number | null;
         };
         /**
+         * Priority
+         * @description Shared urgency scale for cases, actions and meetings.
+         *
+         *     Used by the consular triage proposal (``docs/workflows.md`` section 3, row 2), which
+         *     suggests a case type, a priority and a rationale -- and never fires the event itself.
+         * @enum {string}
+         */
+        Priority: "LOW" | "NORMAL" | "HIGH" | "URGENT";
+        /**
          * RelationshipStrength
          * @description Current state of the mission's relationship with a stakeholder.
          *
@@ -3591,6 +4012,66 @@ export interface components {
          * @enum {string}
          */
         SignalStatus: "NEW" | "TRIAGED" | "LINKED" | "DISMISSED";
+        /**
+         * SlaResponse
+         * @description The service-level clock for one case, in business days.
+         */
+        SlaResponse: {
+            /** @description ON_TRACK, DUE_SOON, BREACHED, PAUSED (waiting on the citizen), STOPPED (resolved or closed) or NOT_SET (no budget for the case type). */
+            state: components["schemas"]["SlaState"];
+            /**
+             * Budget Business Days
+             * @description The case type's budget.
+             */
+            budget_business_days: number | null;
+            /**
+             * Clock Started At
+             * Format: date-time
+             * @description Intake, or the most recent reopen.
+             */
+            clock_started_at: string;
+            /**
+             * Due At
+             * @description When the budget runs out, extended by every paused interval.
+             */
+            due_at: string | null;
+            /**
+             * Elapsed Business Days
+             * @description Chargeable business days so far.
+             */
+            elapsed_business_days: number;
+            /**
+             * Paused Business Days
+             * @description Business days spent waiting on the citizen.
+             */
+            paused_business_days: number;
+            /**
+             * Remaining Business Days
+             * @description Budget minus elapsed. Negative when breached.
+             */
+            remaining_business_days: number | null;
+            /**
+             * Is Paused
+             * @description True while the case waits on the citizen.
+             */
+            is_paused: boolean;
+            /**
+             * Paused Since
+             * @description When the current pause began.
+             */
+            paused_since: string | null;
+            /**
+             * Met
+             * @description For a stopped clock, whether the budget was met.
+             */
+            met: boolean | null;
+        };
+        /**
+         * SlaState
+         * @description Where a case stands against its service level. Metadata, never narrative.
+         * @enum {string}
+         */
+        SlaState: "ON_TRACK" | "DUE_SOON" | "BREACHED" | "PAUSED" | "STOPPED" | "NOT_SET";
         /**
          * StakeholderTileResponse
          * @description The relationship map. Present only for a caller holding ``read:stakeholder``.
@@ -3781,6 +4262,19 @@ export interface components {
             occurred_at?: string | null;
             /** @description The opportunity as it now stands, so the client needs no second fetch. */
             opportunity: components["schemas"]["OpportunityDetail"];
+        };
+        /** TypeVolumeResponse */
+        TypeVolumeResponse: {
+            /** Code */
+            code: string;
+            /** Label */
+            label: string;
+            /** Open Total */
+            open_total: number;
+            /** Total */
+            total: number;
+            /** Breached */
+            breached: number;
         };
         /** ValidationError */
         ValidationError: {
@@ -4601,6 +5095,136 @@ export interface operations {
                 content?: never;
             };
             /** @description Illegal from the current status, terminal, a required reason missing or unrecordable, a guard refused, or a precondition failed: expected_status, or on approve expected_submitted_at (resubmitted since the approver opened it). The body says which. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_dashboard_v1_consular_dashboard_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Caseload by status, ageing, SLA risk and volumes by type. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsularDashboardResponse"];
+                };
+            };
+            /** @description You do not hold read:consular_case, or have no session. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    read_case_v1_consular_cases__case_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The case's internal id. */
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The case workspace: clock, checklist, evidence metadata, timeline. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseWorkspaceResponse"];
+                };
+            };
+            /** @description No read:consular_case, or not cleared for the case's zone. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No case with that id. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transition_case_endpoint_v1_consular_cases__case_id__transition_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The case's internal id. */
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseTransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description The new status, the audit row, and the case as it now stands. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseTransitionResponse"];
+                };
+            };
+            /** @description The event's permission or the case's zone is not held; audited. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No case with that id. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Illegal from the current status, terminal, a required reason missing, a guard refused, the expected_status precondition failed, or a triage trace that is not about this case. The body says which. */
             409: {
                 headers: {
                     [name: string]: unknown;

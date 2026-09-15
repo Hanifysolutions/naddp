@@ -10,6 +10,7 @@ import pytest
 
 from app.ai.purposes import (
     DEFAULT_SCENARIO,
+    NO_EXTERNAL_MODEL_ROUTE,
     PURPOSES,
     PurposeNotAllowedError,
     check_context,
@@ -70,22 +71,41 @@ def test_resolve_purpose_accepts_every_member() -> None:
 # --------------------------------------------------------------------------- classification
 
 
-def test_no_purpose_may_process_consular_sensitive() -> None:
+def test_only_consular_triage_may_process_consular_sensitive() -> None:
     """OPEN_QUESTIONS Q-06, conservative option (c), expressed as data.
 
-    This is the single most load-bearing assertion in the AI track: no registered purpose
-    may process CONSULAR_SENSITIVE content, so case narrative can never reach a model.
+    This is the single most load-bearing assertion in the AI track. Exactly one purpose may
+    be declared over CONSULAR_SENSITIVE -- triage, which W3.3 answers from metadata with no
+    model (A-12 reversed) -- and no other purpose may, so case narrative can never reach one.
+    The narrative guard itself is the context allowlist, pinned further down this module.
     """
-    for spec in PURPOSES.values():
-        assert not spec.permits(Classification.CONSULAR_SENSITIVE), spec.purpose.value
+    admitted = {
+        spec.purpose
+        for spec in PURPOSES.values()
+        if spec.permits(Classification.CONSULAR_SENSITIVE)
+    }
+    assert admitted == {AiPurpose.CONSULAR_TRIAGE}
 
 
-def test_consular_triage_is_capped_at_mission_internal() -> None:
+def test_consular_triage_is_capped_at_consular_sensitive() -> None:
+    """Its own zone, and no further: the compartment is not a licence for CONFIDENTIAL."""
     spec = PURPOSES[AiPurpose.CONSULAR_TRIAGE]
-    assert spec.max_classification is Classification.MISSION_INTERNAL
+    assert spec.max_classification is Classification.CONSULAR_SENSITIVE
     assert spec.permits(Classification.PUBLIC)
     assert spec.permits(Classification.MISSION_INTERNAL)
+    assert spec.permits(Classification.CONSULAR_SENSITIVE)
     assert not spec.permits(Classification.CONFIDENTIAL)
+
+
+def test_consular_sensitive_routes_to_no_external_model() -> None:
+    """BUILD_BIBLE section 4a: the band withholds generation whatever the purpose's tier."""
+    route = route_for(PURPOSES[AiPurpose.CONSULAR_TRIAGE], Classification.CONSULAR_SENSITIVE)
+    assert route.route == NO_EXTERNAL_MODEL_ROUTE
+    assert route.model_requested is None
+    assert route.live_eligible is False
+    assert route.badge == (
+        "CONSULAR-SENSITIVE · no external route · metadata-only · generation withheld"
+    )
 
 
 def test_a_confidential_purpose_does_not_thereby_admit_consular() -> None:

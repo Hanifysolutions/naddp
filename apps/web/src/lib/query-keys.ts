@@ -62,4 +62,16 @@ export const queryKeys = {
   meeting: (role: NaddpRole | null, id: string) => ['meetings', 'detail', role, id] as const,
   /** The follow-ups awaiting a named human decision that this caller may read and act on. */
   approvalQueue: (role: NaddpRole | null) => ['meetings', 'approvals', role] as const,
+  /**
+   * The consular dashboard. Narrowed to the caller's zones in the API's SQL, and refused
+   * outright for the three roles that hold no consular grant - so the role is the address.
+   */
+  consularDashboard: (role: NaddpRole | null) => ['consular', 'dashboard', role] as const,
+  /**
+   * One case workspace. `available_events` and `gated_events` are statements about THIS
+   * caller: a consular officer's cached copy offers "Confirm triage", an Ambassador's must not.
+   */
+  consularCase: (role: NaddpRole | null, id: string) => ['consular', 'case', role, id] as const,
+  /** One AI trace, read for the routing badge beside the proposal it produced. */
+  aiTrace: (role: NaddpRole | null, id: string) => ['ai', 'trace', role, id] as const,
 } as const;

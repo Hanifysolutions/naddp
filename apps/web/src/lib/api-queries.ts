@@ -1,11 +1,17 @@
 import {
   toApiError,
   toNetworkError,
+  type AiEnvelope,
+  type AiTrace,
   type ApiError,
   type ApprovalQueue,
   type AuditEventPage,
   type BriefList,
+  type CaseTransitionRequest,
+  type CaseTransitionResponse,
+  type CaseWorkspace,
   type CommandTodayResponse,
+  type ConsularDashboard,
   type Dossier,
   type FollowupApproveResponse,
   type FollowupDispatchResponse,
@@ -424,6 +430,100 @@ export async function approveFollowup(
     api.POST('/v1/meetings/{meeting_id}/followups/{followup_id}/approve', {
       params: { path: { meeting_id: meetingId, followup_id: followupId } },
       body: { expected_status: expectedStatus },
+    }),
+  );
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/**
+ * `GET /v1/consular/dashboard` - caseload, ageing and service-level risk over the cases the
+ * caller is cleared to read.
+ *
+ * Every count is scoped in the API's SQL, so a figure is "what this reader may see" and never
+ * "of N". Throws 403 for a role without `read:consular_case` (TRADE_OFFICER, DIASPORA_OFFICER,
+ * ADMIN), which the page renders as a refusal - never as an empty caseload.
+ */
+export async function fetchConsularDashboard(signal?: AbortSignal): Promise<ConsularDashboard> {
+  const { data, error, response } = await guard(api.GET('/v1/consular/dashboard', { signal }));
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/**
+ * `GET /v1/consular/cases/{case_id}` - one case workspace: the clock, the checklist, evidence
+ * metadata, the append-only timeline and the events this caller may fire.
+ *
+ * No subject name and no document ever arrive here. Throws 403 when the role or the case's zone
+ * is not held, and 404 when there is no such case.
+ */
+export async function fetchCaseWorkspace(
+  caseId: string,
+  signal?: AbortSignal,
+): Promise<CaseWorkspace> {
+  const { data, error, response } = await guard(
+    api.GET('/v1/consular/cases/{case_id}', {
+      params: { path: { case_id: caseId } },
+      signal,
+    }),
+  );
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/**
+ * `POST /v1/consular/cases/{case_id}/transition` - a named officer fires one event.
+ *
+ * The body names an event, never a target status, and carries `expected_status` so a case
+ * somebody else has already moved answers 409 rather than changing under the click. A 403 (the
+ * event's permission, or a section 6 control) and a 409 (illegal from this status, a guard, a
+ * missing reason) are thrown in the server's words: each was written to the audit log as a DENY
+ * row before the API answered.
+ */
+export async function transitionCase(
+  caseId: string,
+  body: CaseTransitionRequest,
+): Promise<CaseTransitionResponse> {
+  const { data, error, response } = await guard(
+    api.POST('/v1/consular/cases/{case_id}/transition', {
+      params: { path: { case_id: caseId } },
+      body,
+    }),
+  );
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/**
+ * `POST /v1/ai/consular/cases/{case_id}/triage` - ask the AI Gateway for a triage
+ * recommendation.
+ *
+ * The call is declared CONSULAR_SENSITIVE, so BUILD_BIBLE section 4a routes it to no external
+ * model: the proposal is mission-local rules over six metadata fields and the case narrative is
+ * never read. It is always PENDING_APPROVAL and fires no event. `result` is `unknown` because
+ * the envelope's result is open on the wire; the caller narrows it before rendering a word.
+ */
+export async function proposeCaseTriage(caseId: string): Promise<AiEnvelope<unknown>> {
+  const { data, error, response } = await guard(
+    api.POST('/v1/ai/consular/cases/{case_id}/triage', {
+      params: { path: { case_id: caseId } },
+    }),
+  );
+  if (data === undefined) throw toApiError(response.status, error);
+  return { ...data, result: data.result ?? null };
+}
+
+/**
+ * `GET /v1/ai/traces/{trace_id}` - the routing decision behind one AI answer.
+ *
+ * Held by the five business roles (`read:ai_trace`); ADMIN does not hold it, and the API also
+ * requires clearance for the trace's zone. Throws 403 otherwise.
+ */
+export async function fetchAiTrace(traceId: string, signal?: AbortSignal): Promise<AiTrace> {
+  const { data, error, response } = await guard(
+    api.GET('/v1/ai/traces/{trace_id}', {
+      params: { path: { trace_id: traceId } },
+      signal,
     }),
   );
   if (data === undefined) throw toApiError(response.status, error);

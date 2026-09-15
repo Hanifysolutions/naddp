@@ -140,8 +140,7 @@ export const NAV_CATALOGUE: readonly NavItem[] = [
     description: 'Citizen case workload, ageing and service-level risk.',
     icon: 'consular',
     permission: 'read:consular_case',
-    availability: 'planned',
-    plannedFor: 'Week 3',
+    availability: 'available',
   },
   {
     href: '/diaspora',

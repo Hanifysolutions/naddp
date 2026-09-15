@@ -358,6 +358,28 @@ DEFAULT_RULES: Final[tuple[AuditRule, ...]] = (
         "meetings.followup",
         Classification.MISSION_INTERNAL,
     ),
+    # The Consular context (W3.3). Every row it serves is CONSULAR_SENSITIVE, so each read is
+    # recorded: a consular case concerns a private individual who did not choose to be in the
+    # system (ADR-0004's privileged-read category). The baseline stays below the threshold and
+    # the handler reports the zone it served, the same extension pattern as above.
+    _rule(
+        "consular.read_dashboard",
+        ("GET",),
+        r"/v1/consular/dashboard/?",
+        AuditKind.PRIVILEGED_READ,
+        ACCESS_PRIVILEGED_READ,
+        "consular.case",
+        Classification.MISSION_INTERNAL,
+    ),
+    _rule(
+        "consular.read_case",
+        ("GET",),
+        r"/v1/consular/cases/[^/]+/?",
+        AuditKind.PRIVILEGED_READ,
+        ACCESS_PRIVILEGED_READ,
+        "consular.case",
+        Classification.MISSION_INTERNAL,
+    ),
     _rule(
         "meetings.read_meeting",
         ("GET",),

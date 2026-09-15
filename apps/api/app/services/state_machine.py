@@ -242,6 +242,16 @@ class TransitionContext[ObjT]:
     actor: Principal
     event: str
     reason: str | None
+    #: Event parameters the request carried beyond the reason -- the officer an ``assign``
+    #: names, the priority a ``triage`` confirms. Validated by the machine's guards and applied
+    #: by its effects, inside the transaction, so a parameter can never land without the
+    #: transition and audit row it belongs to. Read-only by convention; empty by default.
+    params: Mapping[str, Any] = field(default_factory=dict)
+    #: The state the object was in when the event was fired. Effects run after the state
+    #: write, so this is the only place an effect can learn where the object came from --
+    #: a timeline entry recording "from X to Y", say. ``None`` only for a context built
+    #: outside the executor.
+    from_state: Enum | None = None
 
 
 @dataclass(frozen=True)
@@ -610,6 +620,7 @@ def apply_event[StateT: Enum, ObjT](
     reason: str | None = None,
     expected_state: StateT | None = None,
     trace_id: uuid.UUID | None = None,
+    params: Mapping[str, Any] | None = None,
 ) -> TransitionOutcome[StateT]:
     """Fire ``event`` against ``obj``, or refuse it and record the refusal.
 
@@ -633,6 +644,8 @@ def apply_event[StateT: Enum, ObjT](
             optimistic-concurrency rule of ``docs/workflows.md`` 0.9, in the form the
             current schema supports. See the note in ``app/services/opportunities.py``.
         trace_id: The ``ai_traces`` row that informed this event, where one did.
+        params: Event parameters beyond the reason, handed to guards and effects through
+            :attr:`TransitionContext.params`. Never a target state.
 
     Returns:
         A :class:`TransitionOutcome`. ``applied`` is False for the idempotent no-op case.
@@ -663,6 +676,7 @@ def apply_event[StateT: Enum, ObjT](
             reason=reason,
             expected_state=expected_state,
             trace_id=trace_id,
+            params=params or {},
             denials=denials,
         )
     except AppError as refused:
@@ -684,6 +698,7 @@ def _apply_event_in_order[StateT: Enum, ObjT](
     reason: str | None,
     expected_state: StateT | None,
     trace_id: uuid.UUID | None,
+    params: Mapping[str, Any],
     denials: list[AuditEvent],
 ) -> TransitionOutcome[StateT]:
     """The body of :func:`apply_event`. Every DENY row it writes is appended to ``denials``."""
@@ -841,7 +856,13 @@ def _apply_event_in_order[StateT: Enum, ObjT](
             )
         refusal = authorize(
             TransitionContext(
-                obj=obj, session=session, actor=actor, event=event, reason=normalised_reason
+                obj=obj,
+                session=session,
+                actor=actor,
+                event=event,
+                reason=normalised_reason,
+                params=params,
+                from_state=from_state,
             )
         )
         if refusal is not None:
@@ -993,7 +1014,13 @@ def _apply_event_in_order[StateT: Enum, ObjT](
 
     # 8. Guards -- pure predicates over the object, returning why they refused.
     context = TransitionContext(
-        obj=obj, session=session, actor=actor, event=event, reason=normalised_reason
+        obj=obj,
+        session=session,
+        actor=actor,
+        event=event,
+        reason=normalised_reason,
+        params=params,
+        from_state=from_state,
     )
     for guard in rule.guards:
         failure = guard(context)
@@ -1083,6 +1110,7 @@ def execute_transition[StateT: Enum, ObjT](
     reason: str | None = None,
     expected_state: StateT | None = None,
     trace_id: uuid.UUID | None = None,
+    params: Mapping[str, Any] | None = None,
 ) -> TransitionOutcome[StateT]:
     """Run :func:`apply_event` and commit, on the accept path **and the refuse path**.
 
@@ -1107,6 +1135,7 @@ def execute_transition[StateT: Enum, ObjT](
             reason=reason,
             expected_state=expected_state,
             trace_id=trace_id,
+            params=params,
         )
     except AppError as refused:
         try:

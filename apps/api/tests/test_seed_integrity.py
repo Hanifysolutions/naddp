@@ -828,6 +828,50 @@ def test_hero_consular_case_exists_and_is_compartmented(db: Session) -> None:
     assert events >= 2, "the hero case has no timeline to show the citizen"
 
 
+def test_hero_urgent_consular_case_awaits_a_human_triage_near_breach(db: Session) -> None:
+    """The emergency travel document: a lost passport, untriaged, its short budget nearly spent.
+
+    Matched on the seed's summary rather than on status, so a walk-through that triages it does
+    not make this test lie; the clock is only asserted while the case still waits in ``NEW``.
+    """
+    from app.domain.enums import Classification, Priority
+    from app.domain.sla import SlaState
+    from app.services.cases import case_sla
+
+    case = db.scalar(
+        select(Case)
+        .where(Case.case_type_code == "EMERGENCY_TRAVEL_DOCUMENT")
+        .where(Case.summary.ilike("%lost passport%"))
+    )
+    assert case is not None, "no urgent emergency-travel-document case for a lost passport"
+    assert case.classification is Classification.CONSULAR_SENSITIVE
+    evidence = _count(
+        db, select(func.count()).select_from(CaseEvidence).where(CaseEvidence.case_id == case.id)
+    )
+    assert evidence >= 2, "the urgent case has no evidence metadata to check off"
+    if case.status is CaseStatus.NEW:
+        assert case.priority is Priority.NORMAL, "nobody has confirmed a priority yet"
+        assert case_sla(db, case).state in {SlaState.DUE_SOON, SlaState.BREACHED}
+
+
+def test_hero_routine_passport_renewal_is_mid_ageing(db: Session) -> None:
+    """The routine case sits mid-budget: neither fresh nor at risk."""
+    from app.domain.sla import SlaState
+    from app.services.cases import case_sla
+
+    case = db.scalar(
+        select(Case)
+        .where(Case.case_type_code == "PASSPORT_RENEWAL")
+        .where(Case.summary.ilike("%postgraduate student%"))
+    )
+    assert case is not None
+    clock = case_sla(db, case)
+    if case.status is CaseStatus.IN_REVIEW:
+        assert clock.state is SlaState.ON_TRACK
+        assert clock.budget_business_days is not None
+        assert 0.25 < clock.elapsed_business_days / clock.budget_business_days < 0.9
+
+
 def test_hero_diaspora_pair_is_contactable(db: Session) -> None:
     """Diaspora search returns a processing engineer AND a migration-pathway academic."""
     statement = (

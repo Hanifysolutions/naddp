@@ -36,12 +36,11 @@ these will delegate to them for the fetch when they land.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Annotated, Any, Final
 
 from fastapi import APIRouter, Depends, Path, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 
@@ -53,18 +52,18 @@ from app.core.errors import ClassificationDeniedError, InvalidTransitionError, N
 from app.domain.enums import (
     AiPurpose,
     ApprovalStatus,
-    CaseStatus,
     Classification,
     RoleCode,
     dominant,
 )
 from app.models.ai import AiTrace
-from app.models.consular import Case, CaseEvent
+from app.models.consular import Case
 from app.models.meetings import Meeting
 from app.models.opportunities import Opportunity
 from app.security.deps import assert_may_read, require
 from app.security.permissions import Permission
 from app.security.principal import Principal
+from app.services.cases import case_sla
 from app.services.followups import latest_followup
 from app.services.meetings import (
     AI_MEETING_NO_SNAPSHOT_REASON,
@@ -80,18 +79,6 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 #: ``object_type`` recorded when a trace read is itself audited.
 TRACE_OBJECT_TYPE: Final[str] = "ai.trace"
 
-#: SLA states reported to ``CONSULAR_TRIAGE``. Strings, not an enum, because they are
-#: *facts about the process* bound for a prompt rather than domain states anything
-#: transitions between -- and because the context policy caps a fact value at 48
-#: characters, which these fit with room to spare.
-SLA_ON_TRACK: Final[str] = "ON_TRACK"
-SLA_DUE_SOON: Final[str] = "DUE_SOON"
-SLA_BREACHED: Final[str] = "BREACHED"
-SLA_PAUSED: Final[str] = "PAUSED"
-SLA_NOT_SET: Final[str] = "NOT_SET"
-
-#: A case falling due within this many days is ``DUE_SOON`` rather than ``ON_TRACK``.
-_SLA_DUE_SOON_DAYS: Final[int] = 2
 
 DbSession = Annotated[Session, Depends(get_session)]
 
@@ -250,66 +237,28 @@ def _load_case(db: Session, principal: Principal, case_id: uuid.UUID) -> Case:
 # ---------------------------------------------------------------------------
 
 
-def _paused_since(db: Session, case: Case) -> datetime | None:
-    """When this case last entered ``AWAITING_CITIZEN``, or ``None``.
-
-    ``AWAITING_CITIZEN`` pauses the SLA clock (``docs/OPEN_QUESTIONS.md`` Q-15), so "how
-    long has it been paused" is metadata about the *process*, which is why it is one of the
-    six fact keys the triage policy admits.
-    """
-    if case.status is not CaseStatus.AWAITING_CITIZEN:
-        return None
-    statement = (
-        select(CaseEvent.occurred_at)
-        .where(CaseEvent.case_id == case.id, CaseEvent.to_status == CaseStatus.AWAITING_CITIZEN)
-        .order_by(CaseEvent.occurred_at.desc())
-        .limit(1)
-    )
-    return db.scalar(statement)
-
-
-def _whole_days_since(moment: datetime | None, now: datetime) -> int | None:
-    """Whole days between ``moment`` and ``now``, or ``None`` when there is no moment."""
-    if moment is None:
-        return None
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=UTC)
-    return (now - moment).days
-
-
 def _triage_context(db: Session, case: Case) -> GatewayContext:
-    """Build the six-key ``CONSULAR_TRIAGE`` context from the case row itself.
+    """Build the six-key ``CONSULAR_TRIAGE`` context from the case row and its clock.
 
-    **Never from a request body.** The context policy admits exactly
-    ``{case_type, case_age_days, sla_state, sla_days_remaining, days_paused, status}`` and
-    refuses anything else with a ``BLOCKED`` envelope -- correct behaviour, but a refusal
-    that fires during a demo because a handler forwarded a payload would look like a defect.
-    Deriving all six here means the allowlist is satisfied by construction, and no case
-    narrative can reach a model even if somebody later adds a ``notes`` field to the body.
+    **Never from a request body, and never from the case's words.** The context policy admits
+    exactly ``{case_type, case_age_days, sla_state, sla_days_remaining, days_paused, status}``
+    and refuses anything else with a ``BLOCKED`` envelope. Deriving all six here means the
+    allowlist is satisfied by construction, and no case narrative -- the summary, the subject,
+    the evidence -- can reach the Gateway even if somebody later adds a field to the body.
+
+    The clock is ``app.services.cases.case_sla``: business days, paused while the case waits on
+    the citizen (``docs/OPEN_QUESTIONS.md`` Q-15), the same figures the consular dashboard shows.
     """
-    now = datetime.now(UTC)
-    due_at = case.sla_due_at
-    days_remaining = None if due_at is None else -(_whole_days_since(due_at, now) or 0)
-
-    if due_at is None:
-        sla_state = SLA_NOT_SET
-    elif case.status is CaseStatus.AWAITING_CITIZEN:
-        sla_state = SLA_PAUSED
-    elif days_remaining is not None and days_remaining < 0:
-        sla_state = SLA_BREACHED
-    elif days_remaining is not None and days_remaining <= _SLA_DUE_SOON_DAYS:
-        sla_state = SLA_DUE_SOON
-    else:
-        sla_state = SLA_ON_TRACK
-
+    clock = case_sla(db, case)
+    remaining = clock.remaining_business_days
     return GatewayContext(
         subject_ref=case.public_ref,
         facts={
             "case_type": case.case_type_code,
-            "case_age_days": _whole_days_since(case.opened_at, now),
-            "sla_state": sla_state,
-            "sla_days_remaining": days_remaining,
-            "days_paused": _whole_days_since(_paused_since(db, case), now) or 0,
+            "case_age_days": round(clock.elapsed_business_days, 1),
+            "sla_state": clock.state.value,
+            "sla_days_remaining": round(remaining, 1) if remaining is not None else None,
+            "days_paused": round(clock.paused_business_days, 1),
             "status": case.status.value,
         },
     )
@@ -572,22 +521,22 @@ def triage_case(
     db: DbSession,
     case_id: Annotated[uuid.UUID, Path(description="The case to triage.")],
 ) -> GatewayResult:
-    """Propose a case type, priority and rationale from case **metadata only**.
+    """Propose a priority and next steps from case **metadata only**, with no model.
 
-    The call is declared ``MISSION_INTERNAL`` and not ``CONSULAR_SENSITIVE``, and that is
-    the whole design rather than a shortcut. ``docs/OPEN_QUESTIONS.md`` Q-06 option (c):
-    the case narrative never enters the Gateway, so what this purpose processes is
-    de-identified process metadata -- type, age, SLA state, status. The caller still had to
-    clear ``CONSULAR_SENSITIVE`` to load the case at all, which is where the compartment
-    check happened.
+    The call is declared ``CONSULAR_SENSITIVE`` -- the zone the case is in -- so
+    ``BUILD_BIBLE.md`` section 4a routes it to "no external route - metadata-only - generation
+    withheld". On that route the Gateway asks no model at all: the proposal is mission-local
+    rules over the six metadata fields (``app.ai.metadata_triage``), and the trace badge says
+    so. This reverses the W1 assumption A-12, which declared the call ``MISSION_INTERNAL``;
+    ``docs/OPEN_QUESTIONS.md`` Q-06 option (c) is what still keeps the narrative out.
 
     It proposes and returns ``PENDING_APPROVAL``. It never fires a case event and never
-    makes a determination (``BUILD_BIBLE.md`` section 6).
+    makes a determination (``BUILD_BIBLE.md`` section 6): the officer confirms triage.
     """
     case = _load_case(db, principal, case_id)
     envelope = generate(
         AiPurpose.CONSULAR_TRIAGE,
-        Classification.MISSION_INTERNAL,
+        Classification.CONSULAR_SENSITIVE,
         _triage_context(db, case),
         principal,
         session=db,

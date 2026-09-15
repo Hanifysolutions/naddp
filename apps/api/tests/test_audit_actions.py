@@ -26,6 +26,8 @@ import pytest
 from app.audit.actions import (
     ACCESS_ACTIONS,
     AUDIT_ACTIONS,
+    CONSULAR_CASE_ACTIONS,
+    CONSULAR_CASE_TRANSITION_REJECTED,
     MEETING_FOLLOWUP_ACTIONS,
     MEETING_FOLLOWUP_DRAFTED,
     MEETING_FOLLOWUP_SENT,
@@ -37,6 +39,8 @@ from app.audit.actions import (
     transition_rejected_action,
 )
 from app.audit.middleware import DEFAULT_RULES, MIDDLEWARE_ACTIONS
+from app.services.cases import CASE_ACTIONS as CASE_EVENT_ACTIONS
+from app.services.cases import CASE_MACHINE
 from app.services.followups import FOLLOWUP_ACTIONS as FOLLOWUP_EVENT_ACTIONS
 from app.services.followups import FOLLOWUP_MACHINE
 from app.services.opportunities import OPPORTUNITY_ACTIONS as OPPORTUNITY_EVENT_ACTIONS
@@ -94,6 +98,18 @@ def test_every_followup_event_action_is_in_the_vocabulary() -> None:
     assert FOLLOWUP_EVENT_ACTIONS["send"] == MEETING_FOLLOWUP_SENT
 
 
+def test_the_case_machine_emits_only_known_actions() -> None:
+    """Every action the consular case machine can write, including its refusal action."""
+    assert CASE_MACHINE.audit_actions() <= CONSULAR_CASE_ACTIONS
+    assert CASE_MACHINE.audit_actions() <= AUDIT_ACTIONS
+
+
+def test_every_case_event_action_is_in_the_vocabulary() -> None:
+    """The service's event map, value by value -- ``intake`` included."""
+    for event, action in CASE_EVENT_ACTIONS.items():
+        assert action in CONSULAR_CASE_ACTIONS, f"event {event!r} writes {action!r}"
+
+
 # ---------------------------------------------------------------------------
 # 2. The vocabulary contains nothing dead
 # ---------------------------------------------------------------------------
@@ -114,14 +130,22 @@ def test_the_vocabulary_is_exactly_what_this_build_can_emit() -> None:
         | set(OPPORTUNITY_EVENT_ACTIONS.values())
         | set(FOLLOWUP_MACHINE.audit_actions())
         | set(FOLLOWUP_EVENT_ACTIONS.values())
+        | set(CASE_MACHINE.audit_actions())
+        | set(CASE_EVENT_ACTIONS.values())
         | {SESSION_ROLE_ASSUMED}
     )
     assert emittable == AUDIT_ACTIONS
 
 
 def test_the_groups_partition_the_vocabulary() -> None:
-    """The four groups are pairwise disjoint and together are the whole set."""
-    groups = (SESSION_ACTIONS, ACCESS_ACTIONS, OPPORTUNITY_ACTIONS, MEETING_FOLLOWUP_ACTIONS)
+    """The five groups are pairwise disjoint and together are the whole set."""
+    groups = (
+        SESSION_ACTIONS,
+        ACCESS_ACTIONS,
+        OPPORTUNITY_ACTIONS,
+        MEETING_FOLLOWUP_ACTIONS,
+        CONSULAR_CASE_ACTIONS,
+    )
     assert frozenset().union(*groups) == AUDIT_ACTIONS
     for left, right in combinations(groups, 2):
         assert not left & right
@@ -156,6 +180,8 @@ def test_the_rejection_action_helper_agrees_with_the_state_machines() -> None:
     assert OPPORTUNITY_MACHINE.rejected_action.endswith(TRANSITION_REJECTED_SUFFIX)
     assert transition_rejected_action("meeting_followup") == FOLLOWUP_MACHINE.rejected_action
     assert FOLLOWUP_MACHINE.rejected_action == MEETING_FOLLOWUP_TRANSITION_REJECTED
+    assert transition_rejected_action("case") == CASE_MACHINE.rejected_action
+    assert CASE_MACHINE.rejected_action == CONSULAR_CASE_TRANSITION_REJECTED
 
 
 def test_an_unknown_action_is_not_known() -> None:

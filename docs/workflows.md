@@ -371,6 +371,46 @@ case timeline non-monotonic, and the timeline is the record a citizen and an aud
 **Unreachable-by-design:** there is no path from `NEW` or `TRIAGED` directly to `RESOLVED`. A
 determination requires an assigned, accountable officer.
 
+### Implementation (W3.3)
+
+`app/services/cases.py` transcribes this table into `CASE_MACHINE`, and `tests/test_cases.py` parses
+the tables above and compares every cell, so the two cannot drift. What the table leaves to the
+implementation:
+
+- **Event parameters.** `triage` requires `priority` (and accepts `case_type_code`); `assign` and
+  `reassign` require `assignee_user_id` — an officer holding `work:consular_case` and cleared for the
+  case's zone — and a reassignment must change the officer. Parameters reach the rule's guards and
+  effects as `TransitionContext.params`, so they are validated inside the audited transaction. The
+  audit row records `confirmed_priority`, `confirmed_case_type` and `ai_proposal_informed` for a
+  triage, and `assignee_id` for an assignment.
+- **AI provenance, not authority.** When a triage was informed by a `consular_triage` proposal, the
+  client sends `triage_trace_id`. `POST /v1/consular/cases/{id}/transition` verifies it is a
+  `CONSULAR_TRIAGE` trace whose scenario derives from *this* case's `public_ref` (otherwise 409
+  `triage_trace_not_for_case`) and records it as `trace_id` on both the audit row and the
+  `case_events` row. The priority recorded is the officer's. `triage`, `resolve` and `close` are
+  refused from inside an AI Gateway call (`autonomous_actor`).
+- **The triage proposal itself** is declared `CONSULAR_SENSITIVE` and routed to `no-external-model`:
+  no model is asked, and deterministic mission-local rules answer from the six allowlisted metadata
+  facts (`app/ai/metadata_triage.py`, OPEN_QUESTIONS A-12).
+- **One timeline row per event**, carrying `from_status`, `to_status`, the acting officer, the request
+  id and — for an AI-informed triage — the trace id. Notes are fixed plain-language sentences; reasons
+  and determinations stay on the audit row and the case's own columns.
+- **The SLA clock** (`app/domain/sla.py`) counts business days on a fixed UTC+10 mission calendar
+  (weekends excluded; no public holidays or daylight saving — OPEN_QUESTIONS A-16). Paused intervals
+  are derived from the `AWAITING_CITIZEN` rows of this timeline, so the paused duration row 10
+  records is the timeline itself. `reopen` restarts the clock with a fresh budget; `RESOLVED` and
+  `CLOSED` stop it. A running case is `DUE_SOON` within `min(2, 25% of budget)` business days of its
+  due time. `cases.sla_due_at` is a copy refreshed on every transition, for sorting only.
+- **Row 12's lapse period** is 5 business days waiting on the citizen (`LAPSE_BUSINESS_DAYS`); the
+  `request_information` event that paused the case stands in for the recorded reminder.
+- **Closure and determination name a human** twice over: the effects record `closed_by_user_id` /
+  `determined_by_user_id`, and the database refuses either without one
+  (`ck_cases_closure_requires_human`, `ck_cases_determination_requires_human`).
+- **Not built:** `intake` (row 1) is in the vocabulary, but the demo seeds cases rather than creating
+  them through the API. Row 2's "the proposal's `approval_status` moves to `APPROVED`" is not
+  persisted — the Gateway envelope is not stored — so the trace id recorded on the triage is the link
+  between the proposal and the decision.
+
 ### Permission grants
 
 | Permission | AMBASSADOR | DEPUTY | TRADE_OFFICER | CONSULAR_OFFICER | DIASPORA_OFFICER | ADMIN |

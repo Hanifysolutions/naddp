@@ -201,25 +201,79 @@ def test_caller_without_clearance_is_refused() -> None:
 
 
 def test_consular_sensitive_is_refused_even_for_a_cleared_officer() -> None:
-    """Q-06 conservative reading: no purpose processes CONSULAR_SENSITIVE, full stop.
+    """Q-06 conservative reading: only triage may be declared over CONSULAR_SENSITIVE.
 
-    The consular officer HOLDS the consular compartment and may read the zone. The refusal
-    is the purpose's ceiling, not the caller's clearance -- which is exactly the control
-    that keeps case narrative away from a third-party model.
+    The deputy HOLDS the consular compartment and may read the zone. The refusal is the
+    purpose's ceiling, not the caller's clearance -- which is exactly the control that keeps
+    case narrative away from a third-party model.
     """
-    principal = principal_for_role(RoleCode.CONSULAR_OFFICER)
+    principal = principal_for_role(RoleCode.DEPUTY)
     assert principal.may_read(Classification.CONSULAR_SENSITIVE)
 
     outcome = _go(
-        AiPurpose.CONSULAR_TRIAGE,
-        role=RoleCode.CONSULAR_OFFICER,
+        AiPurpose.MEETING_PREP,
+        role=RoleCode.DEPUTY,
         data_class=Classification.CONSULAR_SENSITIVE,
-        context=GatewayContext(facts=TRIAGE_FACTS),
     )
     assert outcome.envelope.approval_status is ApprovalStatus.BLOCKED
     assert outcome.envelope.result is None
     assert "Q-06" in (outcome.envelope.explanation or "")
     assert _stage(outcome, "classification_gate").ok is False
+
+
+#: The six metadata fields the triage route derives from an urgent case's row and clock.
+URGENT_TRIAGE_FACTS: dict[str, Any] = {
+    "case_type": "EMERGENCY_TRAVEL_DOCUMENT",
+    "case_age_days": 1.8,
+    "sla_state": "DUE_SOON",
+    "sla_days_remaining": 0.2,
+    "days_paused": 0.0,
+    "status": "NEW",
+}
+
+
+def test_consular_triage_over_consular_sensitive_asks_no_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """W3.3: the CONSULAR-SENSITIVE band answers triage by metadata rules, with no model call.
+
+    The live path is switched ON and the provider replaced by a tripwire, so the only way this
+    passes is if the route -- not the configuration -- is what kept the call from happening.
+    """
+    monkeypatch.setattr(gateway_module, "get_settings", _live_settings)
+
+    def _tripwire(**_: Any) -> _ProviderResponse:
+        raise AssertionError("a CONSULAR_SENSITIVE triage must never reach a model")
+
+    monkeypatch.setattr(gateway_module, "_call_provider", _tripwire)
+
+    outcome = _go(
+        AiPurpose.CONSULAR_TRIAGE,
+        role=RoleCode.CONSULAR_OFFICER,
+        data_class=Classification.CONSULAR_SENSITIVE,
+        context=GatewayContext(subject_ref="NADDP-TESTREF", facts=URGENT_TRIAGE_FACTS),
+    )
+    trace = outcome.trace
+    assert outcome.envelope.approval_status is ApprovalStatus.PENDING_APPROVAL
+    assert trace.model_route == "no-external-model"
+    assert trace.route_badge == (
+        "CONSULAR-SENSITIVE · no external route · metadata-only · generation withheld"
+    )
+    assert trace.model_requested is None and trace.model_used is None
+    assert trace.live is False
+    assert trace.fallback is False, "a metadata-rules answer is not a fallback"
+    assert trace.snapshot_key is None
+    assert _stage(outcome, "generation").ok is True
+    assert "No model was asked" in _stage(outcome, "generation").detail
+
+    result = outcome.envelope.result
+    assert result is not None
+    payload = result.model_dump()
+    assert payload["proposed_priority"] == "URGENT"
+    assert payload["narrative_withheld"] is True
+    assert payload["requires_human_determination"] is True
+    assert set(payload["inputs_used"]) <= set(URGENT_TRIAGE_FACTS)
+    assert outcome.envelope.evidence, "the proposal still cites real published guidance"
 
 
 def test_a_purpose_capped_below_confidential_refuses_confidential() -> None:

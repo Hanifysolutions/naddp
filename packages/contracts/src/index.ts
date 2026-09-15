@@ -422,6 +422,47 @@ export type AuditEventPage = components['schemas']['AuditEventPageResponse'];
 export type AuditEvent = components['schemas']['AuditEventResponse'];
 export type PolicyResult = components['schemas']['PolicyResult'];
 
+/**
+ * `GET /v1/consular/dashboard`: caseload, ageing and service-level risk over the cases the
+ * caller is cleared to read. Business days throughout (OPEN_QUESTIONS Q-15), and the clock
+ * pauses while a case waits on the citizen. `queue` arrives most at risk first: render it in
+ * the server's order rather than re-sorting it.
+ */
+export type ConsularDashboard = components['schemas']['ConsularDashboardResponse'];
+export type CaseRow = components['schemas']['CaseRowResponse'];
+export type AgeingBucket = components['schemas']['AgeingBucketResponse'];
+export type CaseTypeVolume = components['schemas']['TypeVolumeResponse'];
+export type CaseSla = components['schemas']['SlaResponse'];
+export type SlaState = components['schemas']['SlaState'];
+export type Priority = components['schemas']['Priority'];
+
+/**
+ * `GET /v1/consular/cases/{case_id}`: one case workspace.
+ *
+ * No subject name anywhere, and evidence as metadata only - a label, a type and a verification
+ * state, never the document. Render actions from `available_events` and refusals from
+ * `gated_events`, never from the role: both are the server's statements about this caller.
+ */
+export type CaseWorkspace = components['schemas']['CaseWorkspaceResponse'];
+export type CaseEvidenceItem = components['schemas']['EvidenceItemResponse'];
+export type CaseChecklistItem = components['schemas']['ChecklistItemResponse'];
+export type CaseTimelineEntry = components['schemas']['CaseTimelineEntryResponse'];
+export type GatedCaseEvent = components['schemas']['GatedCaseEventResponse'];
+export type AssignableOfficer = components['schemas']['AssignableOfficerResponse'];
+export type CaseEventType = components['schemas']['CaseEventType'];
+export type EvidenceType = components['schemas']['EvidenceType'];
+
+/**
+ * `POST /v1/consular/cases/{case_id}/transition`: a named officer fires one event. The body
+ * names an event, never a target status; an AI triage trace id, when sent, is recorded as
+ * provenance and never supplies a value.
+ */
+export type CaseTransitionRequest = components['schemas']['CaseTransitionRequest'];
+export type CaseTransitionResponse = components['schemas']['CaseTransitionResponse'];
+
+/** `GET /v1/ai/traces/{trace_id}`: one AI trace row, read for the routing badge. */
+export type AiTrace = components['schemas']['AiTraceResponse'];
+
 /* --- Domain enums, aliased so an exhaustive label map is a compile-time guarantee --- */
 export type CaseStatus = components['schemas']['CaseStatus'];
 export type ConsentStatus = components['schemas']['ConsentStatus'];

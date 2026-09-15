@@ -68,7 +68,7 @@ import hashlib
 import json
 import time
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Final, Protocol
 
@@ -98,7 +98,9 @@ from app.ai.fallback import (
     resolve_snapshot,
     snapshot_key,
 )
+from app.ai.metadata_triage import propose_consular_triage
 from app.ai.purposes import (
+    NO_EXTERNAL_MODEL_ROUTE,
     ModelRoute,
     PurposeSpec,
     budget_for,
@@ -161,6 +163,18 @@ _PROMPT_HASH_DOMAIN: Final[str] = "naddp.ai.prompt.v1"
 _CONFIGURED_OFF: Final[frozenset[FallbackReason]] = frozenset(
     {FallbackReason.LIVE_DISABLED, FallbackReason.NO_API_KEY}
 )
+
+#: The metadata-level work BUILD_BIBLE section 4a permits on the CONSULAR-SENSITIVE route.
+#:
+#: Consulted only when stage 5 chose :data:`~app.ai.purposes.NO_EXTERNAL_MODEL_ROUTE`: that
+#: route forbids every model, so the purpose is answered by mission-local rules over the
+#: metadata stage 4 admitted, or not at all. It is not a fallback -- no live call was ever
+#: eligible, so nothing fell back -- and the trace says so (``live`` false, ``fallback``
+#: false, the generation stage naming the rules). If the rules cannot answer, the ordinary
+#: deterministic snapshot path still applies.
+_METADATA_ONLY_ANSWERS: Final[
+    Mapping[AiPurpose, Callable[[GatewayContext, AuthorisedEvidence], GroundedResult]]
+] = {AiPurpose.CONSULAR_TRIAGE: propose_consular_triage}
 
 
 # ---------------------------------------------------------------------------
@@ -922,10 +936,31 @@ def _run_pipeline(
     record.budget_seconds = budget
     stage_started = time.perf_counter()
     live_result: GroundedResult | None = None
+    metadata_result: GroundedResult | None = None
     reason: FallbackReason | None = None
     provider_detail = ""
+    metadata_answer = (
+        _METADATA_ONLY_ANSWERS.get(spec.purpose) if route.route == NO_EXTERNAL_MODEL_ROUTE else None
+    )
 
-    if not route.live_eligible or route.model_requested is None:
+    if metadata_answer is not None:
+        try:
+            metadata_result = metadata_answer(context, authorised)
+        except (ValueError, ValidationError) as exc:
+            reason = FallbackReason.LIVE_DISABLED
+            provider_detail = (
+                f"No model was asked ({route.route}). The metadata-only rules could not "
+                f"answer ({type(exc).__name__}: {exc}), so the deterministic snapshot is served."
+            )
+        else:
+            record.schema_valid = True
+            provider_detail = (
+                f"No model was asked: the {route.route} route permits metadata-level work "
+                f"only. {spec.purpose.value} was answered by mission-local rules over "
+                f"{len(context.facts)} permitted metadata field(s) -- no narrative read, no "
+                "prose generated."
+            )
+    elif not route.live_eligible or route.model_requested is None:
         reason = FallbackReason.LIVE_DISABLED
         provider_detail = (
             f"The {route.route} route forbids an external model, so none was asked "
@@ -986,7 +1021,7 @@ def _run_pipeline(
     # Only an actual failure -- timeout, provider error, rate limit, bad schema -- is not ok.
     record.stage(
         "generation",
-        ok=live_result is not None or reason in _CONFIGURED_OFF,
+        ok=live_result is not None or metadata_result is not None or reason in _CONFIGURED_OFF,
         detail=provider_detail,
         started=stage_started,
     )
@@ -994,7 +1029,7 @@ def _run_pipeline(
     # -- Stage 7: structured-output validation -----------------------------
     stage_started = time.perf_counter()
     served_snapshot: Snapshot | None = None
-    result: GroundedResult | None = live_result
+    result: GroundedResult | None = live_result if live_result is not None else metadata_result
 
     if result is None:
         served_snapshot = resolve_snapshot(spec, scenario)
@@ -1040,7 +1075,10 @@ def _run_pipeline(
         record.stage(
             "schema_validation",
             ok=True,
-            detail=f"Live response validated against {spec.schema_name}.",
+            detail=(
+                f"{'Metadata-only rules result' if live_result is None else 'Live response'} "
+                f"validated against {spec.schema_name}."
+            ),
             started=stage_started,
         )
 

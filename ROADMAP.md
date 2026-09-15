@@ -39,8 +39,8 @@ Prompt: `PROMPT_W1_foundation.md`
 
 ## Week 3 — AI + Citizen Operations  🟡
 - ✅ Meeting Copilot: pre-read + follow-up draft — **follow-up SEND blocks on human approval** (winning moment #2)
-- ⬜ Consular dashboard (volumes, ageing, SLA-risk)
-- ⬜ Case workspace + full case state machine + immutable case_events timeline
+- ✅ Consular dashboard (volumes, ageing, SLA-risk) — business-day clock that pauses on the citizen; the near-breach urgent case is surfaced first after the breaches
+- ✅ Case workspace + full case state machine + immutable case_events timeline — metadata-only AI triage on the CONSULAR-SENSITIVE no-external-model route; a named officer confirms
 - ⬜ Grounded knowledge answers (approved-only; refuse/escalate when source absent)
 - ⬜ Gateway LIVE for all purposes; trace drawer shows classification + model route
 - ⬜ `docs/W3_STATUS.md`

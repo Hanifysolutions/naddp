@@ -41,6 +41,8 @@ __all__ = [
     "ACCESS_DENIED",
     "ACCESS_PRIVILEGED_READ",
     "AUDIT_ACTIONS",
+    "CONSULAR_CASE_ACTIONS",
+    "CONSULAR_CASE_TRANSITION_REJECTED",
     "EXPORT_PERFORMED",
     "MEETING_FOLLOWUP_ACTIONS",
     "MEETING_FOLLOWUP_APPROVAL_REVOKED",
@@ -206,8 +208,43 @@ MEETING_FOLLOWUP_ACTIONS: Final[frozenset[str]] = frozenset(
 #: consular machine extends this set when it lands: a block of literals plus its
 #: ``<prefix>.transition_rejected``, checked against its machine's ``audit_actions()`` by
 #: the same test.
+# ---------------------------------------------------------------------------
+# Consular cases (docs/workflows.md section 3)
+# ---------------------------------------------------------------------------
+
+#: The refusal action of the case machine, for an event no rule can name.
+CONSULAR_CASE_TRANSITION_REJECTED: Final[str] = "case.transition_rejected"
+
+#: Every action the consular case machine may write, transcribed from the "Audit action"
+#: column of section 3. Twelve verbs for twenty-one rows: several events share a verb where
+#: they reach the same outcome from different states (``escalate``, ``close``, ``resolve``,
+#: ``request_information``), and ``payload.event`` and ``payload.from_state`` keep them apart.
+#: ``case.created`` belongs to intake (row 1); the demo seeds cases rather than opening them
+#: through the API, and the verb is reserved for the intake route when it lands.
+CONSULAR_CASE_ACTIONS: Final[frozenset[str]] = frozenset(
+    {
+        "case.created",
+        "case.triaged",
+        "case.assigned",
+        "case.reassigned",
+        "case.information_requested",
+        "case.review_started",
+        "case.escalated",
+        "case.information_received",
+        "case.de_escalated",
+        "case.resolved",
+        "case.reopened",
+        "case.closed",
+        CONSULAR_CASE_TRANSITION_REJECTED,
+    }
+)
+
 AUDIT_ACTIONS: Final[frozenset[str]] = (
-    SESSION_ACTIONS | ACCESS_ACTIONS | OPPORTUNITY_ACTIONS | MEETING_FOLLOWUP_ACTIONS
+    SESSION_ACTIONS
+    | ACCESS_ACTIONS
+    | OPPORTUNITY_ACTIONS
+    | MEETING_FOLLOWUP_ACTIONS
+    | CONSULAR_CASE_ACTIONS
 )
 
 

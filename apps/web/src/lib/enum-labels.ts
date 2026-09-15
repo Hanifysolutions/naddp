@@ -1,14 +1,19 @@
 import type {
   BriefItemType,
   BriefStatus,
+  CaseEventType,
   CaseStatus,
   ConsentStatus,
   DataClassification,
+  EvidenceType,
   FollowupStatus,
   MeetingType,
+  NaddpRole,
   OpportunityStage,
+  Priority,
   RelationshipStrength,
   SignalStatus,
+  SlaState,
 } from '@naddp/contracts';
 
 /**
@@ -173,4 +178,66 @@ export const MEETING_TYPE_LABELS: Record<MeetingType, string> = {
   SITE_VISIT: 'Site visit',
   ROUNDTABLE: 'Roundtable',
   CALL: 'Call',
+};
+
+/**
+ * Consular priority, lowest first. A caption only: the priority recorded on a case is always
+ * the one a named officer confirmed at triage, never the AI's proposal.
+ */
+export const PRIORITY_LABELS: Record<Priority, string> = {
+  LOW: 'Low',
+  NORMAL: 'Normal',
+  HIGH: 'High',
+  URGENT: 'Urgent',
+};
+
+export const PRIORITY_ORDER = orderedKeys(PRIORITY_LABELS);
+
+/**
+ * The service-level clock (`apps/api/app/domain/sla.py`), most at risk first. Business days.
+ *
+ * PAUSED names who it is waiting on, because a paused clock with no reason reads as a stalled
+ * case; STOPPED and NOT_SET say what they are rather than borrowing "on track".
+ */
+export const SLA_STATE_LABELS: Record<SlaState, string> = {
+  BREACHED: 'Breached',
+  DUE_SOON: 'Due soon',
+  ON_TRACK: 'On track',
+  PAUSED: 'Paused, awaiting citizen',
+  STOPPED: 'Clock stopped',
+  NOT_SET: 'No service standard',
+};
+
+export const SLA_STATE_ORDER = orderedKeys(SLA_STATE_LABELS);
+
+/** Kinds of evidence metadata. The documents themselves never reach the web app. */
+export const EVIDENCE_TYPE_LABELS: Record<EvidenceType, string> = {
+  DOCUMENT: 'Document',
+  PHOTO: 'Photo',
+  FORM: 'Form',
+  CORRESPONDENCE: 'Correspondence',
+  IDENTITY_PROOF: 'Identity evidence',
+  OTHER: 'Other',
+};
+
+/** Entries on the append-only case timeline. */
+export const CASE_EVENT_TYPE_LABELS: Record<CaseEventType, string> = {
+  CREATED: 'Case opened',
+  STATUS_CHANGE: 'Status change',
+  NOTE: 'Note',
+  EVIDENCE_ADDED: 'Evidence received',
+  ASSIGNMENT: 'Assignment',
+  DETERMINATION: 'Determination',
+  COMMUNICATION: 'Communication',
+  SLA_BREACH: 'Service standard breached',
+};
+
+/** The six demo roles, as a person reads them on a timeline entry. */
+export const ROLE_LABELS: Record<NaddpRole, string> = {
+  AMBASSADOR: 'Ambassador',
+  DEPUTY: 'Deputy Head of Mission',
+  TRADE_OFFICER: 'Trade officer',
+  CONSULAR_OFFICER: 'Consular officer',
+  DIASPORA_OFFICER: 'Diaspora officer',
+  ADMIN: 'Administrator',
 };

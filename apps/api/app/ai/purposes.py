@@ -21,9 +21,11 @@ tool: ``CLASSIFICATION_RANK`` orders ``PUBLIC < MISSION_INTERNAL < CONSULAR_SENS
 CONFIDENTIAL`` because that is the *propagation* order, so a naive ``rank <= max_rank``
 test on a purpose capped at ``CONFIDENTIAL`` would silently admit ``CONSULAR_SENSITIVE``
 citizen material. ``CONSULAR_SENSITIVE`` is a compartment, not a level (ADR-0006), so it is
-admitted only by a purpose that names it explicitly -- and **no purpose does**, which is
-the conservative reading of ``docs/OPEN_QUESTIONS.md`` Q-06 implemented as data rather than
-as a comment. ``app.models.ai`` records the same rank trap for the same reason.
+admitted only by a purpose that names it explicitly -- and **exactly one does**:
+``CONSULAR_TRIAGE``, whose CONSULAR-SENSITIVE route makes no model call at all and answers
+with metadata-only rules (``app.ai.metadata_triage``, W3.3). That is the conservative reading
+of ``docs/OPEN_QUESTIONS.md`` Q-06 implemented as data rather than as a comment.
+``app.models.ai`` records the same rank trap for the same reason.
 
 **Q-06 and ``CONSULAR_TRIAGE`` -- REVERSIBLE, pending the architect.** Q-06 asks whether
 ``CONSULAR_SENSITIVE`` content may reach a third-party model at all. Option (c), the
@@ -73,6 +75,7 @@ from app.domain.enums import (
 __all__ = [
     "DEFAULT_SCENARIO",
     "HEAVY_BUDGET_SECONDS",
+    "NO_EXTERNAL_MODEL_ROUTE",
     "PURPOSES",
     "ContextPolicy",
     "ContextRefusal",
@@ -362,9 +365,12 @@ _SPECS: Final[tuple[PurposeSpec, ...]] = (
         purpose=AiPurpose.CONSULAR_TRIAGE,
         output_schema=ConsularTriageResult,
         live_eligible=False,
-        # NOT CONSULAR_SENSITIVE. Q-06 option (c): the narrative never enters, so what this
-        # purpose processes is de-identified process metadata, which is MISSION_INTERNAL.
-        max_classification=Classification.MISSION_INTERNAL,
+        # CONSULAR_SENSITIVE since W3.3 (reversing assumption A-12). The case IS consular
+        # material, so the call declares the zone it is about and BUILD_BIBLE section 4a routes
+        # it to "no external route - metadata-only - generation withheld". Q-06 option (c) is
+        # still what makes that safe: the context policy admits six metadata fields and refuses
+        # narrative, and on that route the Gateway asks no model at all.
+        max_classification=Classification.CONSULAR_SENSITIVE,
         consequential=True,
         default_model_route="restricted-metadata-only",
         context_policy=_CONSULAR_TRIAGE_POLICY,
@@ -594,6 +600,11 @@ def _purpose_withheld(spec: PurposeSpec, effective_class: Classification, tier: 
     )
 
 
+#: The route string for the CONSULAR-SENSITIVE band. Named, because the Gateway keys the
+#: metadata-only answer off it and a typo in either place would silently route nothing there.
+NO_EXTERNAL_MODEL_ROUTE: Final[str] = "no-external-model"
+
+
 def route_for(spec: PurposeSpec, effective_class: Classification) -> ModelRoute:
     """Stage 5. Apply the ``BUILD_BIBLE.md`` section 4a routing table.
 
@@ -626,7 +637,7 @@ def route_for(spec: PurposeSpec, effective_class: Classification) -> ModelRoute:
     match effective_class:
         case Classification.CONSULAR_SENSITIVE:
             return ModelRoute(
-                route="no-external-model",
+                route=NO_EXTERNAL_MODEL_ROUTE,
                 reason=(
                     "CONSULAR-SENSITIVE never leaves to an external model (BUILD_BIBLE "
                     "section 4a, and Q-06 resolved to the same answer). No external call "

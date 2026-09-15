@@ -37,6 +37,9 @@ Mounted paths, which the web client and the Week 1 VERIFY block depend on exactl
     POST /v1/ai/knowledge/answer
     POST /v1/ai/diaspora/match
     GET  /v1/ai/traces/{trace_id}
+    GET  /v1/consular/dashboard
+    GET  /v1/consular/cases/{case_id}
+    POST /v1/consular/cases/{case_id}/transition
     GET  /v1/audit/events
     GET  /v1/audit/chain
 
@@ -55,6 +58,7 @@ from fastapi import APIRouter
 from app.api.v1.ai import router as ai_router
 from app.api.v1.audit import router as audit_router
 from app.api.v1.command import router as command_router
+from app.api.v1.consular import router as consular_router
 from app.api.v1.intelligence import router as intelligence_router
 from app.api.v1.meetings import router as meetings_router
 from app.api.v1.meta import router as meta_router
@@ -70,6 +74,7 @@ router.include_router(intelligence_router)
 router.include_router(opportunities_router)
 router.include_router(stakeholders_router)
 router.include_router(meetings_router)
+router.include_router(consular_router)
 router.include_router(ai_router)
 router.include_router(audit_router)
 
