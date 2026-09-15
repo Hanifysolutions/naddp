@@ -9,8 +9,18 @@ denial -- and ``audit_events`` is append-only (ADR-0004), so a row committed by 
 can never be deleted. Every ``assert response.status_code == 403`` in this suite would
 otherwise leave a permanent ``access.denied`` row in the demo's timeline, one per run,
 forever. So the session-scoped client hands the middleware a factory bound to a
-transaction that is rolled back at the end of the session. Any fixture that builds its own
-app must do the same; the parameter on ``create_app`` exists precisely so that it can.
+transaction that is rolled back, never committed. Any fixture that builds its own app must
+do the same; the parameter on ``create_app`` exists precisely so that it can.
+
+**Why that transaction is re-opened after every test.** An uncommitted audit row still
+*claims* the head of the hash chain: ``uq_audit_events_prev_event_hash`` refuses any other
+connection's row that links to the same predecessor until the claiming transaction ends
+(``app.audit.writer``). A discard-only transaction held open for the whole session therefore
+held the head for the whole session, and every later test that appended on its own
+connection queued behind it -- waiting out its budget and failing with a 503, where the old
+best-effort lock had quietly written a forked row instead. So the discard-only transaction is
+rolled back and begun again after each test that used it: its rows are still never
+committed, and no claim outlives the test that made it.
 """
 
 from __future__ import annotations
@@ -21,6 +31,7 @@ from collections.abc import Callable, Iterator
 import pytest
 from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import Connection
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import DEFAULT_DATABASE_URL, get_settings
@@ -93,10 +104,47 @@ def database_available(test_environment: None) -> bool:
     return ping_database()
 
 
+class DiscardedAuditTransaction:
+    """One connection whose writes are never committed, re-opened between tests."""
+
+    def __init__(self, connection: Connection) -> None:
+        self.connection = connection
+        self._transaction = connection.begin()
+
+    def reset(self) -> None:
+        """Discard everything written so far and begin again, releasing any chain claim."""
+        if self._transaction.is_active:
+            self._transaction.rollback()
+        self._transaction = self.connection.begin()
+
+    def close(self) -> None:
+        if self._transaction.is_active:
+            self._transaction.rollback()
+        self.connection.close()
+
+
 @pytest.fixture(scope="session")
-def audit_session_factory(
+def discarded_audit_transaction(
     test_environment: None,
     database_available: bool,
+) -> Iterator[DiscardedAuditTransaction | None]:
+    """The discard-only connection behind :func:`audit_session_factory`, or ``None``."""
+    if not database_available:
+        yield None
+        return
+
+    from app.core.db import get_engine
+
+    holder = DiscardedAuditTransaction(get_engine().connect())
+    try:
+        yield holder
+    finally:
+        holder.close()
+
+
+@pytest.fixture(scope="session")
+def audit_session_factory(
+    discarded_audit_transaction: DiscardedAuditTransaction | None,
 ) -> Iterator[Callable[[], Session] | None]:
     """A session factory whose writes are discarded, for the audit middleware.
 
@@ -105,25 +153,31 @@ def audit_session_factory(
     anyway -- which is the behaviour under a database outage and is exactly what a suite
     running without Postgres should exercise.
     """
-    if not database_available:
+    if discarded_audit_transaction is None:
         yield None
         return
 
-    from app.core.db import get_engine
-
-    connection = get_engine().connect()
-    transaction = connection.begin()
-    factory = sessionmaker(
-        bind=connection,
+    yield sessionmaker(
+        bind=discarded_audit_transaction.connection,
         class_=Session,
         join_transaction_mode="create_savepoint",
         expire_on_commit=False,
     )
-    try:
-        yield factory
-    finally:
-        transaction.rollback()
-        connection.close()
+
+
+@pytest.fixture(autouse=True)
+def release_discarded_audit_claims(request: pytest.FixtureRequest) -> Iterator[None]:
+    """After a test that used the discard-only transaction, roll it back and begin again.
+
+    Resolved during setup, and only for tests whose fixture closure already includes the
+    factory, so a pure unit test never opens a database connection on its account.
+    """
+    holder: DiscardedAuditTransaction | None = None
+    if "audit_session_factory" in request.fixturenames:
+        holder = request.getfixturevalue("discarded_audit_transaction")
+    yield
+    if holder is not None:
+        holder.reset()
 
 
 @pytest.fixture(scope="session")

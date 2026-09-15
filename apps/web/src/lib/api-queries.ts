@@ -5,6 +5,7 @@ import {
   type AiTrace,
   type ApiError,
   type ApprovalQueue,
+  type AuditChainVerification,
   type AuditEventPage,
   type BriefList,
   type CaseTransitionRequest,
@@ -26,10 +27,12 @@ import {
   type MeetingDetail,
   type MeetingList,
   type MorningBrief,
+  type NaddpRole,
   type OpportunityPage,
   type OrganisationList,
   type OutcomesBoard,
   type PipelineBoard,
+  type PolicyResult,
   type SessionSummary,
   type TransitionResponse,
 } from '@naddp/contracts';
@@ -613,6 +616,52 @@ export async function searchDiaspora(body: DiasporaMatchRequest): Promise<AiEnve
  */
 export async function fetchOutcomesBoard(signal?: AbortSignal): Promise<OutcomesBoard> {
   const { data, error, response } = await guard(api.GET('/v1/outcomes', { signal }));
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/** Filters for the governance audit log. Every one is applied by the API, inside its SQL. */
+export interface AuditLogQuery {
+  readonly limit: number;
+  readonly cursor?: string | undefined;
+  readonly actorRole?: NaddpRole | undefined;
+  readonly action?: string | undefined;
+  readonly policyResult?: PolicyResult | undefined;
+}
+
+/**
+ * `GET /v1/audit/events` - one keyset page of the append-only log, newest first, filtered by the
+ * API and by this role's clearance. Throws 403 for a role without `read:audit`, which the
+ * Governance page renders as a refusal rather than as an empty log.
+ */
+export async function fetchAuditLog(
+  query: AuditLogQuery,
+  signal?: AbortSignal,
+): Promise<AuditEventPage> {
+  const { data, error, response } = await guard(
+    api.GET('/v1/audit/events', {
+      params: {
+        query: {
+          limit: query.limit,
+          ...(query.cursor === undefined ? {} : { cursor: query.cursor }),
+          ...(query.actorRole === undefined ? {} : { actor_role: query.actorRole }),
+          ...(query.action === undefined ? {} : { action: query.action }),
+          ...(query.policyResult === undefined ? {} : { policy_result: query.policyResult }),
+        },
+      },
+      signal,
+    }),
+  );
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/**
+ * `GET /v1/audit/chain` - walk the whole hash chain and report whether it is intact. Run on
+ * demand, never on page load: it is the action a viewer takes to check the log for themselves.
+ */
+export async function verifyAuditChain(): Promise<AuditChainVerification> {
+  const { data, error, response } = await guard(api.GET('/v1/audit/chain', {}));
   if (data === undefined) throw toApiError(response.status, error);
   return data;
 }

@@ -24,19 +24,28 @@ first broken link.
     the chain has been copied anywhere off-box, even that fails. Nothing here defends
     against an attacker who rewrites the whole table *and* the verifier.
 
-    *Concurrency.* Appends are serialised by a transaction-scoped Postgres advisory lock
-    taken before the previous hash is read (:func:`_lock_chain`). Without it, two
-    transactions read the same predecessor and both claim it, forking the chain, and the
-    verifier reports a break that was never tampering. This is not theoretical and the
-    demo is NOT single-writer: the audit middleware writes a row per denied request, and
-    four forked ``access.denied`` rows were observed in the live database before the lock
-    was added.
+    *Concurrency: the chain cannot fork.* ``uq_audit_events_prev_event_hash`` is a UNIQUE
+    index on ``prev_event_hash``, ``NULLS NOT DISTINCT`` so there is exactly one genesis row.
+    The database refuses a second row claiming a predecessor that is already claimed, even
+    when the two writers never saw each other's rows. :func:`write_audit_event` reads the
+    head, links to it and inserts inside a SAVEPOINT; a writer that lost the race gets a
+    unique violation, rolls back to the savepoint only -- the caller's business transaction
+    is untouched -- re-reads the head and re-links (:func:`_append_linked`). Every write
+    still lands, in one chain with no fork and no gap.
 
-    The lock is deliberately **best-effort and non-blocking**: it is attempted for a bounded
-    budget and then the row is written anyway, with a warning. An audit write that can wait
-    indefinitely is an audit write that can hang a request, and nothing here is worth
-    freezing the demo for. A fork is detectable and named by the verifier; a hung request in
-    front of an Ambassador is neither.
+    This closes ``docs/W1_STATUS.md`` section 6 item 1. The demo is NOT single-writer -- the
+    audit middleware writes a row per denied request, and browsers issue requests
+    concurrently -- and the earlier best-effort advisory lock wrote *unlocked* once its
+    budget ran out, so a burst could fork the chain and make the verifier report tampering
+    that never happened. A verification a viewer is invited to run on stage has to be one
+    that cannot show a false break.
+
+    Waiting is bounded, never indefinite. A writer queued behind another transaction's
+    uncommitted claim waits at most :data:`_LINK_LOCK_TIMEOUT_MS` per attempt and
+    :data:`_APPEND_BUDGET_SECONDS` in all, then raises :class:`AuditChainBusyError`: the action
+    is refused, and rolls back with its audit row, rather than being recorded out of order.
+    A fork would be a false finding and a hung request would freeze the demo; a clear refusal
+    is neither.
 
 **3. The ORM immutability guard.** A SQLAlchemy ``before_flush`` listener refuses to flush
 a session in which an :class:`~app.models.governance.AuditEvent` has been modified or
@@ -56,6 +65,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import secrets
 import time
 import uuid
 from collections.abc import Iterator, Mapping
@@ -68,8 +78,10 @@ from enum import Enum
 from typing import Any, Final
 
 from sqlalchemy import event, func, select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
+from app.core.errors import AppError
 from app.core.ids import new_id
 from app.core.logging import get_logger, get_request_id
 from app.domain.enums import Classification, PolicyResult
@@ -78,6 +90,8 @@ from app.security.principal import Principal
 
 __all__ = [
     "AUDIT_HASH_DOMAIN",
+    "LINK_INDEX_NAME",
+    "AuditChainBusyError",
     "AuditContext",
     "AuditImmutabilityError",
     "ChainVerification",
@@ -122,6 +136,25 @@ class AuditImmutabilityError(RuntimeError):
     surfaces as an opaque 500 with a logged traceback, which is the correct outcome. A
     caller cannot fix it and must not be told how to.
     """
+
+
+class AuditChainBusyError(AppError):
+    """An audit row could not be linked into the chain within its budget.
+
+    Raised instead of writing an unlinked or out-of-order row. It propagates through the
+    caller's transaction, so the action the row would have recorded does not happen either:
+    ADR-0004's rule that an action and its audit row commit together holds under contention
+    too. A 503, because it is transient -- another transaction held the head of the chain for
+    longer than the budget -- and a retry normally succeeds.
+    """
+
+    code = "audit_chain_busy"
+    status_code = 503
+    title = "Audit Log Busy"
+    default_detail = (
+        "The action could not be recorded in the audit log in time, so it was not carried out. "
+        "Try again."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -334,91 +367,141 @@ def _database_now(session: Session) -> datetime:
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
-#: Advisory-lock key that serialises appends to the audit chain. An arbitrary but stable
-#: 64-bit constant; it only has to be unique among advisory locks this application takes.
-_CHAIN_LOCK_KEY: Final[int] = 0x4E41444450415544  # "NADDPAUD"
+#: The UNIQUE index that makes a fork impossible (migration ``e7c41a9d2b58``).
+LINK_INDEX_NAME: Final[str] = "uq_audit_events_prev_event_hash"
+
+#: The longest one attempt waits on another transaction's uncommitted claim to the same
+#: predecessor. A unique-index conflict with an in-flight row is a lock wait on that
+#: transaction, so ``lock_timeout`` bounds it. An append costs a few round trips, so two
+#: seconds is far beyond ordinary contention and short enough to retry within budget.
+_LINK_LOCK_TIMEOUT_MS: Final[int] = 2_000
+
+#: The total time one append may spend re-linking before it refuses. A burst far larger than
+#: anything a demo produces drains well inside it; see ``tests/test_audit_chain_concurrency.py``.
+_APPEND_BUDGET_SECONDS: Final[float] = 10.0
+
+#: SQLSTATE of a unique violation: the link (or, after an id nudge, the id) was claimed first.
+_UNIQUE_VIOLATION: Final[str] = "23505"
+
+#: SQLSTATEs of the other ways losing the race surfaces: a lock wait past ``lock_timeout``,
+#: and being chosen as a deadlock victim while waiting on the head.
+_CONTENTION_STATES: Final[frozenset[str]] = frozenset({"55P03", "40P01"})
+
+#: The constraints whose violation means "another writer got there first".
+_RACE_CONSTRAINTS: Final[frozenset[str]] = frozenset(
+    {"uq_audit_events_prev_event_hash", "pk_audit_events"}
+)
 
 
-#: Total time :func:`_lock_chain` will spend trying to serialise before giving up and
-#: writing anyway.
-#:
-#: Sized from measurement, not from a guess. One audit write costs about five round trips
-#: (advisory lock, clock read, tail read, insert, commit); against Postgres in a container
-#: that is roughly 50-100ms, so a queue of N writers drains in N x 100ms. A 1s budget was
-#: tried first and was exceeded by a 12-write burst across 4 workers, which forked the
-#: chain. 3s covers a queue about 30 deep -- far beyond anything a person clicking through
-#: a demo generates -- while still bounding the worst-case added latency of a single
-#: request to something a user would not sit through unknowingly.
-_CHAIN_LOCK_BUDGET_SECONDS: Final[float] = 3.0
+@dataclass(frozen=True, slots=True)
+class _ChainHead:
+    """The most recent row: what the next row links to, and what its id must sort after."""
 
-#: Gap between attempts. Small enough that ordinary contention resolves in a few
-#: milliseconds, large enough not to spin a core.
-_CHAIN_LOCK_RETRY_SECONDS: Final[float] = 0.005
+    id: uuid.UUID
+    event_hash: str
 
 
-def _lock_chain(session: Session) -> bool:
-    """Try to serialise audit appends for the rest of the caller's transaction.
-
-    Returns whether the lock was acquired.
-
-    WHY SERIALISE. The previous hash is read and then written a moment later. Two
-    transactions that interleave there both read the same predecessor and both claim it,
-    forking the chain -- and :func:`verify_chain` correctly reports a break that was never
-    tampering. An earlier draft of this module reasoned that "the demo is single-writer,
-    so this cannot arise". That was wrong: the audit middleware writes a row per denied
-    request, and browsers issue requests concurrently. Four forked ``access.denied`` rows
-    were observed in the live database before this was added.
-
-    WHY THE LOCK IS NON-BLOCKING. ``pg_advisory_xact_lock`` waits indefinitely, and an
-    audit write that can wait indefinitely is an audit write that can hang a request. That
-    is not hypothetical either: the blocking form deadlocked the integration suite, where a
-    fixture holds an outer transaction open while the TestClient writes on a second
-    connection. Whatever the audit log is worth, it is never worth freezing the demo --
-    so this tries for a bounded budget and then proceeds unlocked, logging loudly.
-
-    The trade-off is explicit: under contention we may write a forked row rather than
-    refuse or hang. A fork is *detectable* (the verifier names the position) and
-    recoverable; a hung request in front of an Ambassador is neither.
-
-    ``pg_try_advisory_xact_lock`` returns a boolean rather than raising, so a failed
-    attempt cannot abort the caller's transaction the way a ``lock_timeout`` error would.
-    The lock is released automatically when the transaction ends, commit or rollback.
-    """
-    if session.get_bind().dialect.name != "postgresql":
-        # Advisory locks are Postgres-specific. Every deployment target is Postgres; this
-        # guard exists so a non-Postgres unit test does not fail on an unknown function.
-        return False
-
-    deadline = time.monotonic() + _CHAIN_LOCK_BUDGET_SECONDS
-    while True:
-        if bool(session.scalar(select(func.pg_try_advisory_xact_lock(_CHAIN_LOCK_KEY)))):
-            return True
-        if time.monotonic() >= deadline:
-            _logger.warning(
-                "audit.chain_lock_unavailable",
-                budget_seconds=_CHAIN_LOCK_BUDGET_SECONDS,
-                consequence=(
-                    "writing without serialisation; the chain may fork at this row. "
-                    "verify_chain will report the position."
-                ),
-            )
-            return False
-        time.sleep(_CHAIN_LOCK_RETRY_SECONDS)
-
-
-def _previous_event_hash(session: Session) -> str | None:
-    """Return the ``event_hash`` of the most recent row, or ``None`` for the genesis row.
+def _chain_head(session: Session) -> _ChainHead | None:
+    """Return the most recent row's id and digest, or ``None`` when the chain is empty.
 
     Ordered by ``id``, not by ``occurred_at``. Primary keys are ULIDs rendered into UUIDs
     (ADR-0007), whose leading 48 bits are a millisecond timestamp, and Postgres compares
     ``uuid`` byte-wise -- so ``ORDER BY id DESC`` is a chronological order that does not
-    depend on trusting a separate clock column. Rows written in the same transaction sort
-    correctly among themselves for the same reason.
+    depend on trusting a separate clock column.
 
-    Callers must hold the chain lock (:func:`_lock_chain`) before calling this, or the
-    value read here can be stale by the time the row is inserted.
+    The value read here can be stale by the time the row is inserted: another transaction
+    may be linking to the same head. That is safe because of the unique link index, not
+    because of anything this function does (:func:`_append_linked`).
     """
-    return session.scalar(select(AuditEvent.event_hash).order_by(AuditEvent.id.desc()).limit(1))
+    row = session.execute(
+        select(AuditEvent.id, AuditEvent.event_hash).order_by(AuditEvent.id.desc()).limit(1)
+    ).first()
+    return None if row is None else _ChainHead(id=row.id, event_hash=row.event_hash)
+
+
+def _id_after(head: _ChainHead | None) -> uuid.UUID:
+    """A fresh ULID that sorts after the head, so ULID order stays chain order.
+
+    :func:`verify_chain` walks rows in ``id`` order and expects each to name the one before
+    it. A writer that minted its id, lost the race and re-linked behind a row with a later id
+    would break that on its own. So the id is minted per attempt, after the head is read, and
+    nudged past the head in the rare case the ULID clock does not already put it there
+    (another process, within the same millisecond).
+    """
+    candidate = new_id()
+    if head is None or candidate > head.id:
+        return candidate
+    return uuid.UUID(int=head.id.int + 1 + secrets.randbelow(1 << 32))
+
+
+def _sqlstate(exc: DBAPIError) -> str | None:
+    state = getattr(exc.orig, "sqlstate", None)
+    return state if isinstance(state, str) else None
+
+
+def _lost_the_race(exc: DBAPIError) -> bool:
+    """Whether ``exc`` means another writer claimed the head first, rather than a real fault."""
+    state = _sqlstate(exc)
+    if state in _CONTENTION_STATES:
+        return True
+    if state != _UNIQUE_VIOLATION:
+        return False
+    diagnostics = getattr(exc.orig, "diag", None)
+    return getattr(diagnostics, "constraint_name", None) in _RACE_CONSTRAINTS
+
+
+def _append_linked(session: Session, fields: Mapping[str, Any]) -> AuditEvent:
+    """Link one row to the head of the chain and insert it, re-linking if it lost the race.
+
+    Each attempt reads the head, mints an id that sorts after it, computes the digest and
+    inserts -- inside a SAVEPOINT, with ``lock_timeout`` bounding any wait on another
+    transaction's uncommitted claim. Losing the race (the unique link index refused the row,
+    the wait timed out, or Postgres picked this statement as a deadlock victim) rolls back to
+    the savepoint only: the caller's business transaction and everything it has written stay
+    intact, and the next attempt links behind the winner. A new ``AuditEvent`` is built per
+    attempt, because an object flushed inside a rolled-back savepoint is not reusable.
+
+    Raises:
+        AuditChainBusyError: the budget ran out before the row could be linked.
+        DBAPIError: any other database fault, unchanged.
+    """
+    postgres = session.get_bind().dialect.name == "postgresql"
+    deadline = time.monotonic() + _APPEND_BUDGET_SECONDS
+    attempt = 0
+    while True:
+        attempt += 1
+        head = _chain_head(session)
+        row = AuditEvent(id=_id_after(head), **fields)
+        row.prev_event_hash = head.event_hash if head is not None else None
+        row.event_hash = compute_event_hash(row, row.prev_event_hash)
+        try:
+            with session.begin_nested():
+                if postgres:
+                    # set_config(..., is_local => true) inside the savepoint: a rolled-back
+                    # attempt reverts it with the savepoint, and a successful one restores the
+                    # caller's value explicitly before the savepoint is released.
+                    previous_timeout = session.scalar(select(func.current_setting("lock_timeout")))
+                    session.execute(
+                        select(func.set_config("lock_timeout", f"{_LINK_LOCK_TIMEOUT_MS}ms", True))
+                    )
+                session.add(row)
+                session.flush()
+                if postgres:
+                    session.execute(select(func.set_config("lock_timeout", previous_timeout, True)))
+        except DBAPIError as exc:
+            if not _lost_the_race(exc):
+                raise
+            if time.monotonic() >= deadline:
+                _logger.error(
+                    "audit.chain_busy",
+                    attempts=attempt,
+                    budget_seconds=_APPEND_BUDGET_SECONDS,
+                    consequence="refused rather than written out of order; the action rolls back",
+                )
+                raise AuditChainBusyError(extra={"attempts": attempt}) from exc
+            _logger.info("audit.chain_relinked", attempt=attempt, sqlstate=_sqlstate(exc))
+            continue
+        return row
 
 
 def write_audit_event(
@@ -495,6 +578,8 @@ def write_audit_event(
 
     Raises:
         ValueError: if ``occurred_at`` is naive.
+        AuditChainBusyError: the row could not be linked into the chain within its budget.
+            Nothing was written, and the caller's transaction must not commit the action.
 
     Returns:
         The persisted :class:`~app.models.governance.AuditEvent`, with its ``id``,
@@ -510,39 +595,31 @@ def write_audit_event(
         )
         raise ValueError(msg)
 
-    # Flush first so that any audit row written earlier in this transaction is visible to
-    # the ORDER BY below. Without it, two events in one unit of work would both chain to
-    # the same predecessor and fork the chain.
+    # Flush first, outside the savepoint, so that any audit row written earlier in this
+    # transaction is visible to the head read, and so that a rolled-back link attempt can
+    # never take the caller's pending changes with it.
     session.flush()
 
-    row = AuditEvent(
-        id=new_id(),
-        occurred_at=occurred_at if occurred_at is not None else _database_now(session),
-        actor_user_id=actor.user_id if actor is not None else None,
-        actor_role=actor.role if actor is not None else None,
-        action=action,
-        object_type=object_type,
-        object_id=object_id,
-        object_public_ref=object_public_ref,
-        policy_result=policy_result,
-        classification=classification,
-        request_id=request_id or context.request_id,
-        trace_id=trace_id if trace_id is not None else context.trace_id,
-        summary=summary,
-        payload=dict(payload or {}),
-        ip_address=ip_address if ip_address is not None else context.ip_address,
-        user_agent=user_agent if user_agent is not None else context.user_agent,
+    row = _append_linked(
+        session,
+        {
+            "occurred_at": occurred_at if occurred_at is not None else _database_now(session),
+            "actor_user_id": actor.user_id if actor is not None else None,
+            "actor_role": actor.role if actor is not None else None,
+            "action": action,
+            "object_type": object_type,
+            "object_id": object_id,
+            "object_public_ref": object_public_ref,
+            "policy_result": policy_result,
+            "classification": classification,
+            "request_id": request_id or context.request_id,
+            "trace_id": trace_id if trace_id is not None else context.trace_id,
+            "summary": summary,
+            "payload": dict(payload or {}),
+            "ip_address": ip_address if ip_address is not None else context.ip_address,
+            "user_agent": user_agent if user_agent is not None else context.user_agent,
+        },
     )
-
-    # Serialise before reading the tail: read-then-write without the lock forks the chain.
-    # Best-effort by design -- see _lock_chain on why this must never block indefinitely.
-    _lock_chain(session)
-    previous = _previous_event_hash(session)
-    row.prev_event_hash = previous
-    row.event_hash = compute_event_hash(row, previous)
-
-    session.add(row)
-    session.flush()
 
     _logger.info(
         "audit.event_written",
@@ -594,9 +671,9 @@ def verify_chain(session: Session, limit: int | None = None) -> ChainVerificatio
     What a break means: the row named either had a field altered after it was written, or
     its predecessor was altered or removed. It does **not** on its own identify which --
     the verifier reports the first position at which the recomputation stops agreeing, and
-    a human reads the log from there. Remember also the concurrency caveat in the module
-    docstring: a forked chain from two concurrent writers looks exactly like tampering, so
-    a break on a multi-writer deployment is a question, not a conclusion.
+    a human reads the log from there. Concurrent writers cannot produce a break: the unique
+    link index refuses a second claim on any predecessor and the writer re-links (module
+    docstring), so a break is a finding, never an artefact of load.
     """
     if limit is not None and limit <= 0:
         return ChainVerification(is_intact=True, checked=0)

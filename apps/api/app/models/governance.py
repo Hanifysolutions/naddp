@@ -568,6 +568,15 @@ class AuditEvent(UUIDPrimaryKeyMixin, ClassifiedMixin, Base):
         # (actor_user_id, occurred_at) answers "what did this person do, most recent
         # first" -- the question an auditor asks, and the one the trace drawer runs.
         Index(None, "actor_user_id", "occurred_at"),
+        # The chain cannot fork: no two rows may claim the same predecessor, and NULLS NOT
+        # DISTINCT allows one genesis row. app.audit.writer re-links a writer that lost the
+        # race (migration e7c41a9d2b58, docs/W1_STATUS.md section 6 item 1).
+        Index(
+            "uq_audit_events_prev_event_hash",
+            "prev_event_hash",
+            unique=True,
+            postgresql_nulls_not_distinct=True,
+        ),
         {
             "comment": (
                 "APPEND-ONLY (ADR-0004). INSERT and SELECT only; UPDATE and DELETE are "

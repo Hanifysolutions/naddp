@@ -4,6 +4,7 @@ import type { ApiError, AuditEventPage } from '@naddp/contracts';
 
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { auditActionLabel } from '@/lib/audit-labels';
 import { cn } from '@/lib/utils';
 
 /**
@@ -85,10 +86,10 @@ export function AuditTrailStrip({
               </Badge>
             )}
             <span className="min-w-0 flex-1">
-              {/* The action is an identifier, which is one of the two things mono is still
-                  for in this design system. */}
-              <span className="block truncate font-mono text-2xs text-slate-700">
-                {event.action}
+              {/* The action in plain language, from the shared audit label map. The
+                  closed-vocabulary token stays on the title for an auditor who needs it. */}
+              <span className="block truncate text-2xs text-slate-700" title={event.action}>
+                {auditActionLabel(event.action, event.policy_result)}
               </span>
               <span className="block truncate text-xs leading-snug text-ink">
                 {event.summary}

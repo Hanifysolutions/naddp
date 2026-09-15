@@ -173,8 +173,7 @@ export const NAV_CATALOGUE: readonly NavItem[] = [
     description: 'Append-only audit trail and AI decision traces.',
     icon: 'governance',
     permission: 'read:audit',
-    availability: 'planned',
-    plannedFor: 'Week 4',
+    availability: 'available',
   },
 ];
 

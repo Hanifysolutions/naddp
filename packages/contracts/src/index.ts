@@ -420,6 +420,13 @@ export type FollowupApproveResponse = components['schemas']['FollowupApproveResp
 /** `GET /v1/audit/events`: one page of the append-only log, newest first. */
 export type AuditEventPage = components['schemas']['AuditEventPageResponse'];
 export type AuditEvent = components['schemas']['AuditEventResponse'];
+
+/**
+ * `GET /v1/audit/chain`: whether the hash chain is intact, over how many events, and - only on a
+ * break - the first entry at which recomputation stopped agreeing. Not filtered by clearance: it
+ * discloses a boolean, a count and, on failure, one id and its position, never content.
+ */
+export type AuditChainVerification = components['schemas']['ChainVerificationResponse'];
 export type PolicyResult = components['schemas']['PolicyResult'];
 
 /**

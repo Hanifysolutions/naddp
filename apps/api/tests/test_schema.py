@@ -339,6 +339,9 @@ def _make_audit_event() -> AuditEvent:
         summary="synthetic row created by tests/test_schema.py",
         payload={},
         event_hash=uuid.uuid4().hex,
+        # An unclaimed link. The chain refuses a second genesis row (a NULL link) and a second
+        # claim on any predecessor, so a probe row must name a predecessor nobody holds.
+        prev_event_hash=uuid.uuid4().hex,
         classification=Classification.MISSION_INTERNAL,
     )
 

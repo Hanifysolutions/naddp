@@ -25,6 +25,15 @@ export const queryKeys = {
     ['opportunities', 'list', role, limit] as const,
   auditEvents: (role: NaddpRole | null, limit: number) =>
     ['audit', 'events', role, limit] as const,
+  /** The governance audit log. Clearance scopes it by role; the filters are part of the question. */
+  auditLog: (
+    role: NaddpRole | null,
+    filters: {
+      readonly actorRole: string | null;
+      readonly action: string | null;
+      readonly policyResult: string | null;
+    },
+  ) => ['audit', 'log', role, filters.actorRole, filters.action, filters.policyResult] as const,
   pipelineBoard: (role: NaddpRole | null) => ['opportunities', 'board', role] as const,
   organisations: (role: NaddpRole | null) => ['stakeholders', 'organisations', role] as const,
   organisationDossier: (role: NaddpRole | null, id: string) =>

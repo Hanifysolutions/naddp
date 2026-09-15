@@ -312,8 +312,9 @@ def verify_audit_chain(
     own contents and its predecessor's digest, under the ``naddp.audit.v1`` domain. It does
     not defend against an attacker who rewrote the whole table *and* recomputed the chain --
     for that, the head digest has to be copied somewhere off-box and compared, which is
-    pilot work noted in ADR-0004. It also cannot distinguish tampering from two concurrent
-    writers forking the chain; the demo is single-writer, so a break here is a real finding.
+    pilot work noted in ADR-0004. Concurrent writers cannot fork the chain -- the unique link
+    index refuses a second claim on any predecessor -- so a break here is a real finding, never
+    an artefact of load.
 
     Args:
         session: Any session with ``SELECT`` on ``audit_events``.
