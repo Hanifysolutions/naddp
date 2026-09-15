@@ -24,6 +24,12 @@ from app.security.principal import principal_for_role
 
 PURPOSE_LIST = list(PURPOSES)
 
+#: Purposes a snapshot may answer. KNOWLEDGE_ANSWER is not one: its question is free text, so
+#: its deterministic path is the approved text itself, or a refusal (A-17).
+SNAPSHOT_SERVED_PURPOSES = [
+    purpose for purpose in PURPOSE_LIST if PURPOSES[purpose].snapshot_fallback
+]
+
 #: One representative caller per purpose, plus the scenario the demo script exercises.
 DEMO_BEATS: dict[AiPurpose, tuple[RoleCode, str | None]] = {
     AiPurpose.MORNING_BRIEF: (RoleCode.AMBASSADOR, None),
@@ -164,7 +170,7 @@ def test_every_cited_source_has_a_resolvable_url() -> None:
 # --------------------------------------------------------------------------- end to end
 
 
-@pytest.mark.parametrize("purpose", PURPOSE_LIST)
+@pytest.mark.parametrize("purpose", SNAPSHOT_SERVED_PURPOSES)
 def test_each_purpose_returns_a_grounded_answer_with_the_live_path_disabled(
     purpose: AiPurpose,
 ) -> None:
@@ -188,6 +194,30 @@ def test_each_purpose_returns_a_grounded_answer_with_the_live_path_disabled(
     assert outcome.trace.citation_check_passed is True
     assert outcome.trace.approval_status is not ApprovalStatus.BLOCKED
     assert len(outcome.trace.stages) == 9
+
+
+def test_a_knowledge_question_is_never_answered_from_a_snapshot() -> None:
+    """The knowledge snapshots stay on disk as reference answers and are never served (A-17).
+
+    Even the hero question, pinned to its own scenario: with no knowledge base to consult the
+    answer is a refusal, not the cached text -- a cached answer is an answer to whatever question
+    it was cached for.
+    """
+    outcome = generate_traced(
+        AiPurpose.KNOWLEDGE_ANSWER,
+        Classification.MISSION_INTERNAL,
+        GatewayContext(
+            question="What Australian qualifications train someone for a lithium refinery role?",
+            subject_ref="lithium-processing-skills-pathways",
+        ),
+        principal_for_role(RoleCode.TRADE_OFFICER),
+    )
+    result = outcome.envelope.result
+    assert result is not None
+    assert result.model_dump()["answered_from_approved_sources"] is False
+    assert outcome.envelope.evidence == []
+    assert outcome.trace.snapshot_key is None
+    assert outcome.trace.fallback is False
 
 
 @pytest.mark.parametrize("role", list(RoleCode))

@@ -7,6 +7,9 @@ import type {
   DataClassification,
   EvidenceType,
   FollowupStatus,
+  Jurisdiction,
+  KnowledgeAudience,
+  KnowledgeStatus,
   MeetingType,
   NaddpRole,
   OpportunityStage,
@@ -241,3 +244,29 @@ export const ROLE_LABELS: Record<NaddpRole, string> = {
   DIASPORA_OFFICER: 'Diaspora officer',
   ADMIN: 'Administrator',
 };
+
+/** Who a knowledge article was written for. Independent of classification. */
+export const KNOWLEDGE_AUDIENCE_LABELS: Record<KnowledgeAudience, string> = {
+  ALL_STAFF: 'All staff',
+  TRADE: 'Trade',
+  CONSULAR: 'Consular',
+  DIASPORA: 'Diaspora',
+  SENIOR: 'Senior staff',
+};
+
+/** A knowledge article's editorial state. Only APPROVED, in force, grounds an answer. */
+export const KNOWLEDGE_STATUS_LABELS: Record<KnowledgeStatus, string> = {
+  DRAFT: 'Draft',
+  IN_REVIEW: 'In review',
+  APPROVED: 'Approved',
+  RETIRED: 'Retired',
+};
+
+/** Which side of the bilateral relationship publishes a source. */
+export const JURISDICTION_LABELS: Record<Jurisdiction, string> = {
+  AU: 'Australia',
+  NG: 'Nigeria',
+  INTL: 'International',
+};
+
+export const JURISDICTION_ORDER = orderedKeys(JURISDICTION_LABELS);

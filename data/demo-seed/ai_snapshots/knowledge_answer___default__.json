@@ -3,7 +3,7 @@
   "purpose": "KNOWLEDGE_ANSWER",
   "scenario": "__default__",
   "approval_status": "NOT_REQUIRED",
-  "notes": "Default grounded answer. Says plainly which part of the thread is unsourced.",
+  "notes": "Reference answer only, NEVER SERVED. KNOWLEDGE_ANSWER takes a free-text question, so a cached answer would be an answer to a different question; its deterministic path is the approved text quoted verbatim, or a refusal (W3.4, OPEN_QUESTIONS A-17). Kept so the ADR-0002 coverage checks and the citation audit still hold over it.",
   "evidence_ids": [
     "covalent-lithium-first-product-kwinana-refinery",
     "fmino-tinubu-lithium-plant-nasarawa",

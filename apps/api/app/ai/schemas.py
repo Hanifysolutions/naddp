@@ -46,7 +46,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.domain.enums import ApprovalStatus, BriefItemType, ConsentStatus, Priority
+from app.domain.enums import ApprovalStatus, BriefItemType, ConsentStatus, Jurisdiction, Priority
 
 __all__ = [
     "CITATION_FIELD_NAMES",
@@ -60,6 +60,8 @@ __all__ = [
     "GatewayResult",
     "GroundedResult",
     "KnowledgeAnswerResult",
+    "KnowledgePassage",
+    "KnowledgeReferral",
     "MeetingFollowupResult",
     "MeetingPrepResult",
     "MorningBriefResult",
@@ -220,6 +222,11 @@ class GatewayContext(BaseModel):
     #: Sector codes (``data/taxonomy/sectors.json``) narrowing stage 3 retrieval.
     sector_codes: tuple[str, ...] = ()
 
+    #: For ``KNOWLEDGE_ANSWER``: restrict grounding to articles restating a source in these
+    #: jurisdictions (mission-authored guidance with no external source always qualifies).
+    #: Empty means any jurisdiction.
+    jurisdictions: tuple[Jurisdiction, ...] = ()
+
     #: Metadata scalars about the subject. Never narrative (see the purpose's policy).
     facts: Mapping[str, ContextValue] = Field(default_factory=dict)
 
@@ -269,6 +276,15 @@ class GroundedResult(BaseModel):
     #: purposes; declared as a switch so an ungrounded purpose (there is none, and adding
     #: one needs an ADR) would have to say so explicitly.
     requires_citations: ClassVar[bool] = True
+
+    def declines_to_answer(self) -> bool:
+        """Whether this result is a refusal to answer rather than an answer.
+
+        False for every purpose but ``KNOWLEDGE_ANSWER``, whose refusal -- no approved source
+        supports the question -- is a first-class result that cites nothing, and which stage 8
+        passes only if it indeed cites nothing.
+        """
+        return False
 
     def cited_evidence_ids(self) -> frozenset[str]:
         """Return every evidence id cited anywhere in this result.
@@ -502,15 +518,80 @@ class ConsularTriageResult(GroundedResult):
 # ---------------------------------------------------------------------------
 
 
+class KnowledgePassage(BaseModel):
+    """Sentences quoted verbatim from one approved article, and the citation that backs it."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    article_slug: Label
+    article_title: Label
+    article_version: Annotated[int, Field(ge=1)]
+    citation_id: Label
+    text: Prose
+    matched_terms: Annotated[list[Label], Field(default_factory=list, max_length=16)]
+
+
+class KnowledgeReferral(BaseModel):
+    """Why a question was refused, and the named officer to take it to."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    reason: Prose
+    guidance: Prose
+    refer_to_name: Label
+    refer_to_title: Label
+
+
 class KnowledgeAnswerResult(GroundedResult):
-    """A grounded answer. ``answered_from_approved_sources`` is the refusal switch."""
+    """A grounded answer, or a refusal. ``answered_from_approved_sources`` is the switch.
+
+    **Answered:** at least one citation, every quoted passage backed by one of them, no referral.
+    **Refused:** no citation, no passage, and a referral saying why and to whom. A citation on a
+    refusal would be a source nobody consulted, so the schema refuses the combination outright
+    rather than leaving it to a reviewer to notice.
+
+    ``requires_citations`` is off because the requirement is conditional; the validator below
+    enforces it, and stage 8 still checks every id that is cited.
+    """
+
+    requires_citations: ClassVar[bool] = False
 
     question: Prose
     answer: Prose
-    citations: CitationList
+    citations: Annotated[list[str], Field(default_factory=list, max_length=8)]
+    passages: Annotated[list[KnowledgePassage], Field(default_factory=list, max_length=3)]
     caveats: Annotated[list[Label], Field(default_factory=list, max_length=6)]
     answered_from_approved_sources: bool
+    refusal: KnowledgeReferral | None = None
     confidence: Confidence
+
+    def declines_to_answer(self) -> bool:
+        return not self.answered_from_approved_sources
+
+    @model_validator(mode="after")
+    def _an_answer_cites_and_a_refusal_does_not(self) -> KnowledgeAnswerResult:
+        if self.answered_from_approved_sources:
+            if not self.citations:
+                msg = "An answer from approved sources must cite them."
+                raise ValueError(msg)
+            if self.refusal is not None:
+                msg = "An answer carries no refusal."
+                raise ValueError(msg)
+            unbacked = {passage.citation_id for passage in self.passages} - set(self.citations)
+            if unbacked:
+                msg = f"Quoted passages cite ids the answer does not: {sorted(unbacked)}."
+                raise ValueError(msg)
+        else:
+            if self.citations or self.passages:
+                msg = (
+                    "A refusal cites nothing and quotes nothing: a citation on a refusal would be "
+                    "a source nobody consulted."
+                )
+                raise ValueError(msg)
+            if self.refusal is None:
+                msg = "A refusal must say why, and where to take the question."
+                raise ValueError(msg)
+        return self
 
 
 # ---------------------------------------------------------------------------

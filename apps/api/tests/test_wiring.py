@@ -72,6 +72,8 @@ EXPECTED_ROUTES: Final[tuple[tuple[str, str], ...]] = (
     ("GET", "/v1/consular/dashboard"),
     ("GET", "/v1/consular/cases/{case_id}"),
     ("POST", "/v1/consular/cases/{case_id}/transition"),
+    ("GET", "/v1/knowledge"),
+    ("GET", "/v1/knowledge/articles/{slug}"),
     ("GET", "/v1/audit/events"),
     ("GET", "/v1/audit/chain"),
 )
@@ -180,6 +182,7 @@ def test_the_v1_prefix_is_applied_once_and_only_by_main(
         ("/v1/opportunities", "opportunities"),
         ("/v1/meetings", "meetings"),
         ("/v1/consular/dashboard", "consular"),
+        ("/v1/knowledge", "knowledge"),
         ("/v1/ai/morning-brief", "ai"),
         ("/v1/audit/events", "governance"),
     ],
@@ -299,6 +302,7 @@ def test_every_business_route_refuses_an_anonymous_caller(client: TestClient) ->
             organisation_id=nil,
             stakeholder_id=nil,
             followup_id=nil,
+            slug="no-such-article",
         )
         response = client.request(method, url)
         assert response.status_code == 403, f"{method} {url} answered {response.status_code}"

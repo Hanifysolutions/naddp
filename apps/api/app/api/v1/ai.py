@@ -53,6 +53,7 @@ from app.domain.enums import (
     AiPurpose,
     ApprovalStatus,
     Classification,
+    Jurisdiction,
     RoleCode,
     dominant,
 )
@@ -107,6 +108,14 @@ class KnowledgeAnswerRequest(BaseModel):
         default_factory=list,
         max_length=8,
         description="Optional sector codes (data/taxonomy/sectors.json) narrowing retrieval.",
+    )
+    jurisdictions: list[Jurisdiction] = Field(
+        default_factory=list,
+        max_length=3,
+        description=(
+            "Optional: ground only in articles restating a source in these jurisdictions. "
+            "Mission-authored guidance always qualifies. Empty means any jurisdiction."
+        ),
     )
 
 
@@ -557,12 +566,16 @@ def answer_question(
     db: DbSession,
     payload: KnowledgeAnswerRequest,
 ) -> GatewayResult:
-    """Answer a question from ``APPROVED`` knowledge articles only.
+    """Answer a question from approved knowledge articles only -- or refuse.
 
-    The question is passed as the context's ``question`` field, which is the only free text
-    any purpose accepts and is capped at 1000 characters. The evidence still comes from the
-    Gateway's own retrieval under the caller's clearance -- a caller cannot supply the
-    passage they want quoted back.
+    Grounded-or-refuse (OPEN_QUESTIONS A-17). The Gateway filters the knowledge base to APPROVED,
+    in-date articles written for the caller's role and zones -- and to the named jurisdictions,
+    if any -- BEFORE retrieval ranks anything, then tests whether any surviving article supports
+    the question. If one does, the answer quotes it and cites it. If none does, the result is a
+    refusal: ``answered_from_approved_sources`` false, no citation, no quoted text, and a named
+    officer to take the question to. Both are HTTP 200 with ``approval_status = NOT_REQUIRED``:
+    a refusal is an answer about the knowledge base, not an error. The question is the only free
+    text any purpose accepts, and a caller cannot supply the passage they want quoted back.
     """
     envelope = generate(
         AiPurpose.KNOWLEDGE_ANSWER,
@@ -570,6 +583,7 @@ def answer_question(
         GatewayContext(
             question=payload.question,
             sector_codes=tuple(payload.sector_codes),
+            jurisdictions=tuple(payload.jurisdictions),
         ),
         principal,
         session=db,

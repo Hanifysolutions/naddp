@@ -18,6 +18,9 @@ import {
   type FollowupDraftResponse,
   type FollowupStatus,
   type FollowupTransitionResponse,
+  type KnowledgeAnswerRequest,
+  type KnowledgeArticle,
+  type KnowledgeOverview,
   type MeetingDetail,
   type MeetingList,
   type MorningBrief,
@@ -528,6 +531,48 @@ export async function fetchAiTrace(traceId: string, signal?: AbortSignal): Promi
   );
   if (data === undefined) throw toApiError(response.status, error);
   return data;
+}
+
+/**
+ * `GET /v1/knowledge` - the approved, in-date articles written for this caller's role: the whole
+ * corpus an answer may be grounded in, plus the support threshold and the role's demo questions.
+ *
+ * Throws 403 for a role without `read:knowledge_article` (ADMIN), which the page renders as a
+ * refusal rather than as an empty knowledge base.
+ */
+export async function fetchKnowledgeOverview(signal?: AbortSignal): Promise<KnowledgeOverview> {
+  const { data, error, response } = await guard(api.GET('/v1/knowledge', { signal }));
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/**
+ * `GET /v1/knowledge/articles/{slug}` - the article a citation resolves to, with its approver
+ * and validity. 404 for an article not written for this role or not approved.
+ */
+export async function fetchKnowledgeArticle(
+  slug: string,
+  signal?: AbortSignal,
+): Promise<KnowledgeArticle> {
+  const { data, error, response } = await guard(
+    api.GET('/v1/knowledge/articles/{slug}', { params: { path: { slug } }, signal }),
+  );
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/**
+ * `POST /v1/ai/knowledge/answer` - ask the approved knowledge base a question.
+ *
+ * Grounded-or-refuse: the result is a grounded answer quoting approved articles, or a refusal
+ * that cites nothing. Both are HTTP 200 and both resolve here - a refusal is the answerer
+ * working, never an error branch. `result` is `unknown` on the wire and is narrowed by the caller
+ * before a word is rendered.
+ */
+export async function askKnowledge(body: KnowledgeAnswerRequest): Promise<AiEnvelope<unknown>> {
+  const { data, error, response } = await guard(api.POST('/v1/ai/knowledge/answer', { body }));
+  if (data === undefined) throw toApiError(response.status, error);
+  return { ...data, result: data.result ?? null };
 }
 
 export type { ApiError };

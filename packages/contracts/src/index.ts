@@ -463,6 +463,28 @@ export type CaseTransitionResponse = components['schemas']['CaseTransitionRespon
 /** `GET /v1/ai/traces/{trace_id}`: one AI trace row, read for the routing badge. */
 export type AiTrace = components['schemas']['AiTraceResponse'];
 
+/**
+ * `GET /v1/knowledge`: every approved, in-date article an answer for this caller may be grounded
+ * in, the support threshold an article must meet, and the demo questions for the role. Nothing
+ * outside `articles` can ground an answer, so render it as the boundary of what the answerer knows.
+ */
+export type KnowledgeOverview = components['schemas']['KnowledgeOverviewResponse'];
+export type KnowledgeArticleSummary = components['schemas']['KnowledgeArticleSummaryResponse'];
+export type SuggestedQuestion = components['schemas']['SuggestedQuestionResponse'];
+
+/** `GET /v1/knowledge/articles/{slug}`: the article a citation on an answer resolves to. */
+export type KnowledgeArticle = components['schemas']['KnowledgeArticleResponse'];
+export type KnowledgeAudience = components['schemas']['KnowledgeAudience'];
+export type KnowledgeStatus = components['schemas']['KnowledgeStatus'];
+export type Jurisdiction = components['schemas']['Jurisdiction'];
+
+/**
+ * `POST /v1/ai/knowledge/answer`: a staff question. The envelope's result is either a grounded
+ * answer quoting approved articles, or a refusal that cites nothing; the result's
+ * `answered_from_approved_sources` tells them apart, and both are HTTP 200.
+ */
+export type KnowledgeAnswerRequest = components['schemas']['KnowledgeAnswerRequest'];
+
 /* --- Domain enums, aliased so an exhaustive label map is a compile-time guarantee --- */
 export type CaseStatus = components['schemas']['CaseStatus'];
 export type ConsentStatus = components['schemas']['ConsentStatus'];

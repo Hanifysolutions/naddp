@@ -1,0 +1,41 @@
+{
+  "$schema_version": "1.0",
+  "purpose": "Demo questions for the Knowledge screen. Each states what the grounded-or-refuse test is expected to do for the roles listed: GROUNDED means an approved, in-date article written for that role supports an answer (and names it); NO_APPROVED_SOURCE means no approved article in that role's scope does, so the answerer must refuse. tests/test_knowledge_answers.py holds this file to the seeded knowledge base.",
+  "questions": [
+    {
+      "id": "emergency-travel-document-evidence",
+      "question": "What evidence is needed for an emergency travel document when a passport has been lost?",
+      "expect": "GROUNDED",
+      "article": "emergency-travel-document-guidance",
+      "roles": ["CONSULAR_OFFICER", "DEPUTY", "AMBASSADOR"]
+    },
+    {
+      "id": "passport-renewal-route",
+      "question": "How does a Nigerian in Australia renew a passport?",
+      "expect": "GROUNDED",
+      "article": "passport-renewal-guidance",
+      "roles": ["CONSULAR_OFFICER", "DEPUTY", "AMBASSADOR"]
+    },
+    {
+      "id": "lithium-skills-pathways",
+      "question": "What qualifications lead to a lithium refinery role, and is there a migration pathway for a metallurgist?",
+      "expect": "GROUNDED",
+      "article": "lithium-processing-skills-pathways",
+      "roles": ["TRADE_OFFICER", "CONSULAR_OFFICER", "DIASPORA_OFFICER", "DEPUTY", "AMBASSADOR"]
+    },
+    {
+      "id": "overseas-voting",
+      "question": "Can a Nigerian citizen living in Australia vote in Nigerian elections from abroad?",
+      "expect": "NO_APPROVED_SOURCE",
+      "article": null,
+      "roles": ["TRADE_OFFICER", "CONSULAR_OFFICER", "DIASPORA_OFFICER", "DEPUTY", "AMBASSADOR"]
+    },
+    {
+      "id": "notarial-attestation-fee",
+      "question": "What is the fee for notarial attestation of a degree certificate?",
+      "expect": "NO_APPROVED_SOURCE",
+      "article": null,
+      "roles": ["TRADE_OFFICER", "CONSULAR_OFFICER", "DIASPORA_OFFICER", "DEPUTY", "AMBASSADOR"]
+    }
+  ]
+}

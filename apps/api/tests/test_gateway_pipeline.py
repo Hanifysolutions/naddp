@@ -7,6 +7,7 @@ deterministic path is a first-class state, so the whole pipeline is exercisable 
 from __future__ import annotations
 
 import time
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,7 @@ from app.ai.schemas import GatewayContext, GatewayResult
 from app.core import config as config_module
 from app.core.config import Settings
 from app.domain.enums import AiPurpose, ApprovalStatus, Classification, RoleCode
+from app.domain.grounding import ArticleSupport, GroundingSource, KnowledgeGrounding
 from app.models.ai import FALLBACK_REASONS
 from app.security.principal import principal_for_role
 
@@ -485,6 +487,55 @@ def test_call_with_budget_raises_on_expiry() -> None:
 
 # --------------------------------------------------------------------------- stage 8
 
+#: A VERIFIED registry id a TRADE_OFFICER may be shown: the hero knowledge article's citation.
+GROUNDED_CITATION = "mriwa-fbicrc-battery-vocational-skills-gap-plan"
+
+
+def _supported_grounding(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stand in for stage 3's database work: one approved article supports the question.
+
+    KNOWLEDGE_ANSWER grounds in the approved knowledge base or refuses (A-17), and the real
+    grounding needs Postgres. These stage 8 tests are about what happens to a live answer that
+    cites badly, so they substitute a supported grounding and keep everything else real.
+    """
+    text = "A synthetic approved sentence about lithium processing skills and pathways."
+    source = GroundingSource(
+        article_id=uuid.uuid4(),
+        slug="lithium-processing-skills-pathways",
+        title="Lithium processing skills and the pathways into them",
+        version=3,
+        category="critical-minerals",
+        citation_id=GROUNDED_CITATION,
+        classification=Classification.PUBLIC,
+        approved_by_name="Tunde Bakare",
+        approved_at=None,
+        valid_until=None,
+        coverage=0.8,
+        matched_terms=("lithium", "skill"),
+        passage=(text,),
+        full_text=text,
+    )
+    grounding = KnowledgeGrounding(
+        consulted=True,
+        question_terms=("lithium", "skill"),
+        ignored_terms=(),
+        eligible_count=1,
+        candidates=(
+            ArticleSupport(
+                slug=source.slug,
+                coverage=0.8,
+                matched_terms=source.matched_terms,
+                retrieval_rank=1,
+                citable=True,
+            ),
+        ),
+        sources=(source,),
+    )
+    monkeypatch.setattr(gateway_module, "_ground_knowledge", lambda *_a, **_k: grounding)
+
+
+KNOWLEDGE_QUESTION = GatewayContext(question="What lithium processing skills are there?")
+
 
 def test_live_answer_citing_an_unverified_id_is_refused_and_falls_back(
     monkeypatch: pytest.MonkeyPatch,
@@ -509,9 +560,12 @@ def test_live_answer_citing_an_unverified_id_is_refused_and_falls_back(
 
     monkeypatch.setattr(gateway_module, "_call_provider", _hallucinating)
 
-    outcome = _go(AiPurpose.KNOWLEDGE_ANSWER)
+    _supported_grounding(monkeypatch)
+    outcome = _go(AiPurpose.KNOWLEDGE_ANSWER, context=KNOWLEDGE_QUESTION)
     assert outcome.trace.fallback_reason == FallbackReason.CITATION_CHECK_FAILED.value
-    assert outcome.trace.citation_check_passed is True, "the snapshot then passed the re-check"
+    assert outcome.trace.citation_check_passed is True, "the approved text passed the re-check"
+    assert outcome.trace.snapshot_key is None, "a knowledge answer never falls back to a snapshot"
+    assert outcome.trace.evidence_ids == [GROUNDED_CITATION]
     assert outcome.envelope.result is not None
     assert UNVERIFIED_ID not in outcome.trace.evidence_ids
 
@@ -536,9 +590,11 @@ def test_live_answer_citing_a_fabricated_id_is_refused(monkeypatch: pytest.Monke
         ),
     )
 
-    outcome = _go(AiPurpose.KNOWLEDGE_ANSWER)
+    _supported_grounding(monkeypatch)
+    outcome = _go(AiPurpose.KNOWLEDGE_ANSWER, context=KNOWLEDGE_QUESTION)
     assert outcome.trace.fallback_reason == FallbackReason.CITATION_CHECK_FAILED.value
     assert "not-a-real-citation-id" not in outcome.trace.evidence_ids
+    assert outcome.trace.evidence_ids == [GROUNDED_CITATION]
 
 
 def test_snapshot_citing_unauthorised_evidence_is_refused_not_downgraded(

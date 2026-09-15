@@ -3,7 +3,7 @@
   "purpose": "KNOWLEDGE_ANSWER",
   "scenario": "lithium-processing-skills-pathways",
   "approval_status": "NOT_REQUIRED",
-  "notes": "Hero knowledge beat. Six citations, all VERIFIED, covering both the vocational and the professional pathway plus the migration instrument.",
+  "notes": "Reference answer only, NEVER SERVED (see knowledge_answer___default__.json). Hero knowledge beat. Six citations, all VERIFIED, covering both the vocational and the professional pathway plus the migration instrument.",
   "evidence_ids": [
     "curtin-graduate-diploma-metallurgy",
     "homeaffairs-immi-skills-in-demand-visa-482",

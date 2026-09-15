@@ -74,4 +74,12 @@ export const queryKeys = {
   consularCase: (role: NaddpRole | null, id: string) => ['consular', 'case', role, id] as const,
   /** One AI trace, read for the routing badge beside the proposal it produced. */
   aiTrace: (role: NaddpRole | null, id: string) => ['ai', 'trace', role, id] as const,
+  /**
+   * The grounding corpus. The same URL lists different articles per role - the audience filter
+   * runs in the API's SQL - so the role is the address.
+   */
+  knowledgeOverview: (role: NaddpRole | null) => ['knowledge', 'overview', role] as const,
+  /** One knowledge article, as a citation resolves to it. Audience-scoped, so keyed by role. */
+  knowledgeArticle: (role: NaddpRole | null, slug: string) =>
+    ['knowledge', 'article', role, slug] as const,
 } as const;

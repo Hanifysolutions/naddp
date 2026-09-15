@@ -83,7 +83,7 @@ export function TraceBadge({
         >
           fallback
           <span className="sr-only">
-            : a stored snapshot answered instead of a live model call.
+            : a deterministic answer was served instead of a live model call.
           </span>
         </Badge>
       ) : null}

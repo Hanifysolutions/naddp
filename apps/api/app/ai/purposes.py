@@ -214,6 +214,12 @@ class PurposeSpec:
     #: is that consular material is not transmitted off-box. So the purpose is held to the
     #: deterministic path until someone rules otherwise, and the band table stays intact.
     live_eligible: bool = True
+    #: Whether a deterministic snapshot may stand in for a live answer. True for the purposes
+    #: that reason over a known object. False for ``KNOWLEDGE_ANSWER``: its question is free
+    #: text, so a cached answer is an answer to a different question -- a fabrication with a
+    #: citation attached. Its deterministic path is the approved text itself, or a refusal
+    #: (``app.ai.knowledge_answer``, OPEN_QUESTIONS A-17).
+    snapshot_fallback: bool = True
     summary: str = ""
     #: Zones this purpose may process. Derived, never hand-written -- see the module
     #: docstring on why a rank comparison would be wrong.
@@ -391,9 +397,11 @@ _SPECS: Final[tuple[PurposeSpec, ...]] = (
         default_model_route="standard-grounded",
         context_policy=_OPEN_POLICY,
         default_sector_codes=(),
+        snapshot_fallback=False,
         summary=(
-            "Answers a staff question from approved sources only, and says so in the "
-            "result. The one purpose that accepts a free-text question."
+            "Answers a staff question ONLY from approved, in-date knowledge articles written "
+            "for the caller's role, citing them -- or refuses, citing nothing, when no approved "
+            "source supports an answer. Never answers from a snapshot."
         ),
     ),
     PurposeSpec(

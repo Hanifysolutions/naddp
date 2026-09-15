@@ -157,8 +157,7 @@ export const NAV_CATALOGUE: readonly NavItem[] = [
     description: 'Approved-source answers. Refuses when no source exists.',
     icon: 'knowledge',
     permission: 'read:knowledge_article',
-    availability: 'planned',
-    plannedFor: 'Week 3',
+    availability: 'available',
   },
   {
     href: '/governance',

@@ -21,6 +21,7 @@ each path is actually good at.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final
@@ -34,8 +35,10 @@ from app.domain.enums import (
     KNOWLEDGE_AUDIENCE_BY_ROLE,
     ChunkCollection,
     Classification,
+    Jurisdiction,
     KnowledgeStatus,
 )
+from app.models.intelligence import Document, Source
 from app.models.knowledge import KnowledgeArticle
 from app.models.retrieval import DocumentChunk
 from app.security.deps import readable_classifications
@@ -45,7 +48,9 @@ from app.services.ingestion import EmbedFn
 __all__ = [
     "RetrievalHit",
     "RetrievalQuery",
+    "authorised_zones",
     "hybrid_search",
+    "knowledge_article_scope",
 ]
 
 _logger = get_logger(__name__)
@@ -59,6 +64,9 @@ _RRF_K: Final[int] = 60
 _CANDIDATE_DEPTH: Final[int] = 60
 
 _TS_CONFIG: Final[str] = "english"
+
+#: A run of letters or digits: what an any-term lexical query is built from.
+_WORD: Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9]+")
 
 
 @dataclass(frozen=True)
@@ -100,6 +108,14 @@ class RetrievalQuery:
     #: Restrict to one publisher's material, or to documents published on/after a date.
     citation_ids: frozenset[str] | None = None
     published_after: datetime | None = None
+    #: Restrict KNOWLEDGE articles to those restating a source in these jurisdictions;
+    #: mission-authored guidance with no external source always qualifies. Chunks from other
+    #: collections are unaffected. ``None`` means any jurisdiction.
+    jurisdictions: frozenset[Jurisdiction] | None = None
+    #: Match chunks containing ANY of the query's words rather than all of them. A natural
+    #: question rarely has every word in one passage, and an all-words query then recalls
+    #: nothing lexically; the ranking still rewards chunks carrying more of them.
+    match_any_term: bool = False
     rerank: bool = True
 
 
@@ -124,14 +140,14 @@ def _authorised_scope(principal: Principal, query: RetrievalQuery) -> ColumnElem
     Intersecting 1 and 2 is deliberate: a purpose is not a way to widen a principal's
     clearance, and a clearance is not a way to widen a purpose's remit.
     """
-    zones = set(readable_classifications(principal)) & _zone_ceiling(query.max_classification)
+    zones = authorised_zones(principal, query.max_classification)
     if not zones:
         # Cannot happen today (every role clears PUBLIC and every purpose allows it), but
         # an empty IN () is invalid SQL, so fail closed rather than emit a broken query.
         return literal(False)
 
     predicate = and_(
-        DocumentChunk.classification.in_(sorted(zones, key=lambda z: z.value)),
+        DocumentChunk.classification.in_(zones),
         DocumentChunk.collection.in_(sorted(query.collections, key=lambda c: c.value)),
         DocumentChunk.embedding.is_not(None),
     )
@@ -145,41 +161,97 @@ def _authorised_scope(principal: Principal, query: RetrievalQuery) -> ColumnElem
         predicate = and_(predicate, DocumentChunk.published_at >= query.published_after)
 
     if ChunkCollection.KNOWLEDGE in query.collections:
-        predicate = and_(predicate, _knowledge_gate(principal))
+        predicate = and_(predicate, _knowledge_gate(principal, query))
     return predicate
 
 
-def _knowledge_gate(principal: Principal) -> ColumnElement[bool]:
-    """Extra gates knowledge retrieval carries: approval, audience, validity window.
+def authorised_zones(
+    principal: Principal,
+    max_classification: Classification | None,
+) -> list[Classification]:
+    """The zones a retrieval may reach: the caller's clearance intersected with a purpose ceiling.
+
+    Intersecting is deliberate: a purpose is not a way to widen a principal's clearance, and a
+    clearance is not a way to widen a purpose's remit.
+    """
+    zones = set(readable_classifications(principal)) & _zone_ceiling(max_classification)
+    return sorted(zones, key=lambda zone: zone.value)
+
+
+def knowledge_article_scope(
+    principal: Principal,
+    *,
+    now: datetime,
+    max_classification: Classification | None = None,
+    jurisdictions: frozenset[Jurisdiction] | None = None,
+) -> ColumnElement[bool]:
+    """Which knowledge articles may ground an answer for ``principal`` -- the one definition.
+
+    APPROVED; inside the validity window; written for an audience the role holds; in a zone the
+    caller is cleared for and the purpose may reach; and, when jurisdictions are named, restating
+    a source in one of them or mission-authored with no external source. Composed into the chunk
+    search below as a correlated EXISTS, and used directly over ``knowledge_articles`` by
+    ``app.services.knowledge``, so the retrieval gate and the grounding corpus cannot disagree.
+
+    Week 3 grounds answers on these articles only and refuses when none supports the question.
+    That refusal is only honest because the filter runs here, before ranking: an expired,
+    unapproved or out-of-audience article never enters the candidate set, so it cannot leak into
+    an answer however relevant it would have been.
+    """
+    audiences = KNOWLEDGE_AUDIENCE_BY_ROLE.get(principal.role, frozenset())
+    zones = authorised_zones(principal, max_classification)
+    if not audiences or not zones:
+        # ADMIN holds no business-domain read (Q-02b): it is served no knowledge at all.
+        return literal(False)
+
+    predicate = and_(
+        KnowledgeArticle.status == KnowledgeStatus.APPROVED,
+        KnowledgeArticle.audience.in_(sorted(audiences, key=lambda a: a.value)),
+        KnowledgeArticle.classification.in_(zones),
+        or_(KnowledgeArticle.valid_from.is_(None), KnowledgeArticle.valid_from <= now),
+        or_(KnowledgeArticle.valid_until.is_(None), KnowledgeArticle.valid_until >= now),
+    )
+    if jurisdictions:
+        restates_a_source_there = (
+            select(literal(1))
+            .select_from(Document)
+            .join(Source, Source.id == Document.source_id)
+            .where(
+                Document.id == KnowledgeArticle.source_document_id,
+                Source.jurisdiction.in_(sorted(jurisdictions, key=lambda j: j.value)),
+            )
+            .exists()
+        )
+        predicate = and_(
+            predicate,
+            or_(KnowledgeArticle.source_document_id.is_(None), restates_a_source_there),
+        )
+    return predicate
+
+
+def _knowledge_gate(principal: Principal, query: RetrievalQuery) -> ColumnElement[bool]:
+    """Extra gates knowledge retrieval carries: :func:`knowledge_article_scope`, per chunk.
 
     Applied as a correlated EXISTS rather than a join so it composes into the same WHERE
     clause without changing the shape of the ranking query. Chunks from other collections
     are unaffected -- the clause is true for them by construction.
-
-    Week 3 grounds answers on APPROVED articles only and must refuse when no approved
-    source exists. That refusal is only honest if the filter runs here, before ranking:
-    an unapproved article that never enters the candidate set cannot leak into an answer.
     """
-    now = datetime.now(UTC)
-    audiences = KNOWLEDGE_AUDIENCE_BY_ROLE.get(principal.role, frozenset())
-    if not audiences:
-        # ADMIN holds no business-domain read (Q-02b): it is served no knowledge at all.
-        return DocumentChunk.knowledge_article_id.is_(None)
-
-    approved_and_current = (
+    in_scope = (
         select(literal(1))
         .select_from(KnowledgeArticle)
         .where(
             KnowledgeArticle.id == DocumentChunk.knowledge_article_id,
-            KnowledgeArticle.status == KnowledgeStatus.APPROVED,
-            KnowledgeArticle.audience.in_(sorted(audiences, key=lambda a: a.value)),
-            or_(KnowledgeArticle.valid_from.is_(None), KnowledgeArticle.valid_from <= now),
-            or_(KnowledgeArticle.valid_until.is_(None), KnowledgeArticle.valid_until >= now),
+            knowledge_article_scope(
+                principal,
+                now=datetime.now(UTC),
+                max_classification=query.max_classification,
+                jurisdictions=query.jurisdictions,
+            ),
         )
         .exists()
     )
     # True for any chunk that is not a knowledge chunk; gated for the ones that are.
-    return or_(DocumentChunk.knowledge_article_id.is_(None), approved_and_current)
+    return or_(DocumentChunk.knowledge_article_id.is_(None), in_scope)
 
 
 def _base(scope: ColumnElement[bool]) -> Select[Any]:
@@ -201,7 +273,8 @@ def hybrid_search(
     """
     scope = _authorised_scope(principal, query)
 
-    tsquery = func.websearch_to_tsquery(_TS_CONFIG, query.text)
+    lexical_text = " or ".join(_WORD.findall(query.text)) if query.match_any_term else query.text
+    tsquery = func.websearch_to_tsquery(_TS_CONFIG, lexical_text)
     tsvector = func.to_tsvector(_TS_CONFIG, DocumentChunk.text)
 
     lexical_stmt = (

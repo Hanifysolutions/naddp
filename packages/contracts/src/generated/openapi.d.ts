@@ -595,6 +595,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/knowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The approved knowledge an answer may be grounded in
+         * @description Return the grounding corpus for this caller: nothing outside it can ground an answer.
+         */
+        get: operations["read_overview_v1_knowledge_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/knowledge/articles/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one knowledge article
+         * @description Return one article. Expired and retired articles resolve, marked not in force.
+         */
+        get: operations["read_article_v1_knowledge_articles__slug__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ai/morning-brief": {
         parameters: {
             query?: never;
@@ -759,12 +799,16 @@ export interface paths {
         put?: never;
         /**
          * Answer a staff question from approved sources
-         * @description Answer a question from ``APPROVED`` knowledge articles only.
+         * @description Answer a question from approved knowledge articles only -- or refuse.
          *
-         *     The question is passed as the context's ``question`` field, which is the only free text
-         *     any purpose accepts and is capped at 1000 characters. The evidence still comes from the
-         *     Gateway's own retrieval under the caller's clearance -- a caller cannot supply the
-         *     passage they want quoted back.
+         *     Grounded-or-refuse (OPEN_QUESTIONS A-17). The Gateway filters the knowledge base to APPROVED,
+         *     in-date articles written for the caller's role and zones -- and to the named jurisdictions,
+         *     if any -- BEFORE retrieval ranks anything, then tests whether any surviving article supports
+         *     the question. If one does, the answer quotes it and cites it. If none does, the result is a
+         *     refusal: ``answered_from_approved_sources`` false, no citation, no quoted text, and a named
+         *     officer to take the question to. Both are HTTP 200 with ``approval_status = NOT_REQUIRED``:
+         *     a refusal is an answer about the knowledge base, not an error. The question is the only free
+         *     text any purpose accepts, and a caller cannot supply the passage they want quoted back.
          */
         post: operations["answer_question_v1_ai_knowledge_answer_post"];
         delete?: never;
@@ -3068,6 +3112,15 @@ export interface components {
          */
         InteractionType: "EMAIL" | "CALL" | "MEETING" | "EVENT" | "NOTE";
         /**
+         * Jurisdiction
+         * @description Which jurisdiction a source or record belongs to.
+         *
+         *     Values are the ``jurisdiction`` vocabulary of ``data/demo-seed/citations.json``,
+         *     verified against all 163 entries: ``AU`` (132), ``NG`` (25), ``INTL`` (6).
+         * @enum {string}
+         */
+        Jurisdiction: "AU" | "NG" | "INTL";
+        /**
          * KnowledgeAnswerRequest
          * @description A staff question for ``KNOWLEDGE_ANSWER``.
          *
@@ -3086,6 +3139,154 @@ export interface components {
              * @description Optional sector codes (data/taxonomy/sectors.json) narrowing retrieval.
              */
             sector_codes?: string[];
+            /**
+             * Jurisdictions
+             * @description Optional: ground only in articles restating a source in these jurisdictions. Mission-authored guidance always qualifies. Empty means any jurisdiction.
+             */
+            jurisdictions?: components["schemas"]["Jurisdiction"][];
+        };
+        /**
+         * KnowledgeArticleResponse
+         * @description One article, as a citation resolves to it.
+         */
+        KnowledgeArticleResponse: {
+            /** Slug */
+            slug: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /** Body */
+            body: string;
+            /** Category */
+            category: string;
+            /** Version */
+            version: number;
+            status: components["schemas"]["KnowledgeStatus"];
+            audience: components["schemas"]["KnowledgeAudience"];
+            classification: components["schemas"]["Classification"];
+            /** Approved By Name */
+            approved_by_name: string | null;
+            /** Approved At */
+            approved_at: string | null;
+            /**
+             * Owner Name
+             * @description The officer responsible for keeping it correct.
+             */
+            owner_name: string | null;
+            /** Valid From */
+            valid_from: string | null;
+            /** Valid Until */
+            valid_until: string | null;
+            /**
+             * In Force
+             * @description APPROVED and inside its validity window now. Only these ground new answers.
+             */
+            in_force: boolean;
+            source: components["schemas"]["KnowledgeSourceResponse"] | null;
+        };
+        /**
+         * KnowledgeArticleSummaryResponse
+         * @description One approved, in-date article written for this caller's role.
+         */
+        KnowledgeArticleSummaryResponse: {
+            /**
+             * Slug
+             * @description Stable handle. A citation on an answer resolves through it.
+             */
+            slug: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /** Category */
+            category: string;
+            /** Version */
+            version: number;
+            audience: components["schemas"]["KnowledgeAudience"];
+            classification: components["schemas"]["Classification"];
+            /**
+             * Approved By Name
+             * @description The named human who approved it.
+             */
+            approved_by_name: string | null;
+            /** Approved At */
+            approved_at: string | null;
+            /**
+             * Valid Until
+             * @description Null when no expiry is set.
+             */
+            valid_until: string | null;
+            /**
+             * Citation Id
+             * @description Its verified registry citation. Null for mission-authored guidance, which cannot ground an answer because an answer must cite something a reader can open.
+             */
+            citation_id: string | null;
+        };
+        /**
+         * KnowledgeAudience
+         * @description Who a knowledge article is written for.
+         *
+         *     Independent of classification. Classification answers "is this person cleared to see
+         *     it"; audience answers "was this written for them". A trade-desk playbook is not
+         *     CONFIDENTIAL, but surfacing it as the grounded answer to a consular officer's question
+         *     is still wrong, so the two filters compose rather than substitute.
+         * @enum {string}
+         */
+        KnowledgeAudience: "ALL_STAFF" | "TRADE" | "CONSULAR" | "DIASPORA" | "SENIOR";
+        /**
+         * KnowledgeOverviewResponse
+         * @description The whole corpus an answer for this caller may be grounded in.
+         */
+        KnowledgeOverviewResponse: {
+            /**
+             * Articles
+             * @description Approved, in-date, written for an audience this role holds, and within both the caller's clearance and the answerer's zone ceiling. Nothing else can ground an answer.
+             */
+            articles: components["schemas"]["KnowledgeArticleSummaryResponse"][];
+            /** Audiences */
+            audiences: components["schemas"]["KnowledgeAudience"][];
+            /** Suggested Questions */
+            suggested_questions: components["schemas"]["SuggestedQuestionResponse"][];
+            support_threshold: components["schemas"]["KnowledgeSupportThresholdResponse"];
+            /**
+             * Measured At
+             * Format: date-time
+             */
+            measured_at: string;
+        };
+        /**
+         * KnowledgeSourceResponse
+         * @description The verified public page an article restates.
+         */
+        KnowledgeSourceResponse: {
+            /** Citation Id */
+            citation_id: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+            /** Publisher */
+            publisher: string;
+        };
+        /**
+         * KnowledgeStatus
+         * @description Editorial state of a knowledge article. Only ``APPROVED`` articles may ground an answer.
+         * @enum {string}
+         */
+        KnowledgeStatus: "DRAFT" | "IN_REVIEW" | "APPROVED" | "RETIRED";
+        /**
+         * KnowledgeSupportThresholdResponse
+         * @description The support test an approved article must pass to ground an answer.
+         */
+        KnowledgeSupportThresholdResponse: {
+            /**
+             * Min Weighted Coverage
+             * @description Share of the question's rarity-weighted terms the article must contain.
+             */
+            min_weighted_coverage: number;
+            /** Min Matched Terms */
+            min_matched_terms: number;
         };
         /**
          * MeetingDetailResponse
@@ -4104,6 +4305,22 @@ export interface components {
              * @description Organisations in zones you are cleared to read.
              */
             organisations: number;
+        };
+        /**
+         * SuggestedQuestionResponse
+         * @description A demo question for this role.
+         */
+        SuggestedQuestionResponse: {
+            /** Id */
+            id: string;
+            /** Question */
+            question: string;
+            /**
+             * Expect
+             * @description What the grounded-or-refuse test is expected to do for this role. Demo data (data/demo-seed/knowledge_questions.json); the test suite holds the file to it.
+             * @enum {string}
+             */
+            expect: "GROUNDED" | "NO_APPROVED_SOURCE";
         };
         /**
          * TalkingPointResponse
@@ -5226,6 +5443,79 @@ export interface operations {
             };
             /** @description Illegal from the current status, terminal, a required reason missing, a guard refused, the expected_status precondition failed, or a triage trace that is not about this case. The body says which. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_overview_v1_knowledge_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every approved, in-date article for this role, and demo questions. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeOverviewResponse"];
+                };
+            };
+            /** @description You do not hold read:knowledge_article, or have no session. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    read_article_v1_knowledge_articles__slug__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The article's stable slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The article a citation resolves to, with its approver and validity. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeArticleResponse"];
+                };
+            };
+            /** @description No read:knowledge_article, or not cleared for the article's zone. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No approved or retired article with that slug for this role. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

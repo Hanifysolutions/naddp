@@ -84,7 +84,7 @@ export function TraceDrawer({
         <TraceRow label="Model used">
           {trace.model_used ??
             (trace.fallback
-              ? 'none — the deterministic snapshot answered'
+              ? 'none — a deterministic answer was served instead'
               : 'none — no model was asked on this route')}
         </TraceRow>
 
