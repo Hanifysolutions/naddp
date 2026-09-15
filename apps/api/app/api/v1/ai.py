@@ -49,7 +49,7 @@ from app.ai.gateway import generate
 from app.ai.schemas import GatewayContext, GatewayResult
 from app.audit.middleware import record_access
 from app.core.db import get_session
-from app.core.errors import ClassificationDeniedError, NotFoundError
+from app.core.errors import ClassificationDeniedError, InvalidTransitionError, NotFoundError
 from app.domain.enums import (
     AiPurpose,
     ApprovalStatus,
@@ -65,6 +65,15 @@ from app.models.opportunities import Opportunity
 from app.security.deps import assert_may_read, require
 from app.security.permissions import Permission
 from app.security.principal import Principal
+from app.services.followups import latest_followup
+from app.services.meetings import (
+    AI_MEETING_NO_SNAPSHOT_REASON,
+    MEETING_FOLLOWUP_SNAPSHOT_PURPOSE,
+    MEETING_PREP_SNAPSHOT_PURPOSE,
+    REASON_AI_DRAFT_UNAVAILABLE,
+    has_meeting_snapshot,
+    pinned_ai_scenario,
+)
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -410,26 +419,71 @@ def score_opportunity(
     return _generated(db, envelope)
 
 
+#: The 409 both meeting routes answer, before any Gateway call, for a meeting with no
+#: deterministic fallback of its own.
+_MEETING_AI_UNAVAILABLE: Final[dict[int | str, dict[str, Any]]] = {
+    409: {
+        "description": (
+            "No deterministic fallback covers this meeting (reason ai_draft_unavailable): it "
+            "has no pinned scenario with a snapshot of its own. No Gateway call is made and "
+            "no trace is written, whether or not live AI is on."
+        )
+    },
+}
+
+
+def _pinned_scenario_or_refuse(db: Session, meeting: Meeting, purpose_slug: str) -> str:
+    """The meeting's pinned scenario, when its own ``purpose_slug`` snapshot exists; else 409.
+
+    Without one, ``scenario_for`` slugs the meeting id, finds no snapshot of that name, and a
+    fallback serves the purpose's ``__default__`` -- which is the hero meeting's content. A
+    live call is no protection: a timeout or a schema failure takes the same fallback. So the
+    route refuses before the Gateway is asked, and nothing about another meeting can be
+    served for this one (``CLAUDE.md`` rule 2.6).
+    """
+    scenario = pinned_ai_scenario(db, meeting)
+    if scenario is None or not has_meeting_snapshot(purpose_slug, scenario):
+        raise InvalidTransitionError(
+            AI_MEETING_NO_SNAPSHOT_REASON,
+            extra={"reason": REASON_AI_DRAFT_UNAVAILABLE, "meeting_id": str(meeting.id)},
+        )
+    return scenario
+
+
 @router.post(
     "/meetings/{meeting_id}/prep",
     response_model=GatewayResult,
     status_code=status.HTTP_200_OK,
     summary="Generate a meeting pre-read",
     response_description="A MeetingPrepResult envelope: the brief an officer takes into the room.",
-    responses={**_GATEWAY_RESPONSES, 404: {"description": "No meeting with that id."}},
+    responses={
+        **_GATEWAY_RESPONSES,
+        404: {"description": "No meeting with that id."},
+        **_MEETING_AI_UNAVAILABLE,
+    },
 )
 def prepare_meeting(
     principal: Annotated[Principal, Depends(require(Permission.READ_MEETING))],
     db: DbSession,
     meeting_id: Annotated[uuid.UUID, Path(description="The meeting to prepare for.")],
 ) -> GatewayResult:
-    """Produce the pre-read for one meeting."""
+    """Produce the pre-read for one meeting.
+
+    Only for a meeting with a pinned scenario (``app.services.meetings.pinned_ai_scenario``)
+    whose own pre-read snapshot exists. Any other meeting is refused with 409
+    ``ai_draft_unavailable`` before the Gateway is called, and no trace is written: its
+    fallback would be the purpose's ``__default__``, another meeting's pre-read. The meeting
+    detail page never calls this route: it renders the stored pre-read from
+    ``GET /v1/meetings/{meeting_id}``.
+    """
     meeting = _load_meeting(db, principal, meeting_id)
+    scenario = _pinned_scenario_or_refuse(db, meeting, MEETING_PREP_SNAPSHOT_PURPOSE)
     envelope = generate(
         AiPurpose.MEETING_PREP,
         meeting.classification,
         GatewayContext(
             subject_ref=str(meeting.id),
+            scenario=scenario,
             facts={
                 "meeting_type": meeting.meeting_type.value,
                 "scheduled_start": meeting.scheduled_start.isoformat(),
@@ -447,7 +501,11 @@ def prepare_meeting(
     status_code=status.HTTP_200_OK,
     summary="Draft a meeting follow-up",
     response_description="A MeetingFollowupResult envelope, always PENDING_APPROVAL.",
-    responses={**_GATEWAY_RESPONSES, 404: {"description": "No meeting with that id."}},
+    responses={
+        **_GATEWAY_RESPONSES,
+        404: {"description": "No meeting with that id."},
+        **_MEETING_AI_UNAVAILABLE,
+    },
 )
 def draft_meeting_followup(
     principal: Annotated[
@@ -461,24 +519,35 @@ def draft_meeting_followup(
 
     The envelope comes back ``PENDING_APPROVAL`` whether the model answered or the
     deterministic snapshot did -- a cached draft is still a draft (ADR-0002). Nothing here
-    sets ``meetings.followup_status``: this is a proposal, and ``SENT`` is reachable only
-    from ``APPROVED`` (``docs/workflows.md`` section 2).
+    writes a ``meeting_followups`` row: this is a proposal, and ``SENT`` is reachable only
+    from ``APPROVED`` (``docs/workflows.md`` section 2). The route that turns an AI draft into
+    a follow-up on the record is ``POST /v1/meetings/{meeting_id}/followups``.
+
+    The ``followup_status`` fact is the status of the meeting's most recently drafted
+    follow-up (``app.services.followups.latest_followup``), or ``None`` when it has none --
+    a process fact for the prompt, not content.
+
+    Only for a meeting with a pinned scenario whose own follow-up snapshot exists, as on the
+    pre-read route. Any other meeting is refused with 409 ``ai_draft_unavailable`` before the
+    Gateway is called and no trace is written, because its fallback would be the purpose's
+    ``__default__`` -- another meeting's draft, which the demo must never show.
 
     Capped at ``MISSION_INTERNAL`` by the purpose. A ``CONFIDENTIAL`` meeting therefore
     comes back ``BLOCKED`` with an explanation rather than a draft, which is the control
     working: an outbound email is the last place confidential material should reach.
     """
     meeting = _load_meeting(db, principal, meeting_id)
+    scenario = _pinned_scenario_or_refuse(db, meeting, MEETING_FOLLOWUP_SNAPSHOT_PURPOSE)
+    latest = latest_followup(db, meeting.id)
     envelope = generate(
         AiPurpose.MEETING_FOLLOWUP,
         meeting.classification,
         GatewayContext(
             subject_ref=str(meeting.id),
+            scenario=scenario,
             facts={
                 "meeting_type": meeting.meeting_type.value,
-                "followup_status": (
-                    meeting.followup_status.value if meeting.followup_status else None
-                ),
+                "followup_status": latest.status.value if latest is not None else None,
             },
         ),
         principal,

@@ -3,9 +3,9 @@
 Three columns in the schema make this table non-optional for the seed rather than a nicety:
 ``opportunities.proposal_trace_id`` is expected non-NULL whenever ``is_proposed_by_ai`` is
 true, ``briefs.trace_id`` is expected non-NULL when ``generated_by`` is ``AI``, and
-``meetings.pre_read_trace_id`` / ``followup_trace_id`` are what the UI trace drawer opens.
-An AI-badged artefact with no trace behind it is exactly the thing the drawer exists to
-disprove.
+``meetings.pre_read_trace_id`` / ``meeting_followups.trace_id`` are what the UI trace drawer
+opens. An AI-badged artefact with no trace behind it is exactly the thing the drawer exists
+to disprove.
 
 Every seeded trace records ``live = false`` and ``fallback = true`` with reason
 ``LIVE_DISABLED``, which is the truth: these artefacts were not produced by a live model
@@ -76,20 +76,14 @@ def _badge(purpose: AiPurpose, data_class: Classification) -> str:
     forbade it.
     """
     if purpose in _WITHHOLDS_EXTERNAL:
-        return _BADGE_SEP.join(
-            [data_class.value, "purpose withholds external", "metadata-only"]
-        )
+        return _BADGE_SEP.join([data_class.value, "purpose withholds external", "metadata-only"])
     if data_class is Classification.MISSION_INTERNAL:
         return _BADGE_SEP.join(["INTERNAL", "external-noret", _strong_model()])
     if data_class is Classification.PUBLIC:
         return _BADGE_SEP.join(["PUBLIC", "external", _strong_model(), "strong"])
     if data_class is Classification.CONFIDENTIAL:
-        return _BADGE_SEP.join(
-            ["CONFIDENTIAL", "restricted", _strong_model(), "enhanced-logging"]
-        )
-    return _BADGE_SEP.join(
-        ["CONSULAR-SENSITIVE", "no external route", "metadata-only"]
-    )
+        return _BADGE_SEP.join(["CONFIDENTIAL", "restricted", _strong_model(), "enhanced-logging"])
+    return _BADGE_SEP.join(["CONSULAR-SENSITIVE", "no external route", "metadata-only"])
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +95,10 @@ class TraceSpec:
     scenario: str
     actor: RoleCode
     days_ago: float
+    #: Wall-clock hour to pin the call to, or ``None`` for ``days_ago`` alone. A trace that
+    #: must sit between two other seeded moments -- after a meeting, before the draft it
+    #: served -- needs the hour: a fractional ``days_ago`` moves with the time the seed runs.
+    hour: int | None = None
     data_class: Classification = Classification.MISSION_INTERNAL
     result_class: Classification = Classification.MISSION_INTERNAL
     approval_status: ApprovalStatus = ApprovalStatus.NOT_REQUIRED
@@ -153,7 +151,10 @@ TRACE_SPECS: Final[tuple[TraceSpec, ...]] = (
         AiPurpose.MEETING_PREP,
         "covalent-lithium-bilateral",
         RoleCode.TRADE_OFFICER,
-        4.2,
+        5.0,
+        # The afternoon before the 10:00 bilateral (seed_parts/meetings.py, days_offset -4.0):
+        # a pre-read is prepared ahead of the meeting it prepares for, whenever the seed runs.
+        hour=16,
         output_schema_name="MeetingPrepResult",
     ),
     TraceSpec(
@@ -161,7 +162,11 @@ TRACE_SPECS: Final[tuple[TraceSpec, ...]] = (
         AiPurpose.MEETING_FOLLOWUP,
         "covalent-lithium-bilateral",
         RoleCode.TRADE_OFFICER,
-        2.8,
+        4.0,
+        # 14:00 on the meeting day: after the 10:00-11:00 bilateral ends and before the
+        # follow-up it served is recorded at 15:00 (meetings.py _DRAFTED_AFTER). A draft may
+        # not predate the Gateway call its own trace drawer says produced it.
+        hour=14,
         approval_status=ApprovalStatus.PENDING_APPROVAL,
         output_schema_name="MeetingFollowupResult",
     ),
@@ -211,7 +216,7 @@ def seed_traces(ctx: SeedContext, users: dict[RoleCode, User]) -> dict[str, AiTr
         traces[spec.slug] = ctx.upsert(
             AiTrace,
             ctx.register("ai_trace", spec.slug),
-            created_at=ctx.days_ago(spec.days_ago),
+            created_at=ctx.days_ago(spec.days_ago, hour=spec.hour),
             purpose=spec.purpose,
             scenario=spec.scenario,
             user_id=users[spec.actor].id,

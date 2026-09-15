@@ -22,6 +22,13 @@ Mounted paths, which the web client and the Week 1 VERIFY block depend on exactl
     GET  /v1/stakeholders/organisations
     GET  /v1/stakeholders/organisations/{organisation_id}
     GET  /v1/stakeholders/people/{stakeholder_id}
+    GET  /v1/meetings
+    GET  /v1/meetings/approvals
+    GET  /v1/meetings/{meeting_id}
+    POST /v1/meetings/{meeting_id}/followups
+    POST /v1/meetings/{meeting_id}/followups/{followup_id}/transition
+    POST /v1/meetings/{meeting_id}/followups/{followup_id}/dispatch
+    POST /v1/meetings/{meeting_id}/followups/{followup_id}/approve
     POST /v1/ai/morning-brief
     POST /v1/ai/opportunities/{opportunity_id}/score
     POST /v1/ai/meetings/{meeting_id}/prep
@@ -38,8 +45,9 @@ order, and no two routers share a prefix -- so the sequence below follows the sh
 product: metadata, then who you are, then the day's picture, then the bounded contexts,
 then the governance surface that records all of it.
 
-The remaining contexts (``meetings``, ``consular``, ``diaspora``, ``knowledge``) add
-themselves the same way.
+The remaining contexts (``consular``, ``diaspora``, ``knowledge``) add themselves the same
+way. ``meetings`` and ``ai`` do not share a prefix: the Gateway's meeting purposes live
+under ``/ai/meetings``, and the Meetings context's own routes under ``/meetings``.
 """
 
 from fastapi import APIRouter
@@ -48,6 +56,7 @@ from app.api.v1.ai import router as ai_router
 from app.api.v1.audit import router as audit_router
 from app.api.v1.command import router as command_router
 from app.api.v1.intelligence import router as intelligence_router
+from app.api.v1.meetings import router as meetings_router
 from app.api.v1.meta import router as meta_router
 from app.api.v1.opportunities import router as opportunities_router
 from app.api.v1.session import router as session_router
@@ -60,6 +69,7 @@ router.include_router(command_router)
 router.include_router(intelligence_router)
 router.include_router(opportunities_router)
 router.include_router(stakeholders_router)
+router.include_router(meetings_router)
 router.include_router(ai_router)
 router.include_router(audit_router)
 

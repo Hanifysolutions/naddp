@@ -324,6 +324,8 @@ def test_the_budget_is_per_purpose_and_recorded() -> None:
     heavy = _go(AiPurpose.MORNING_BRIEF, role=RoleCode.AMBASSADOR)
     light = _go(AiPurpose.OPPORTUNITY_SCORE, role=RoleCode.AMBASSADOR)
 
+    assert heavy.trace.budget_seconds is not None, "the trace must record the budget it was given"
+    assert light.trace.budget_seconds is not None, "the trace must record the budget it was given"
     assert heavy.trace.budget_seconds == pytest.approx(HEAVY_BUDGET_SECONDS)
     assert light.trace.budget_seconds == pytest.approx(4.0)
     assert heavy.trace.budget_seconds > light.trace.budget_seconds

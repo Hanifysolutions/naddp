@@ -345,6 +345,78 @@ export type BriefTrace = components['schemas']['BriefTraceResponse'];
 export type BriefList = components['schemas']['BriefListResponse'];
 export type BriefSummary = components['schemas']['BriefSummaryResponse'];
 
+/**
+ * `GET /v1/meetings`: the diary, split into upcoming and recent, narrowed to the caller's
+ * zones. `total` counts only what the caller may read. Each row carries the live follow-up
+ * (else the most recent) as a summary.
+ */
+export type MeetingList = components['schemas']['MeetingListResponse'];
+export type MeetingRow = components['schemas']['MeetingRowResponse'];
+export type FollowupSummary = components['schemas']['FollowupSummaryResponse'];
+export type MeetingType = components['schemas']['MeetingType'];
+
+/**
+ * `GET /v1/meetings/{meeting_id}`: one meeting in full.
+ *
+ * `pre_read` is persisted and rendered from the database; this page never calls the
+ * Gateway. Its `evidence` is the brief's evidence shape and its `trace` the brief's trace
+ * shape, so `EvidenceList` and `TraceBadge` render it unchanged. `ai_draft_available` is
+ * false with a server-written `ai_draft_unavailable_reason` wherever an AI draft would be
+ * refused or would fall back to another meeting's content - render that sentence, never a
+ * button the server would refuse.
+ */
+export type MeetingDetail = components['schemas']['MeetingDetailResponse'];
+export type MeetingAttendee = components['schemas']['AttendeeResponse'];
+export type PreRead = components['schemas']['PreReadResponse'];
+export type PreReadResult = components['schemas']['PreReadResultResponse'];
+export type TalkingPoint = components['schemas']['TalkingPointResponse'];
+
+/**
+ * One follow-up: an outbound communication and the human approval trail on it. Winning
+ * moment #2.
+ *
+ * Render actions from `available_actions` and the approval block from `approval`, never
+ * from the role. `dispatch_is_simulated` is always true in this build: say that nothing
+ * leaves the system. Recipients are labels, never addresses.
+ */
+export type Followup = components['schemas']['FollowupResponse'];
+export type FollowupApproval = components['schemas']['FollowupApprovalResponse'];
+export type FollowupAction = components['schemas']['FollowupAction'];
+export type FollowupStatus = components['schemas']['FollowupStatus'];
+export type PersonRef = components['schemas']['PersonRefResponse'];
+
+/** `GET /v1/meetings/approvals`: follow-ups awaiting a named human decision, oldest first. */
+export type ApprovalQueue = components['schemas']['ApprovalQueueResponse'];
+export type ApprovalQueueItem = components['schemas']['ApprovalQueueItemResponse'];
+
+/**
+ * `POST /v1/meetings/{meeting_id}/followups`: an AI draft. `envelope` is the Gateway's
+ * AI response shape, embedded whole; `followup` is null when the envelope is BLOCKED.
+ */
+export type FollowupDraftResponse = components['schemas']['FollowupDraftResponse'];
+
+/**
+ * `POST .../followups/{followup_id}/transition`: a raw event. `send` on a follow-up that is
+ * not approved is a 403 `approval_required` here, with no auto-submit.
+ */
+export type FollowupTransitionRequest = components['schemas']['FollowupTransitionRequest'];
+export type FollowupTransitionResponse = components['schemas']['FollowupTransitionResponse'];
+
+/**
+ * `POST .../followups/{followup_id}/dispatch`: the Send button. Resolves with HTTP 200 when
+ * the follow-up was sent and HTTP 202 when the server blocked it on approval - both carry
+ * this body, and a 202 is the control working, not a failure.
+ */
+export type FollowupDispatchRequest = components['schemas']['FollowupDispatchRequest'];
+export type FollowupDispatchResponse = components['schemas']['FollowupDispatchResponse'];
+
+/**
+ * `POST .../followups/{followup_id}/approve`: approve and send, as the approver.
+ * `approved_audit_event_id` is null only when the follow-up was already approved.
+ */
+export type FollowupApproveRequest = components['schemas']['FollowupApproveRequest'];
+export type FollowupApproveResponse = components['schemas']['FollowupApproveResponse'];
+
 /** `GET /v1/audit/events`: one page of the append-only log, newest first. */
 export type AuditEventPage = components['schemas']['AuditEventPageResponse'];
 export type AuditEvent = components['schemas']['AuditEventResponse'];

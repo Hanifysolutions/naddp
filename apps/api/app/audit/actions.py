@@ -42,6 +42,16 @@ __all__ = [
     "ACCESS_PRIVILEGED_READ",
     "AUDIT_ACTIONS",
     "EXPORT_PERFORMED",
+    "MEETING_FOLLOWUP_ACTIONS",
+    "MEETING_FOLLOWUP_APPROVAL_REVOKED",
+    "MEETING_FOLLOWUP_APPROVED",
+    "MEETING_FOLLOWUP_CHANGES_REQUESTED",
+    "MEETING_FOLLOWUP_DISCARDED",
+    "MEETING_FOLLOWUP_DRAFTED",
+    "MEETING_FOLLOWUP_EDITED",
+    "MEETING_FOLLOWUP_SENT",
+    "MEETING_FOLLOWUP_SUBMITTED",
+    "MEETING_FOLLOWUP_TRANSITION_REJECTED",
     "OPPORTUNITY_ACTIONS",
     "OPPORTUNITY_CLOSED",
     "OPPORTUNITY_CONTACTED",
@@ -146,16 +156,59 @@ OPPORTUNITY_ACTIONS: Final[frozenset[str]] = frozenset(
 
 
 # ---------------------------------------------------------------------------
+# Meeting follow-ups (docs/workflows.md section 2) -- winning moment #2
+# ---------------------------------------------------------------------------
+
+#: The creation event. Written by ``app.services.followups.draft_followup`` rather than by
+#: the state machine, because a follow-up that does not exist yet has no state to leave.
+#: Its refusals (no permission, no clearance, a live follow-up already on the meeting) are
+#: recorded under this same action against the *meeting*.
+MEETING_FOLLOWUP_DRAFTED: Final[str] = "meeting_followup.drafted"
+MEETING_FOLLOWUP_EDITED: Final[str] = "meeting_followup.edited"
+MEETING_FOLLOWUP_SUBMITTED: Final[str] = "meeting_followup.submitted"
+MEETING_FOLLOWUP_APPROVED: Final[str] = "meeting_followup.approved"
+MEETING_FOLLOWUP_CHANGES_REQUESTED: Final[str] = "meeting_followup.changes_requested"
+#: Also the action of the DENY row for a send refused as ``approval_required``: the event
+#: authorization records its refusal under the event's own action, so "who tried to send
+#: this follow-up" is one query whatever the outcome.
+MEETING_FOLLOWUP_SENT: Final[str] = "meeting_followup.sent"
+MEETING_FOLLOWUP_APPROVAL_REVOKED: Final[str] = "meeting_followup.approval_revoked"
+#: A discard is never a deletion (``docs/OPEN_QUESTIONS.md`` Q-05, resolved 2026-09-15).
+MEETING_FOLLOWUP_DISCARDED: Final[str] = "meeting_followup.discarded"
+MEETING_FOLLOWUP_TRANSITION_REJECTED: Final[str] = "meeting_followup.transition_rejected"
+
+#: Every action the follow-up machine and its creation event may write.
+#:
+#: Eight verbs, one per event -- unlike the opportunity machine, no two events share a
+#: verb -- plus the refusal action for a refusal no rule can name.
+MEETING_FOLLOWUP_ACTIONS: Final[frozenset[str]] = frozenset(
+    {
+        MEETING_FOLLOWUP_DRAFTED,
+        MEETING_FOLLOWUP_EDITED,
+        MEETING_FOLLOWUP_SUBMITTED,
+        MEETING_FOLLOWUP_APPROVED,
+        MEETING_FOLLOWUP_CHANGES_REQUESTED,
+        MEETING_FOLLOWUP_SENT,
+        MEETING_FOLLOWUP_APPROVAL_REVOKED,
+        MEETING_FOLLOWUP_DISCARDED,
+        MEETING_FOLLOWUP_TRANSITION_REJECTED,
+    }
+)
+
+
+# ---------------------------------------------------------------------------
 # The vocabulary
 # ---------------------------------------------------------------------------
 
 #: Every action string this build may write.
 #:
-#: Week 1 covers governance and the opportunity pipeline. The meeting follow-up and
-#: consular machines land in Week 2 and extend this set; each is a block of literals plus
-#: its ``<prefix>.transition_rejected``, and each is checked against its machine's
-#: ``audit_actions()`` by the same test.
-AUDIT_ACTIONS: Final[frozenset[str]] = SESSION_ACTIONS | ACCESS_ACTIONS | OPPORTUNITY_ACTIONS
+#: Governance, the opportunity pipeline and, since W3.2, the meeting follow-up machine. The
+#: consular machine extends this set when it lands: a block of literals plus its
+#: ``<prefix>.transition_rejected``, checked against its machine's ``audit_actions()`` by
+#: the same test.
+AUDIT_ACTIONS: Final[frozenset[str]] = (
+    SESSION_ACTIONS | ACCESS_ACTIONS | OPPORTUNITY_ACTIONS | MEETING_FOLLOWUP_ACTIONS
+)
 
 
 def transition_rejected_action(prefix: str) -> str:

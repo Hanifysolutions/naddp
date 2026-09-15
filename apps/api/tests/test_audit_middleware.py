@@ -28,6 +28,7 @@ from starlette.requests import Request
 from starlette.types import Receive, Scope, Send
 
 from app.audit.middleware import (
+    _DENIAL_CODES,
     ACCESS_DENIED,
     ACCESS_OBJECT_TYPE,
     ACCESS_PRIVILEGED_READ,
@@ -44,6 +45,13 @@ from app.audit.middleware import (
     decide,
     mark_audited,
     record_access,
+)
+from app.core.errors import (
+    AppError,
+    ApprovalRequiredError,
+    ClassificationDeniedError,
+    PermissionDeniedError,
+    SeparationOfDutiesError,
 )
 from app.domain.enums import Classification, PolicyResult, RoleCode
 from app.models.governance import AuditEvent
@@ -209,6 +217,37 @@ def test_the_deduplication_flag_cannot_suppress_a_denial() -> None:
     annotated = AuditAnnotation(self_audited=True)
     assert _decide(status=403, annotation=annotated) is not None
     assert _decide(status=403, rule=LOGIN_RULE, annotation=annotated) is not None
+
+
+@pytest.mark.parametrize("code", ["approval_required", "separation_of_duties"])
+def test_the_workflow_refinements_of_a_permission_denial_are_recorded_as_denials(
+    code: str,
+) -> None:
+    """W3.2: a send without approval and a self-approval are 403s, and they are denials."""
+    decision = _decide(
+        method="POST",
+        path="/v1/meetings/m/followups/f/transition",
+        status=403,
+        role=RoleCode.TRADE_OFFICER,
+        problem={"code": code, "reason": code},
+    )
+
+    assert decision is not None
+    assert decision.action == ACCESS_DENIED
+    assert decision.policy_result is PolicyResult.DENY
+    assert decision.payload["code"] == code
+    assert decision.payload["reason"] == code
+
+
+@pytest.mark.parametrize(
+    "error", [PermissionDeniedError, ClassificationDeniedError, ApprovalRequiredError,
+              SeparationOfDutiesError],
+)  # fmt: skip
+def test_every_authorisation_error_code_is_a_denial_code(error: type[AppError]) -> None:
+    """The status test already records them; the code set keeps them denials regardless."""
+    assert error.status_code == 403
+    assert error.code in _DENIAL_CODES
+    assert _decide(status=200, problem={"code": error.code}) is not None
 
 
 def test_a_classification_denial_is_recorded_like_a_permission_denial() -> None:

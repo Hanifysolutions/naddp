@@ -1,4 +1,4 @@
-"""Ten meetings, their attendees, and the action items that come out of them.
+"""Ten meetings, their follow-ups and attendees, and the action items that come out of them.
 
 **Winning moment #2 lives in this file.** ``mtg-covalent-lithium-bilateral`` carries a
 Gateway-drafted follow-up sitting at ``DRAFTED``: the text exists, the trace behind it
@@ -7,22 +7,41 @@ and from nowhere else (``docs/workflows.md`` section 2), and the approver may no
 drafter -- so the trade officer who owns the meeting cannot approve their own draft
 however senior the demo makes them feel.
 
+**The hero follow-up is the snapshot the trace says was served.** Its subject, recipients
+and body are read verbatim from the ``result`` of the deterministic snapshot named by its
+trace's purpose and scenario (``ai_snapshots/meeting_followup_covalent-lithium-bilateral
+.json``), and its ``pre_read_result`` is the ``result`` of the matching ``meeting_prep``
+snapshot, validated against ``MeetingPrepResult`` before it is written. A follow-up whose
+text differed from what its own trace drawer says the Gateway returned would be a
+fabricated provenance, which is the one thing the trace drawer exists to rule out.
+
 The other nine meetings exist so that the blocked one is visibly *not* a special case: one
 is at ``OFFICER_REVIEW`` waiting on the Deputy, one is ``APPROVED`` but still unsent, two
-have gone out, one was discarded, and three have no follow-up at all. Two constraints in
-the schema are load-bearing here and are satisfied rather than worked around --
-``followup_sent_at`` requires a named approver, and status ``SENT`` requires a send
-timestamp.
+have gone out, one was discarded, and three have no follow-up at all. Follow-ups are rows
+of ``meeting_followups``, and that table's constraints are satisfied rather than worked
+around: a sent follow-up names an approver who is not its drafter, a discard carries a
+reason, and recipients are labels, never addresses.
+
+**Follow-ups are insert-once.** ``meeting_followups`` refuses ``DELETE`` and refuses any
+``UPDATE`` of a sent or discarded row, so the upsert every other table here uses would
+raise on a second run. A meeting that already has any follow-up -- from an earlier run, or
+copied in by the W3.2 migration on a database that was not reset -- is skipped.
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Final
+from typing import Any, Final
 
+from sqlalchemy import select
+
+from app.ai.schemas import MeetingFollowupResult, MeetingPrepResult
+from app.core.config import snapshot_path
 from app.domain.enums import (
     ActionStatus,
+    AiPurpose,
     ApprovalStatus,
     Classification,
     FollowupStatus,
@@ -33,7 +52,7 @@ from app.domain.enums import (
 from app.models.ai import AiTrace
 from app.models.consular import Case
 from app.models.governance import User
-from app.models.meetings import Action, Meeting, MeetingAttendee
+from app.models.meetings import Action, Meeting, MeetingAttendee, MeetingFollowup
 from app.models.opportunities import Opportunity
 from app.models.stakeholders import Organisation, Stakeholder
 from seed_parts.context import SeedContext
@@ -45,10 +64,29 @@ HERO_MEETING: Final[str] = "mtg-covalent-lithium-bilateral"
 
 _MISSION_ROOM: Final[str] = "Nigeria High Commission, Canberra - Meeting Room 2"
 
+#: Recipient label for a follow-up on a meeting with no counterpart organisation.
+_NO_ORGANISATION_RECIPIENT: Final[str] = "Roundtable participants"
+
+#: The follow-up timeline, in hours after the meeting starts. Ordering matters more than
+#: the exact hours: an approval timestamped before its submission would be a visible
+#: nonsense in the audit timeline.
+_DRAFTED_AFTER: Final[timedelta] = timedelta(hours=5)
+_SUBMITTED_AFTER: Final[timedelta] = timedelta(hours=6)
+_DISCARDED_AFTER: Final[timedelta] = timedelta(hours=7)
+_APPROVED_AFTER: Final[timedelta] = timedelta(hours=8)
+_SENT_AFTER: Final[timedelta] = timedelta(hours=9)
+
 
 @dataclass(frozen=True, slots=True)
 class MeetingSpec:
-    """One meeting, with whatever follow-up state it has reached."""
+    """One meeting, with whatever follow-up state it has reached.
+
+    A follow-up's content comes from exactly one place. With ``followup_trace`` set it is
+    the snapshot that trace served (``followup_subject`` and ``followup_body`` must then be
+    empty); otherwise it is ``followup_subject`` and ``followup_body`` as written here.
+    ``followup_recipients`` empty means "the counterpart organisation's name", or
+    ``Roundtable participants`` for a meeting with no organisation.
+    """
 
     slug: str
     title: str
@@ -64,9 +102,13 @@ class MeetingSpec:
     confirmed_attendees: tuple[str, ...] = field(default_factory=tuple)
     pre_read: str | None = None
     pre_read_trace: str | None = None
+    pre_read_snapshot: str | None = None
     followup_status: FollowupStatus | None = None
-    followup_draft: str | None = None
+    followup_subject: str | None = None
+    followup_recipients: tuple[str, ...] = field(default_factory=tuple)
+    followup_body: str | None = None
     followup_trace: str | None = None
+    followup_discard_reason: str | None = None
     approver: RoleCode | None = None
     classification: Classification = Classification.MISSION_INTERNAL
 
@@ -126,23 +168,9 @@ MEETING_SPECS: Final[tuple[MeetingSpec, ...]] = (
             "a question."
         ),
         pre_read_trace="trace-meeting-prep-covalent",
+        pre_read_snapshot="covalent-lithium-bilateral",
+        # Content is the snapshot this trace served; see the module docstring.
         followup_status=FollowupStatus.DRAFTED,
-        followup_draft=(
-            "DRAFT - NOT SENT. Sending requires approval by an officer other than the "
-            "drafter (docs/workflows.md section 2; BUILD_BIBLE section 6).\n\n"
-            "Subject: Thank you for your time - lithium processing skills\n\n"
-            "Dear [counterpart],\n\n"
-            "Thank you for meeting the High Commission. To summarise our side accurately: "
-            "we were interested in the workforce implications of the Kwinana refinery's "
-            "ramp toward nameplate, and we noted separately the shareholder-approved "
-            "expansion of the Mt Holland mine and concentrator. We are not suggesting the "
-            "refinery is expanding.\n\n"
-            "We raised one question and made no proposal: whether there is any appetite "
-            "for a conversation about processing skills pipelines, including the Nigerian "
-            "training institutions we work with. We would welcome your view in your own "
-            "time and are content to hear that the answer is no.\n\n"
-            "With thanks,\n[Trade Officer]\nNigeria High Commission, Canberra"
-        ),
         followup_trace="trace-meeting-followup-covalent",
     ),
     MeetingSpec(
@@ -163,9 +191,8 @@ MEETING_SPECS: Final[tuple[MeetingSpec, ...]] = (
             "trainer-of-trainers cohort is deliverable and what it would cost."
         ),
         followup_status=FollowupStatus.OFFICER_REVIEW,
-        followup_draft=(
-            "SUBMITTED FOR APPROVAL - content is locked while under review.\n\n"
-            "Subject: Follow-up from the site visit - trainer-of-trainers scoping\n\n"
+        followup_subject="Follow-up from the site visit - trainer-of-trainers scoping",
+        followup_body=(
             "Thank you for hosting the mission. As discussed, we will send through the "
             "Nigerian institutional profile and the qualification mapping we hold, so that "
             "you can tell us whether a trainer-of-trainers cohort is realistic on your "
@@ -223,9 +250,8 @@ MEETING_SPECS: Final[tuple[MeetingSpec, ...]] = (
             "side would need from the other to shorten it."
         ),
         followup_status=FollowupStatus.APPROVED,
-        followup_draft=(
-            "APPROVED, NOT YET SENT.\n\n"
-            "Subject: Roundtable readout and proposed next step\n\n"
+        followup_subject="Roundtable readout and proposed next step",
+        followup_body=(
             "Thank you both. Our readout is attached. We propose a short technical session "
             "on assessment evidence requirements, with no commitment on either side beyond "
             "attending."
@@ -248,8 +274,8 @@ MEETING_SPECS: Final[tuple[MeetingSpec, ...]] = (
             "Confirmation of the curriculum collaboration scope, staff exchange and review points."
         ),
         followup_status=FollowupStatus.SENT,
-        followup_draft=(
-            "SENT.\n\nSubject: Confirmed - curriculum collaboration scope\n\n"
+        followup_subject="Confirmed - curriculum collaboration scope",
+        followup_body=(
             "Thank you for concluding this. The agreed scope, the exchange schedule and "
             "the first review point are set out below for the record."
         ),
@@ -271,8 +297,8 @@ MEETING_SPECS: Final[tuple[MeetingSpec, ...]] = (
             "sits against domestic training in the sector's own view."
         ),
         followup_status=FollowupStatus.SENT,
-        followup_draft=(
-            "SENT.\n\nSubject: Thank you - resources workforce briefing\n\n"
+        followup_subject="Thank you - resources workforce briefing",
+        followup_body=(
             "Thank you for the briefing. We have noted the industry position that "
             "migration is complementary to, not a substitute for, domestic training."
         ),
@@ -295,12 +321,16 @@ MEETING_SPECS: Final[tuple[MeetingSpec, ...]] = (
             "mission's position. Classified under ADR-0006 because terms are under "
             "discussion; not readable by role alone below clearance rank 30."
         ),
+        # The draft is retained rather than deleted, because discarding a drafted diplomatic
+        # communication is itself a consequential act (OPEN_QUESTIONS Q-05, resolved).
         followup_status=FollowupStatus.DISCARDED,
-        followup_draft=(
-            "DISCARDED. Superseded by a written note cleared through the Deputy; the draft "
-            "is retained rather than deleted because discarding a drafted diplomatic "
-            "communication is itself a consequential act (OPEN_QUESTIONS Q-05)."
+        followup_subject="Follow-up from the technical exchange - implementation options",
+        followup_body=(
+            "Thank you for the technical exchange. We will set out the mission's "
+            "understanding of the implementation options discussed in a written note, and "
+            "will propose a date for the next session once that note has been cleared."
         ),
+        followup_discard_reason="Superseded by a written note cleared through the Deputy.",
         classification=Classification.CONFIDENTIAL,
     ),
     MeetingSpec(
@@ -330,8 +360,8 @@ MEETING_SPECS: Final[tuple[MeetingSpec, ...]] = (
             "directory."
         ),
         followup_status=FollowupStatus.DRAFTED,
-        followup_draft=(
-            "DRAFT - NOT SENT.\n\nSubject: Roundtable notes and a consent question\n\n"
+        followup_subject="Roundtable notes and a consent question",
+        followup_body=(
             "Thank you all. Before we circulate anything further we need to be explicit "
             "about consent: we will contact only those who have recorded consent to be "
             "contacted, and we will say so in writing."
@@ -625,27 +655,10 @@ def seed_meetings(
     opportunities: dict[str, Opportunity],
     traces: dict[str, AiTrace],
 ) -> dict[str, Meeting]:
-    """Load meetings and their attendee rows."""
+    """Load meetings, their attendee rows, and their follow-ups."""
     meetings: dict[str, Meeting] = {}
     for spec in MEETING_SPECS:
         start = ctx.days_ahead(spec.days_offset, hour=10)
-        status = spec.followup_status
-        approver_id = users[spec.approver].id if spec.approver is not None else None
-
-        # The follow-up timeline hangs off the meeting: submitted the same afternoon,
-        # approved that evening, sent after. Ordering matters more than the exact hours --
-        # an approval timestamped before its submission would be a visible nonsense in the
-        # audit timeline.
-        reviewed = {FollowupStatus.OFFICER_REVIEW, FollowupStatus.APPROVED, FollowupStatus.SENT}
-        submitted_at = start + timedelta(hours=6) if status in reviewed else None
-        approved_at = (
-            start + timedelta(hours=8)
-            if status in {FollowupStatus.APPROVED, FollowupStatus.SENT}
-            else None
-        )
-        sent_at = start + timedelta(hours=9) if status is FollowupStatus.SENT else None
-        discarded_at = start + timedelta(hours=7) if status is FollowupStatus.DISCARDED else None
-
         meetings[spec.slug] = ctx.upsert(
             Meeting,
             ctx.register("meeting", spec.slug),
@@ -664,15 +677,8 @@ def seed_meetings(
             owner_user_id=users[spec.owner].id,
             agenda=spec.agenda,
             pre_read=spec.pre_read,
+            pre_read_result=_pre_read_result(spec, traces),
             pre_read_trace_id=traces[spec.pre_read_trace].id if spec.pre_read_trace else None,
-            followup_status=status,
-            followup_draft=spec.followup_draft,
-            followup_trace_id=traces[spec.followup_trace].id if spec.followup_trace else None,
-            followup_submitted_at=submitted_at,
-            followup_approved_by_user_id=approver_id,
-            followup_approved_at=approved_at,
-            followup_sent_at=sent_at,
-            followup_discarded_at=discarded_at,
             classification=spec.classification,
         )
     ctx.session.flush()
@@ -690,7 +696,188 @@ def seed_meetings(
                 is_confirmed=stakeholder_slug in spec.confirmed_attendees,
             )
     ctx.session.flush()
+
+    for spec in MEETING_SPECS:
+        if spec.followup_status is not None:
+            _seed_followup(ctx, spec, meetings[spec.slug], users, organisations, traces)
+    ctx.session.flush()
     return meetings
+
+
+def _snapshot_result(purpose: AiPurpose, scenario: str) -> dict[str, Any]:
+    """Read the ``result`` object of a deterministic snapshot, as ``traces.py`` reads evidence.
+
+    Raises:
+        ValueError: if the snapshot carries no ``result`` object. A seeded AI artefact
+            with no snapshot behind it would be a provenance the trace cannot back up.
+    """
+    path = snapshot_path(purpose.value.lower(), scenario)
+    document = json.loads(path.read_text(encoding="utf-8"))
+    result = document.get("result")
+    if not isinstance(result, dict):
+        msg = f"snapshot {path.name} has no 'result' object to seed from."
+        raise ValueError(msg)
+    return result
+
+
+def _pre_read_result(spec: MeetingSpec, traces: dict[str, AiTrace]) -> dict[str, Any] | None:
+    """The structured pre-read for ``spec``, validated against ``MeetingPrepResult``.
+
+    Stored as the snapshot's ``result`` exactly as the file holds it, once it has validated:
+    the column is documented as a validated ``MeetingPrepResult``, and a blob that did not
+    validate would be a pre-read the Gateway itself would have refused to return.
+
+    Raises:
+        ValueError: if the snapshot is named without a pre-read trace, or names a scenario
+            other than the one its trace records -- the pre-read and its trace drawer would
+            then describe two different generations.
+    """
+    if spec.pre_read_snapshot is None:
+        return None
+    if spec.pre_read_trace is None:
+        msg = f"{spec.slug}: pre_read_snapshot is set but pre_read_trace is not."
+        raise ValueError(msg)
+    trace = traces[spec.pre_read_trace]
+    if trace.purpose is not AiPurpose.MEETING_PREP or trace.scenario != spec.pre_read_snapshot:
+        msg = (
+            f"{spec.slug}: pre_read_snapshot {spec.pre_read_snapshot!r} does not match trace "
+            f"{spec.pre_read_trace!r} ({trace.purpose.value}, {trace.scenario!r})."
+        )
+        raise ValueError(msg)
+    result = _snapshot_result(AiPurpose.MEETING_PREP, spec.pre_read_snapshot)
+    MeetingPrepResult.model_validate(result)
+    return result
+
+
+@dataclass(frozen=True, slots=True)
+class _FollowupContent:
+    """What a follow-up says and to whom: resolved once, from exactly one source."""
+
+    subject: str
+    recipients: list[str]
+    body: str
+
+
+def _followup_content(
+    spec: MeetingSpec,
+    organisations: dict[str, Organisation],
+    traces: dict[str, AiTrace],
+) -> _FollowupContent:
+    """Resolve the follow-up's content from its trace's snapshot, or from the spec.
+
+    Raises:
+        ValueError: if both sources are given, if neither is, or if the trace is not a
+            ``MEETING_FOLLOWUP`` trace. Silently preferring one of two sources would let the
+            stored text drift from what the trace says was served.
+    """
+    if spec.followup_trace is not None:
+        if spec.followup_subject or spec.followup_body or spec.followup_recipients:
+            msg = f"{spec.slug}: an AI-drafted follow-up takes its content from its trace only."
+            raise ValueError(msg)
+        trace = traces[spec.followup_trace]
+        if trace.purpose is not AiPurpose.MEETING_FOLLOWUP or not trace.scenario:
+            msg = f"{spec.slug}: {spec.followup_trace!r} is not a MEETING_FOLLOWUP trace."
+            raise ValueError(msg)
+        served = MeetingFollowupResult.model_validate(
+            _snapshot_result(AiPurpose.MEETING_FOLLOWUP, trace.scenario)
+        )
+        return _FollowupContent(served.subject, list(served.recipients), served.body)
+
+    if not spec.followup_subject or not spec.followup_body:
+        msg = f"{spec.slug}: a hand-written follow-up needs followup_subject and followup_body."
+        raise ValueError(msg)
+    if spec.followup_recipients:
+        recipients = list(spec.followup_recipients)
+    elif spec.organisation_slug is not None:
+        recipients = [organisations[spec.organisation_slug].name]
+    else:
+        recipients = [_NO_ORGANISATION_RECIPIENT]
+    return _FollowupContent(spec.followup_subject, recipients, spec.followup_body)
+
+
+def _seed_followup(
+    ctx: SeedContext,
+    spec: MeetingSpec,
+    meeting: Meeting,
+    users: dict[RoleCode, User],
+    organisations: dict[str, Organisation],
+    traces: dict[str, AiTrace],
+) -> MeetingFollowup | None:
+    """Insert the follow-up ``spec`` describes, once. Returns ``None`` when it was skipped.
+
+    Skipped whenever the meeting already has any follow-up. ``meeting_followups`` refuses
+    delete and refuses updates to terminal rows, so the seed never tries to reconcile an
+    existing row: on a database that was not reset, the rows already there are the record.
+    The manifest then names the id actually present, not one the seed would have minted.
+
+    Raises:
+        ValueError: if the spec breaks a rule the table would enforce anyway -- an approver
+            missing from, or identical to the drafter of, an approved or sent follow-up; a
+            discard without a reason. Caught here with the slug in the message rather than
+            as an anonymous CHECK violation at flush.
+    """
+    status = spec.followup_status
+    if status is None:
+        return None
+    slug = f"{spec.slug}--followup"
+    identifier = ctx.register("meeting_followup", slug)
+    existing = list(
+        ctx.session.scalars(
+            select(MeetingFollowup.id)
+            .where(MeetingFollowup.meeting_id == meeting.id)
+            .order_by(MeetingFollowup.drafted_at, MeetingFollowup.id)
+        )
+    )
+    if existing:
+        if identifier not in existing:
+            ctx.note("meeting_followup", slug, str(existing[-1]))
+        return None
+
+    approved = status in {FollowupStatus.APPROVED, FollowupStatus.SENT}
+    if approved and spec.approver is None:
+        msg = f"{spec.slug}: a {status.value} follow-up must name its approver."
+        raise ValueError(msg)
+    if spec.approver is not None and spec.approver is spec.owner:
+        msg = f"{spec.slug}: the approver may not be the drafter (separation of duties)."
+        raise ValueError(msg)
+    discarded = status is FollowupStatus.DISCARDED
+    if discarded != bool(spec.followup_discard_reason):
+        msg = f"{spec.slug}: a discard reason is required on, and only on, a DISCARDED follow-up."
+        raise ValueError(msg)
+
+    content = _followup_content(spec, organisations, traces)
+    start = meeting.scheduled_start
+    owner_id = users[spec.owner].id
+    submitted = status in {
+        FollowupStatus.OFFICER_REVIEW,
+        FollowupStatus.APPROVED,
+        FollowupStatus.SENT,
+    }
+    sent = status is FollowupStatus.SENT
+    approver_id = users[spec.approver].id if approved and spec.approver is not None else None
+    return ctx.insert_once(
+        MeetingFollowup,
+        identifier,
+        meeting_id=meeting.id,
+        status=status,
+        subject=content.subject,
+        recipients=content.recipients,
+        body=content.body,
+        trace_id=traces[spec.followup_trace].id if spec.followup_trace else None,
+        supersedes_followup_id=None,
+        drafted_by_user_id=owner_id,
+        drafted_at=start + _DRAFTED_AFTER,
+        submitted_by_user_id=owner_id if submitted else None,
+        submitted_at=start + _SUBMITTED_AFTER if submitted else None,
+        approved_by_user_id=approver_id,
+        approved_at=start + _APPROVED_AFTER if approved else None,
+        sent_by_user_id=owner_id if sent else None,
+        sent_at=start + _SENT_AFTER if sent else None,
+        discarded_by_user_id=owner_id if discarded else None,
+        discarded_at=start + _DISCARDED_AFTER if discarded else None,
+        discard_reason=spec.followup_discard_reason if discarded else None,
+        classification=meeting.classification,
+    )
 
 
 def seed_actions(

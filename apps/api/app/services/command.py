@@ -59,7 +59,7 @@ from app.domain.enums import (
 from app.models.consular import Case
 from app.models.diaspora import DiasporaProfile
 from app.models.intelligence import Signal
-from app.models.meetings import Meeting
+from app.models.meetings import Meeting, MeetingFollowup
 from app.models.opportunities import Opportunity
 from app.models.stakeholders import Organisation, Stakeholder
 from app.security.permissions import Permission
@@ -441,6 +441,11 @@ def _meeting_tile(session: Session, zones: Sequence[Classification], now: dateti
     ``followups_awaiting_approval`` counts ``OFFICER_REVIEW``: a draft that has been
     submitted and is waiting on a human decision. It is the number that should be non-zero
     on stage when the Ambassador is asked to approve something.
+
+    Both follow-up counts are over ``meeting_followups`` rows, not meetings: since W3.2 a
+    meeting may carry several follow-ups over its life (a discarded draft is kept, and a
+    re-draft is a new row). Only one can be live at a time, so the two numbers still read as
+    "meetings with a draft in this state".
     """
     readable = Meeting.classification.in_(zones)
     horizon = now + timedelta(days=UPCOMING_MEETING_DAYS)
@@ -452,17 +457,30 @@ def _meeting_tile(session: Session, zones: Sequence[Classification], now: dateti
             .where(readable, Meeting.scheduled_start >= now, Meeting.scheduled_start < horizon),
         ),
         followups_awaiting_approval=_count(
-            session,
-            select(func.count())
-            .select_from(Meeting)
-            .where(readable, Meeting.followup_status == FollowupStatus.OFFICER_REVIEW),
+            session, _followup_count(zones, FollowupStatus.OFFICER_REVIEW)
         ),
-        followups_drafted=_count(
-            session,
-            select(func.count())
-            .select_from(Meeting)
-            .where(readable, Meeting.followup_status == FollowupStatus.DRAFTED),
-        ),
+        followups_drafted=_count(session, _followup_count(zones, FollowupStatus.DRAFTED)),
+    )
+
+
+def _followup_count(zones: Sequence[Classification], status: FollowupStatus) -> Select[tuple[int]]:
+    """Count follow-ups in ``status`` whose own zone AND whose meeting's zone are readable.
+
+    Both predicates sit in the ``WHERE`` clause of one joined statement (rule 2 above). The
+    meeting's zone is not decoration: ADR-0006's dominant rule makes a follow-up at least as
+    sensitive as the meeting it follows up, and a meeting raised to ``CONFIDENTIAL`` after
+    its draft was recorded must stop incrementing a ``TRADE_OFFICER``'s count at once --
+    without anybody having to remember to reclassify the follow-up row as well.
+    """
+    return (
+        select(func.count())
+        .select_from(MeetingFollowup)
+        .join(Meeting, MeetingFollowup.meeting_id == Meeting.id)
+        .where(
+            MeetingFollowup.classification.in_(zones),
+            Meeting.classification.in_(zones),
+            MeetingFollowup.status == status,
+        )
     )
 
 

@@ -331,6 +331,33 @@ def test_an_illegal_event_is_a_409_that_explains_itself(
 
 
 @pytest.mark.integration
+def test_a_reason_holding_a_nul_is_a_422_not_a_500(api: tuple[TestClient, Session]) -> None:
+    """Postgres cannot store a NUL, so the body is refused before any decision is made.
+
+    Without the schema's validator this reached the executor, whose DENY row could not be
+    flushed: a 500, and no record of the attempt. Nothing changes and nothing is written.
+    """
+    client, session = api
+    opportunity = _opportunity(session)
+    _as(client, RoleCode.TRADE_OFFICER, session)
+
+    response = client.post(
+        f"{BASE}/{opportunity.id}/transition",
+        json={"event": "dismiss", "reason": "bad\x00reason"},
+    )
+
+    assert response.status_code == 422
+    problem = response.json()
+    assert problem["code"] == "validation_error"
+    assert [error["loc"] for error in problem["errors"]] == [["body", "reason"]]
+    session.expire_all()
+    stored = session.get(Opportunity, opportunity.id)
+    assert stored is not None
+    assert stored.stage is OpportunityStage.DETECTED
+    assert _audit_rows(session, opportunity.id) == []
+
+
+@pytest.mark.integration
 def test_a_well_formed_unknown_event_reaches_the_machine(
     api: tuple[TestClient, Session],
 ) -> None:

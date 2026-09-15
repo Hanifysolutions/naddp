@@ -370,6 +370,171 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/meetings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the meetings the caller may read
+         * @description Return the diary. The clearance predicate is in the SQL, so ``total`` leaks nothing.
+         */
+        get: operations["list_meetings_endpoint_v1_meetings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The follow-ups awaiting approval
+         * @description Return every outbound communication waiting on a named human decision.
+         *
+         *     **Declared before ``/{meeting_id}``, and that ordering is load-bearing.** FastAPI matches
+         *     in declaration order; with the parameterised route first, ``approvals`` would be parsed
+         *     as a UUID and answered with a 422.
+         */
+        get: operations["read_approval_queue_v1_meetings_approvals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{meeting_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one meeting
+         * @description Return one meeting in full.
+         *
+         *     A meeting out of the caller's zone is a 403 naming the zone, not a 404: the caller
+         *     asserted the id, and a legible refusal is what makes the control demonstrable. The
+         *     pre-read is read from the database; this route never calls the Gateway.
+         */
+        get: operations["read_meeting_v1_meetings__meeting_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{meeting_id}/followups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Draft a follow-up with AI
+         * @description Winning moment #2, first half: the AI drafts. Nothing is sent, and nothing can be yet.
+         *
+         *     In order: the meeting is loaded and its zone checked; the draft is refused on the record
+         *     if the meeting cannot hold one (``ensure_draftable``); it is refused without a Gateway
+         *     call if no AI draft is offered here (above the purpose's ceiling, or no meeting-specific
+         *     snapshot to fall back to -- ``app.services.meetings.ai_draft_availability``); then the
+         *     Gateway is called with the meeting's pinned scenario, and its answer becomes a
+         *     ``DRAFTED`` follow-up carrying the trace id, committed with the trace row.
+         */
+        post: operations["draft_followup_endpoint_v1_meetings__meeting_id__followups_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{meeting_id}/followups/{followup_id}/transition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fire a raw workflow event on a follow-up
+         * @description Fire one event. ``send`` on an unapproved follow-up is a 403 with no auto-submit.
+         */
+        post: operations["transition_followup_endpoint_v1_meetings__meeting_id__followups__followup_id__transition_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{meeting_id}/followups/{followup_id}/dispatch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a follow-up, or block it on approval
+         * @description The Send button. 200 when an approved follow-up is sent; 202 when it is blocked.
+         *
+         *     The 202 is winning moment #2 over HTTP: the officer asked to send, the server refused,
+         *     the refusal is an audit row, and the follow-up now waits for a named human.
+         */
+        post: operations["dispatch_followup_endpoint_v1_meetings__meeting_id__followups__followup_id__dispatch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{meeting_id}/followups/{followup_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve a follow-up and send it
+         * @description The approver's half: ``approve`` then ``send``, as two committed, audited transitions.
+         *
+         *     ``expected_status`` defaults to ``OFFICER_REVIEW``: the approver approves the follow-up
+         *     they were shown, and one that has moved on is a 409. ``expected_submitted_at``, when the
+         *     client sends the ``submitted_at`` it rendered, binds the approval to that submission: a
+         *     follow-up resubmitted since is a 409, audited, rather than an approval of unseen words.
+         *     ``dispatched`` is true whenever the follow-up is now ``SENT``, by this request or by
+         *     another officer; render the outcome from ``followup.status``.
+         */
+        post: operations["approve_followup_endpoint_v1_meetings__meeting_id__followups__followup_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ai/morning-brief": {
         parameters: {
             query?: never;
@@ -439,6 +604,13 @@ export interface paths {
         /**
          * Generate a meeting pre-read
          * @description Produce the pre-read for one meeting.
+         *
+         *     Only for a meeting with a pinned scenario (``app.services.meetings.pinned_ai_scenario``)
+         *     whose own pre-read snapshot exists. Any other meeting is refused with 409
+         *     ``ai_draft_unavailable`` before the Gateway is called, and no trace is written: its
+         *     fallback would be the purpose's ``__default__``, another meeting's pre-read. The meeting
+         *     detail page never calls this route: it renders the stored pre-read from
+         *     ``GET /v1/meetings/{meeting_id}``.
          */
         post: operations["prepare_meeting_v1_ai_meetings__meeting_id__prep_post"];
         delete?: never;
@@ -462,8 +634,18 @@ export interface paths {
          *
          *     The envelope comes back ``PENDING_APPROVAL`` whether the model answered or the
          *     deterministic snapshot did -- a cached draft is still a draft (ADR-0002). Nothing here
-         *     sets ``meetings.followup_status``: this is a proposal, and ``SENT`` is reachable only
-         *     from ``APPROVED`` (``docs/workflows.md`` section 2).
+         *     writes a ``meeting_followups`` row: this is a proposal, and ``SENT`` is reachable only
+         *     from ``APPROVED`` (``docs/workflows.md`` section 2). The route that turns an AI draft into
+         *     a follow-up on the record is ``POST /v1/meetings/{meeting_id}/followups``.
+         *
+         *     The ``followup_status`` fact is the status of the meeting's most recently drafted
+         *     follow-up (``app.services.followups.latest_followup``), or ``None`` when it has none --
+         *     a process fact for the prompt, not content.
+         *
+         *     Only for a meeting with a pinned scenario whose own follow-up snapshot exists, as on the
+         *     pre-read route. Any other meeting is refused with 409 ``ai_draft_unavailable`` before the
+         *     Gateway is called and no trace is written, because its fallback would be the purpose's
+         *     ``__default__`` -- another meeting's draft, which the demo must never show.
          *
          *     Capped at ``MISSION_INTERNAL`` by the purpose. A ``CONFIDENTIAL`` meeting therefore
          *     comes back ``BLOCKED`` with an explanation rather than a draft, which is the control
@@ -846,6 +1028,54 @@ export interface components {
             request_id: string;
         };
         /**
+         * ApprovalQueueItemResponse
+         * @description One follow-up waiting on a named human decision, with the meeting it follows up.
+         */
+        ApprovalQueueItemResponse: {
+            /** @description The follow-up awaiting approval. */
+            followup: components["schemas"]["FollowupResponse"];
+            /**
+             * Meeting Id
+             * Format: uuid
+             * @description The meeting it follows up.
+             */
+            meeting_id: string;
+            /**
+             * Meeting Title
+             * @description That meeting's title.
+             */
+            meeting_title: string;
+            /** @description That meeting's format. */
+            meeting_type: components["schemas"]["MeetingType"];
+            /**
+             * Scheduled Start
+             * Format: date-time
+             * @description When that meeting started.
+             */
+            scheduled_start: string;
+            /**
+             * Organisation Name
+             * @description The counterpart, when there is one the caller may read.
+             */
+            organisation_name?: string | null;
+        };
+        /**
+         * ApprovalQueueResponse
+         * @description Every follow-up in OFFICER_REVIEW the caller may read, oldest submission first.
+         */
+        ApprovalQueueResponse: {
+            /**
+             * Items
+             * @description Oldest submission first.
+             */
+            items: components["schemas"]["ApprovalQueueItemResponse"][];
+            /**
+             * Total
+             * @description How many were returned. Never a count of hidden rows.
+             */
+            total: number;
+        };
+        /**
          * ApprovalStatus
          * @description Human-approval state of an AI artefact or a consequential action.
          *
@@ -864,6 +1094,43 @@ export interface components {
         AssumeRoleRequest: {
             /** @description The role to assume. One of the six demo personas. */
             role: components["schemas"]["RoleCode"];
+        };
+        /**
+         * AttendeeResponse
+         * @description Who is in the room.
+         */
+        AttendeeResponse: {
+            /**
+             * Stakeholder Id
+             * Format: uuid
+             * @description The attendee's stakeholders row.
+             */
+            stakeholder_id: string;
+            /**
+             * Full Name
+             * @description Their name. Null exactly when withheld is true.
+             */
+            full_name?: string | null;
+            /**
+             * Organisation Name
+             * @description Their organisation, when they have one and the caller may read it.
+             */
+            organisation_name?: string | null;
+            /**
+             * Attendee Role
+             * @description Their role in this meeting, e.g. COUNTERPART.
+             */
+            attendee_role: string;
+            /**
+             * Is Confirmed
+             * @description False means invited but unconfirmed; render attendance as tentative.
+             */
+            is_confirmed: boolean;
+            /**
+             * Withheld
+             * @description True when the caller is not cleared to read this person. Say that someone is withheld; never guess who.
+             */
+            withheld: boolean;
         };
         /**
          * AuditEventPageResponse
@@ -1176,12 +1443,12 @@ export interface components {
             document_id?: string | null;
             /**
              * Title
-             * @description Source title. Null on a seeded row, which carries `quote` instead. Fall back to publisher, then citation_id -- never render an empty link label.
+             * @description Source title, used as the link label. Populated by both writers since Q-23. Still nullable so a row written before that ruling stays readable: fall back to publisher, then citation_id, and never render an empty link label.
              */
             title?: string | null;
             /**
              * Quote
-             * @description The exact sentence on the public page this item rests on. Null on a Gateway-written row, which carries `title` instead.
+             * @description The exact sentence on the public page this item rests on, verbatim from that citation's `supports_claims`. Populated by both writers since Q-23. Never a paraphrase: a quotation the reader cannot find on the page is attribution laundering. Null only on a row written before that ruling.
              */
             quote?: string | null;
             /**
@@ -1903,6 +2170,365 @@ export interface components {
             citation_id?: string | null;
         };
         /**
+         * FollowupAction
+         * @description What the API offers a caller to *ask for* on one meeting follow-up.
+         *
+         *     Not the machine's event vocabulary, which is why the values are lower-case intent names
+         *     rather than the ``UPPER_SNAKE_CASE`` of a state. Two members are intents that fire more
+         *     than one event: ``DISPATCH`` fires ``send`` and, when the follow-up is still ``DRAFTED``,
+         *     the ``submit_for_review`` that a refused send implies; ``APPROVE_AND_DISPATCH`` fires
+         *     ``approve`` and then ``send`` as the approver. The other three are one event each.
+         *
+         *     The web client renders buttons from this list and never from a role (``CLAUDE.md``
+         *     2.4). It is advisory only: every action is re-checked by the state machine when it is
+         *     attempted, and a refusal is audited whatever the list said.
+         * @enum {string}
+         */
+        FollowupAction: "dispatch" | "approve_and_dispatch" | "discard" | "request_changes" | "revoke_approval";
+        /**
+         * FollowupApprovalResponse
+         * @description Who could approve a follow-up, and whether the caller may approve it now.
+         */
+        FollowupApprovalResponse: {
+            /**
+             * Eligible Approvers
+             * @description The named officers who could approve this follow-up, most senior first: they hold approve:meeting_followup, are cleared for its zone, and did not draft it. Empty for a SENT or DISCARDED follow-up. Render the names, not a permission.
+             */
+            eligible_approvers: components["schemas"]["PersonRefResponse"][];
+            /**
+             * Caller Is Drafter
+             * @description True when the caller drafted it, and so may not approve it (separation of duties).
+             */
+            caller_is_drafter: boolean;
+            /**
+             * Caller May Approve
+             * @description True when the follow-up is awaiting approval and the caller holds the approval permission, is cleared for it, and did not draft it.
+             */
+            caller_may_approve: boolean;
+        };
+        /**
+         * FollowupApproveRequest
+         * @description Approve a follow-up under review and dispatch it. The body is optional.
+         */
+        FollowupApproveRequest: {
+            /** @description Optional precondition; defaults to OFFICER_REVIEW, so a follow-up that has moved on is a 409 rather than a surprise. */
+            expected_status?: components["schemas"]["FollowupStatus"] | null;
+            /**
+             * Expected Submitted At
+             * @description The submitted_at of the follow-up the approver was shown, echoed back verbatim. When given and the follow-up has been resubmitted since, the approval is refused with 409 (reason state_precondition_failed) and audited, so an approver never approves words they did not see. Must carry a timezone.
+             */
+            expected_submitted_at?: string | null;
+        };
+        /**
+         * FollowupApproveResponse
+         * @description What approve-and-dispatch did: two committed transitions, two audit rows.
+         */
+        FollowupApproveResponse: {
+            /**
+             * Dispatched
+             * @description True when the follow-up is now SENT -- by this request, or by another officer whose Send landed between its approval and its send (followup.sent_by says who). False means this request's send was refused and nobody has sent it; the follow-up rests wherever the concurrent change put it, which is usually APPROVED. Render the outcome from followup.status.
+             */
+            dispatched: boolean;
+            /**
+             * Approved Audit Event Id
+             * @description The meeting_followup.approved audit row. Null only when the follow-up was already approved (expected_status APPROVED), so this request wrote no approval.
+             */
+            approved_audit_event_id?: string | null;
+            /**
+             * Sent Audit Event Id
+             * @description The meeting_followup.sent audit row, when it was sent.
+             */
+            sent_audit_event_id?: string | null;
+            /** @description The follow-up as it now stands. */
+            followup: components["schemas"]["FollowupResponse"];
+        };
+        /**
+         * FollowupDispatchRequest
+         * @description Ask to dispatch a follow-up (the product's Send button). The body is optional.
+         */
+        FollowupDispatchRequest: {
+            /** @description Optional precondition: refuse with 409 unless the follow-up is still in it. */
+            expected_status?: components["schemas"]["FollowupStatus"] | null;
+        };
+        /**
+         * FollowupDispatchResponse
+         * @description What a Send did. HTTP 200 when dispatched; HTTP 202 when blocked on a named human.
+         *
+         *     Blocked is the control working, not an error: the server refused to send, recorded the
+         *     refusal in the audit log, and -- for a draft -- submitted it for approval. Render the
+         *     approval block from ``followup.approval``.
+         */
+        FollowupDispatchResponse: {
+            /**
+             * Dispatched
+             * @description True when the follow-up was sent (HTTP 200).
+             */
+            dispatched: boolean;
+            /**
+             * Blocked
+             * @description True when the send was refused for want of approval (HTTP 202).
+             */
+            blocked: boolean;
+            /**
+             * Block Code
+             * @description Why it was blocked, e.g. approval_required. Null if sent.
+             */
+            block_code?: string | null;
+            /**
+             * Block Detail
+             * @description The server's sentence explaining the block. Show verbatim.
+             */
+            block_detail?: string | null;
+            /**
+             * Refusal Audit Event Id
+             * @description The DENY audit row the refused send wrote.
+             */
+            refusal_audit_event_id?: string | null;
+            /**
+             * Submission Audit Event Id
+             * @description The audit row of the submission for approval, when the draft was submitted.
+             */
+            submission_audit_event_id?: string | null;
+            /**
+             * Dispatch Audit Event Id
+             * @description The meeting_followup.sent audit row, when it was sent.
+             */
+            dispatch_audit_event_id?: string | null;
+            /** @description The follow-up as it now stands. */
+            followup: components["schemas"]["FollowupResponse"];
+        };
+        /**
+         * FollowupDraftResponse
+         * @description An AI draft of a follow-up: the Gateway envelope, and the row it became.
+         *
+         *     The envelope is the AI response shape (``CLAUDE.md`` rule 2.2), embedded whole. A
+         *     ``BLOCKED`` envelope is still a 200 and carries its explanation; ``followup`` is then
+         *     null, because nothing was drafted.
+         */
+        FollowupDraftResponse: {
+            /** @description The Gateway's answer: result, evidence, trace_id, approval_status. */
+            envelope: components["schemas"]["GatewayResult"];
+            /** @description The DRAFTED follow-up created from the envelope; null when BLOCKED. */
+            followup?: components["schemas"]["FollowupResponse"] | null;
+        };
+        /**
+         * FollowupResponse
+         * @description One follow-up -- an outbound communication -- and the human approval trail on it.
+         *
+         *     Winning moment #2. ``status`` cannot reach SENT except from APPROVED, and APPROVED names
+         *     an officer other than the drafter; the database refuses anything else.
+         */
+        FollowupResponse: {
+            /**
+             * Id
+             * Format: uuid
+             * @description The follow-up's id.
+             */
+            id: string;
+            /**
+             * Meeting Id
+             * Format: uuid
+             * @description The meeting it follows up.
+             */
+            meeting_id: string;
+            /** @description DRAFTED, OFFICER_REVIEW, APPROVED, SENT or DISCARDED (docs/workflows.md 2). */
+            status: components["schemas"]["FollowupStatus"];
+            /**
+             * Subject
+             * @description Subject line. Locked once it leaves DRAFTED.
+             */
+            subject: string;
+            /**
+             * Recipients
+             * @description Role or organisation LABELS, never addresses. Locked outside DRAFTED.
+             */
+            recipients: string[];
+            /**
+             * Body
+             * @description The drafted message, verbatim. Locked outside DRAFTED.
+             */
+            body: string;
+            /** @description The zone that governs it: its own, or its meeting's if that is higher. */
+            classification: components["schemas"]["Classification"];
+            /**
+             * Is Live
+             * @description True in DRAFTED, OFFICER_REVIEW or APPROVED. A meeting holds one live.
+             */
+            is_live: boolean;
+            /**
+             * Is Ai Drafted
+             * @description True when an AI Gateway call produced the draft.
+             */
+            is_ai_drafted: boolean;
+            /**
+             * Trace Id
+             * @description The ai_traces row behind an AI draft; null if hand-written.
+             */
+            trace_id?: string | null;
+            /** @description The routing decision behind the draft, when this caller may inspect it. Non-null trace_id with null trace means it exists and this role may not see it. */
+            trace?: components["schemas"]["BriefTraceResponse"] | null;
+            /** @description Who drafted it. */
+            drafted_by: components["schemas"]["PersonRefResponse"];
+            /**
+             * Drafted At
+             * Format: date-time
+             * @description When it was drafted.
+             */
+            drafted_at: string;
+            /** @description Who submitted it for approval, while it is submitted. */
+            submitted_by?: components["schemas"]["PersonRefResponse"] | null;
+            /**
+             * Submitted At
+             * @description When it was submitted and its content locked.
+             */
+            submitted_at?: string | null;
+            /** @description The named human who approved it. Never the drafter. */
+            approved_by?: components["schemas"]["PersonRefResponse"] | null;
+            /**
+             * Approved At
+             * @description When it was approved.
+             */
+            approved_at?: string | null;
+            /** @description Who dispatched it (simulated). */
+            sent_by?: components["schemas"]["PersonRefResponse"] | null;
+            /**
+             * Sent At
+             * @description When it was dispatched. Non-null only when SENT.
+             */
+            sent_at?: string | null;
+            /** @description Who discarded it. */
+            discarded_by?: components["schemas"]["PersonRefResponse"] | null;
+            /**
+             * Discarded At
+             * @description When it was discarded.
+             */
+            discarded_at?: string | null;
+            /**
+             * Discard Reason
+             * @description Why it was discarded. Present on, and only on, a DISCARDED follow-up.
+             */
+            discard_reason?: string | null;
+            /**
+             * Supersedes Followup Id
+             * @description The sent or discarded follow-up this re-draft replaces, if any.
+             */
+            supersedes_followup_id?: string | null;
+            /** @description Who could approve it. */
+            approval: components["schemas"]["FollowupApprovalResponse"];
+            /**
+             * Available Actions
+             * @description What THIS caller may ask for right now: dispatch, approve_and_dispatch, discard, request_changes, revoke_approval. Render buttons from this and never from the role. Advisory: the server re-checks and audits every attempt.
+             */
+            available_actions: components["schemas"]["FollowupAction"][];
+            /**
+             * Dispatch Is Simulated
+             * @description Always true in this build: 'sent' is recorded here and no message leaves the system. Say so on screen.
+             */
+            dispatch_is_simulated: boolean;
+        };
+        /**
+         * FollowupStatus
+         * @description Meeting follow-up state. ``BUILD_BIBLE.md`` section 9, ``docs/workflows.md`` 2.
+         *
+         *     This is winning moment #2: ``SENT`` is reachable from ``APPROVED`` and from nowhere
+         *     else. ``DISCARDED`` is the non-success terminal of ``docs/workflows.md`` section 2,
+         *     confirmed by the architect's Q-05 ruling (``docs/OPEN_QUESTIONS.md``, 2026-09-15): a
+         *     drafted diplomatic communication is discarded with a reason, never deleted.
+         * @enum {string}
+         */
+        FollowupStatus: "DRAFTED" | "OFFICER_REVIEW" | "APPROVED" | "SENT" | "DISCARDED";
+        /**
+         * FollowupSummaryResponse
+         * @description The one follow-up a meeting row shows: the live one, else the most recent.
+         */
+        FollowupSummaryResponse: {
+            /**
+             * Id
+             * Format: uuid
+             * @description The follow-up's id.
+             */
+            id: string;
+            /** @description DRAFTED, OFFICER_REVIEW, APPROVED, SENT or DISCARDED (docs/workflows.md 2). */
+            status: components["schemas"]["FollowupStatus"];
+            /**
+             * Subject
+             * @description Subject line of the drafted message.
+             */
+            subject: string;
+            /**
+             * Updated At
+             * Format: date-time
+             * @description When any column of the follow-up last changed.
+             */
+            updated_at: string;
+        };
+        /**
+         * FollowupTransitionRequest
+         * @description Fire one raw workflow event on a follow-up.
+         *
+         *     An event, never a target state (``docs/workflows.md`` 0.2). ``send`` here on a follow-up
+         *     nobody has approved is a plain 403 ``approval_required``; the product's Send button is
+         *     the dispatch route, not this one.
+         */
+        FollowupTransitionRequest: {
+            /**
+             * Event
+             * @description submit_for_review, approve, request_changes, send, revoke_approval or discard. An unknown event is refused with 409 and audited.
+             * @example discard
+             */
+            event: string;
+            /**
+             * Reason
+             * @description Why. Required by discard, request_changes and revoke_approval; capped at 500 characters. A discard stores it on the follow-up. A NUL character is refused with 422.
+             */
+            reason?: string | null;
+            /** @description Optional precondition: refuse with 409 unless the follow-up is still in it. */
+            expected_status?: components["schemas"]["FollowupStatus"] | null;
+        };
+        /**
+         * FollowupTransitionResponse
+         * @description The result of an accepted event, and the follow-up as it now stands.
+         */
+        FollowupTransitionResponse: {
+            /**
+             * Followup Id
+             * Format: uuid
+             * @description The follow-up that was transitioned.
+             */
+            followup_id: string;
+            /**
+             * Event
+             * @description The event that was fired.
+             */
+            event: string;
+            /** @description Status before the event. */
+            from_status: components["schemas"]["FollowupStatus"];
+            /** @description Status after the event. */
+            to_status: components["schemas"]["FollowupStatus"];
+            /**
+             * Applied
+             * @description False for an idempotent re-fire: no change, no audit row, still 200.
+             */
+            applied: boolean;
+            /**
+             * Audit Action
+             * @description The audit action written. Null for a no-op.
+             */
+            audit_action?: string | null;
+            /**
+             * Audit Event Id
+             * @description The audit row written. Null for a no-op.
+             */
+            audit_event_id?: string | null;
+            /**
+             * Occurred At
+             * @description The transaction timestamp of the change. Null for a no-op.
+             */
+            occurred_at?: string | null;
+            /** @description The follow-up as it now stands. */
+            followup: components["schemas"]["FollowupResponse"];
+        };
+        /**
          * GatedEventResponse
          * @description A transition legal from this stage that this caller may not fire.
          */
@@ -2050,6 +2676,201 @@ export interface components {
             sector_codes?: string[];
         };
         /**
+         * MeetingDetailResponse
+         * @description One meeting in full: agenda, attendees, pre-read and every readable follow-up.
+         */
+        MeetingDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             * @description The meeting's id.
+             */
+            id: string;
+            /**
+             * Title
+             * @description What the meeting is.
+             */
+            title: string;
+            /** @description Format of the engagement. */
+            meeting_type: components["schemas"]["MeetingType"];
+            /**
+             * Scheduled Start
+             * Format: date-time
+             * @description Start of the slot.
+             */
+            scheduled_start: string;
+            /**
+             * Scheduled End
+             * Format: date-time
+             * @description End of the slot.
+             */
+            scheduled_end: string;
+            /**
+             * Location
+             * @description Venue, or null for a call.
+             */
+            location?: string | null;
+            /**
+             * Virtual Link
+             * @description Conference link, if any.
+             */
+            virtual_link?: string | null;
+            /** @description ADR-0006 zone of the meeting. */
+            classification: components["schemas"]["Classification"];
+            /**
+             * Agenda
+             * @description What the mission intends to cover. Prose.
+             */
+            agenda: string;
+            /**
+             * Organisation Id
+             * @description The counterpart organisation, if any.
+             */
+            organisation_id?: string | null;
+            /**
+             * Organisation Name
+             * @description Its name; null when there is none or the caller may not read it.
+             */
+            organisation_name?: string | null;
+            /**
+             * Opportunity Id
+             * @description The opportunity this meeting advances, if any.
+             */
+            opportunity_id?: string | null;
+            /**
+             * Opportunity Title
+             * @description Its title; null when there is none or the caller may not read it.
+             */
+            opportunity_title?: string | null;
+            /**
+             * Owner Name
+             * @description The officer accountable for the meeting.
+             */
+            owner_name?: string | null;
+            /**
+             * Attendees
+             * @description Who is in the room. Readable people first, by name; withheld last.
+             */
+            attendees: components["schemas"]["AttendeeResponse"][];
+            /** @description The stored pre-read. Null when none has been prepared, or when the stored one could not be read -- say 'no pre-read', never offer to generate one here. */
+            pre_read?: components["schemas"]["PreReadResponse"] | null;
+            /**
+             * Followups
+             * @description Every follow-up the caller may read: the live one first, then the rest newest drafted first. Discarded drafts are kept, so a meeting can have several.
+             */
+            followups: components["schemas"]["FollowupResponse"][];
+            /**
+             * Ai Draft Available
+             * @description True when POST /v1/meetings/{meeting_id}/followups will offer an AI draft to this caller now. Render the draft button only when true.
+             */
+            ai_draft_available: boolean;
+            /**
+             * Ai Draft Unavailable Reason
+             * @description Why no AI draft is offered, as a sentence to show verbatim. Null when true.
+             */
+            ai_draft_unavailable_reason?: string | null;
+        };
+        /**
+         * MeetingListResponse
+         * @description The diary, split at the API's current time.
+         *
+         *     ``total`` counts only meetings the caller may read, from the same clearance-filtered
+         *     statement that returned them -- it can never be differenced into a count of what was
+         *     withheld.
+         */
+        MeetingListResponse: {
+            /**
+             * Upcoming
+             * @description Meetings starting now or later, soonest first.
+             */
+            upcoming: components["schemas"]["MeetingRowResponse"][];
+            /**
+             * Recent
+             * @description Meetings that have started, most recent first.
+             */
+            recent: components["schemas"]["MeetingRowResponse"][];
+            /**
+             * Total
+             * @description upcoming plus recent. Never a count of hidden meetings.
+             */
+            total: number;
+        };
+        /**
+         * MeetingRowResponse
+         * @description One line of the meeting index.
+         */
+        MeetingRowResponse: {
+            /**
+             * Id
+             * Format: uuid
+             * @description The meeting's id.
+             */
+            id: string;
+            /**
+             * Title
+             * @description What the meeting is.
+             */
+            title: string;
+            /** @description Format of the engagement. */
+            meeting_type: components["schemas"]["MeetingType"];
+            /**
+             * Scheduled Start
+             * Format: date-time
+             * @description Start of the slot.
+             */
+            scheduled_start: string;
+            /**
+             * Scheduled End
+             * Format: date-time
+             * @description End of the slot.
+             */
+            scheduled_end: string;
+            /**
+             * Location
+             * @description Venue, or null for a call.
+             */
+            location?: string | null;
+            /** @description ADR-0006 zone. Meetings the caller is not cleared for are never returned. */
+            classification: components["schemas"]["Classification"];
+            /**
+             * Organisation Id
+             * @description The counterpart organisation, if any.
+             */
+            organisation_id?: string | null;
+            /**
+             * Organisation Name
+             * @description The counterpart's name. Null when there is none, or when the caller may not read that organisation -- the tie is shown, the content is not.
+             */
+            organisation_name?: string | null;
+            /**
+             * Opportunity Id
+             * @description The opportunity this meeting advances, if any.
+             */
+            opportunity_id?: string | null;
+            /**
+             * Opportunity Title
+             * @description Its title. Null when there is none, or when the caller may not read it.
+             */
+            opportunity_title?: string | null;
+            /**
+             * Owner Name
+             * @description The officer accountable for the meeting.
+             */
+            owner_name?: string | null;
+            /**
+             * Attendee Count
+             * @description How many counterpart attendees are recorded.
+             */
+            attendee_count: number;
+            /**
+             * Has Pre Read
+             * @description True when a structured pre-read is stored.
+             */
+            has_pre_read: boolean;
+            /** @description The live follow-up, else the most recent, among those the caller may read. Null when there is none. */
+            followup?: components["schemas"]["FollowupSummaryResponse"] | null;
+        };
+        /**
          * MeetingTileResponse
          * @description The diary and the follow-up queue. Present only for a caller holding ``read:meeting``.
          */
@@ -2070,6 +2891,12 @@ export interface components {
              */
             followups_drafted: number;
         };
+        /**
+         * MeetingType
+         * @description Format of a meeting. Selects the shape of the pre-read the Gateway generates.
+         * @enum {string}
+         */
+        MeetingType: "BILATERAL" | "INTRODUCTORY" | "SITE_VISIT" | "ROUNDTABLE" | "CALL";
         /**
          * MetaResponse
          * @description Non-sensitive build and demo information.
@@ -2487,6 +3314,30 @@ export interface components {
             opportunity_count: number;
         };
         /**
+         * PersonRefResponse
+         * @description A named officer: who drafted, submitted, approved, sent or discarded something.
+         */
+        PersonRefResponse: {
+            /**
+             * User Id
+             * Format: uuid
+             * @description The officer's users row.
+             */
+            user_id: string;
+            /**
+             * Full Name
+             * @description Their name. Synthetic in this demo.
+             */
+            full_name: string;
+            /**
+             * Title
+             * @description Their post, e.g. 'Deputy Head of Mission', when recorded.
+             */
+            title?: string | null;
+            /** @description The demo role they hold. Null for an officer who is not a demo persona. */
+            role?: components["schemas"]["RoleCode"] | null;
+        };
+        /**
          * PipelineBoardResponse
          * @description The board, plus the totals the command tile quotes.
          */
@@ -2536,6 +3387,74 @@ export interface components {
          * @enum {string}
          */
         PolicyResult: "ALLOW" | "DENY";
+        /**
+         * PreReadResponse
+         * @description A meeting's pre-read, in the AI response shape: result, evidence, trace, approval.
+         *
+         *     Persisted with the meeting and rendered from the database; opening a meeting never calls
+         *     the Gateway. ``trace_id`` is the provenance. ``trace`` is present only when the caller
+         *     holds ``read:ai_trace`` and clears the trace's zone -- non-null ``trace_id`` with null
+         *     ``trace`` means the routing decision exists and this role may not inspect it.
+         */
+        PreReadResponse: {
+            /** @description The structured pre-read. */
+            result: components["schemas"]["PreReadResultResponse"];
+            /**
+             * Evidence
+             * @description The sources the talking points cite, each resolved to a real registry entry. An id the registry does not carry as VERIFIED is dropped, never rendered.
+             */
+            evidence: components["schemas"]["BriefEvidenceResponse"][];
+            /**
+             * Trace Id
+             * @description The ai_traces row that produced this pre-read.
+             */
+            trace_id?: string | null;
+            /** @description The approval status the Gateway returned with it. */
+            approval_status: components["schemas"]["ApprovalStatus"];
+            /** @description The routing decision, when this caller may see it. */
+            trace?: components["schemas"]["BriefTraceResponse"] | null;
+        };
+        /**
+         * PreReadResultResponse
+         * @description The structured pre-read the Gateway produced (MeetingPrepResult).
+         */
+        PreReadResultResponse: {
+            /**
+             * Meeting Ref
+             * @description How the pre-read names the meeting.
+             */
+            meeting_ref: string;
+            /**
+             * Counterpart
+             * @description Who the meeting is with.
+             */
+            counterpart: string;
+            /**
+             * Objectives
+             * @description What the mission wants from the meeting.
+             */
+            objectives: string[];
+            /**
+             * Talking Points
+             * @description What to say, with sources.
+             */
+            talking_points: components["schemas"]["TalkingPointResponse"][];
+            /**
+             * Questions To Ask
+             * @description Questions to put to the counterpart.
+             */
+            questions_to_ask: string[];
+            /**
+             * Sensitivities
+             * @description Guidance on what to avoid saying. Guidance, not state.
+             */
+            sensitivities: string[];
+            /**
+             * Confidence
+             * @description The Gateway's confidence, 0-1 (not 0-100: this is the AI schema's scale). Null when the stored result carried none.
+             */
+            confidence?: number | null;
+        };
         /**
          * RelationshipStrength
          * @description Current state of the mission's relationship with a stakeholder.
@@ -2706,6 +3625,27 @@ export interface components {
             organisations: number;
         };
         /**
+         * TalkingPointResponse
+         * @description One thing to say in the room, and the sources that let the officer say it.
+         */
+        TalkingPointResponse: {
+            /**
+             * Point
+             * @description The point, in one line.
+             */
+            point: string;
+            /**
+             * Detail
+             * @description The substance behind it.
+             */
+            detail: string;
+            /**
+             * Citation Ids
+             * @description Keys into PreReadResponse.evidence, by citation_id. Only ids that resolved to a VERIFIED registry entry are listed, so every one can be rendered as a link.
+             */
+            citation_ids: string[];
+        };
+        /**
          * TimelineEntryResponse
          * @description One recorded interaction on the dossier timeline.
          */
@@ -2789,7 +3729,7 @@ export interface components {
             event: string;
             /**
              * Reason
-             * @description Why. Required by close, dismiss and revert (marked with a pencil in docs/workflows.md section 1) and capped at 500 characters. For a closure it is stored in opportunities.closed_reason and referenced from the audit row.
+             * @description Why. Required by close, dismiss and revert (marked with a pencil in docs/workflows.md section 1) and capped at 500 characters. For a closure it is stored in opportunities.closed_reason and referenced from the audit row. A NUL character is refused with 422.
              */
             reason?: string | null;
             /** @description Optional precondition: refuse with 409 unless the opportunity is still in this stage. The optimistic-concurrency rule of docs/workflows.md 0.9 in the form this schema supports -- send the stage you rendered, and two officers cannot race the same opportunity into two states. */
@@ -3332,6 +4272,352 @@ export interface operations {
             };
         };
     };
+    list_meetings_endpoint_v1_meetings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Upcoming and recent meetings, narrowed to the caller's zones. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingListResponse"];
+                };
+            };
+            /** @description You do not hold read:meeting, or have no session. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    read_approval_queue_v1_meetings_approvals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Follow-ups in OFFICER_REVIEW the caller may read, oldest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalQueueResponse"];
+                };
+            };
+            /** @description You do not hold read:meeting and approve:meeting_followup. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    read_meeting_v1_meetings__meeting_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The meeting's id. */
+                meeting_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agenda, attendees, the stored pre-read and every readable follow-up. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDetailResponse"];
+                };
+            };
+            /** @description No read:meeting, or not cleared for this meeting's zone. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No meeting with that id. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    draft_followup_endpoint_v1_meetings__meeting_id__followups_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The meeting's id. */
+                meeting_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Gateway envelope and the DRAFTED follow-up it became. A BLOCKED envelope is also 200, with followup null. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FollowupDraftResponse"];
+                };
+            };
+            /** @description No draft:meeting_followup, or not cleared for the meeting. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No meeting with that id. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A live follow-up exists (live_followup_exists, audited), or no AI draft is offered for this meeting (ai_draft_unavailable). The body says why. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The Gateway's answer could not be stored as a draft. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    transition_followup_endpoint_v1_meetings__meeting_id__followups__followup_id__transition_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The meeting's id. */
+                meeting_id: string;
+                /** @description The follow-up's id, on that meeting. */
+                followup_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FollowupTransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description The new status, the audit row, and the follow-up as it now stands. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FollowupTransitionResponse"];
+                };
+            };
+            /** @description Refused by authorisation: permission_denied, classification_denied, approval_required or separation_of_duties. The refusal is audited. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such meeting, or no such follow-up on it. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Illegal from the current status, terminal, a required reason missing or unrecordable, a guard refused, or a precondition failed: expected_status, or on approve expected_submitted_at (resubmitted since the approver opened it). The body says which. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dispatch_followup_endpoint_v1_meetings__meeting_id__followups__followup_id__dispatch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The meeting's id. */
+                meeting_id: string;
+                /** @description The follow-up's id, on that meeting. */
+                followup_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["FollowupDispatchRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Dispatched: the follow-up is SENT (simulated). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FollowupDispatchResponse"];
+                };
+            };
+            /** @description Blocked on approval. The server refused to send, recorded the refusal, and (for a draft) submitted it for approval. The body names who can approve. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FollowupDispatchResponse"];
+                };
+            };
+            /** @description Refused by authorisation: permission_denied, classification_denied, approval_required or separation_of_duties. The refusal is audited. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such meeting, or no such follow-up on it. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Illegal from the current status, terminal, a required reason missing or unrecordable, a guard refused, or a precondition failed: expected_status, or on approve expected_submitted_at (resubmitted since the approver opened it). The body says which. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_followup_endpoint_v1_meetings__meeting_id__followups__followup_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The meeting's id. */
+                meeting_id: string;
+                /** @description The follow-up's id, on that meeting. */
+                followup_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["FollowupApproveRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Approved and, unless the send was refused, SENT (simulated). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FollowupApproveResponse"];
+                };
+            };
+            /** @description Refused by authorisation: permission_denied, classification_denied, approval_required or separation_of_duties. The refusal is audited. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such meeting, or no such follow-up on it. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Illegal from the current status, terminal, a required reason missing or unrecordable, a guard refused, or a precondition failed: expected_status, or on approve expected_submitted_at (resubmitted since the approver opened it). The body says which. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     morning_brief_v1_ai_morning_brief_post: {
         parameters: {
             query?: never;
@@ -3440,6 +4726,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description No deterministic fallback covers this meeting (reason ai_draft_unavailable): it has no pinned scenario with a snapshot of its own. No Gateway call is made and no trace is written, whether or not live AI is on. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3481,6 +4774,13 @@ export interface operations {
             };
             /** @description No meeting with that id. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No deterministic fallback covers this meeting (reason ai_draft_unavailable): it has no pinned scenario with a snapshot of its own. No Gateway call is made and no trace is written, whether or not live AI is on. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -134,6 +134,14 @@ addopts = "-q --strict-markers --strict-config"
 markers = [
     "integration: requires a live database (docker compose up db)",
 ]
+# Zero warnings is a gate, so the one tolerated warning is named exactly. starlette 1.6.0's
+# own testclient.py still spells `anyio.abc.BlockingPortal`, an alias anyio 4.15 deprecated.
+# It is raised inside site-packages at import, not by this codebase, and nothing here can
+# fix it short of pinning a different starlette or anyio. Matched on the full message so any
+# other DeprecationWarning -- including a future one from starlette -- still surfaces.
+filterwarnings = [
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.:DeprecationWarning",
+]
 
 [tool.coverage.run]
 branch = true

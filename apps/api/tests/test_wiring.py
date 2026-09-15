@@ -54,6 +54,13 @@ EXPECTED_ROUTES: Final[tuple[tuple[str, str], ...]] = (
     ("GET", "/v1/stakeholders/organisations"),
     ("GET", "/v1/stakeholders/organisations/{organisation_id}"),
     ("GET", "/v1/stakeholders/people/{stakeholder_id}"),
+    ("GET", "/v1/meetings"),
+    ("GET", "/v1/meetings/approvals"),
+    ("GET", "/v1/meetings/{meeting_id}"),
+    ("POST", "/v1/meetings/{meeting_id}/followups"),
+    ("POST", "/v1/meetings/{meeting_id}/followups/{followup_id}/transition"),
+    ("POST", "/v1/meetings/{meeting_id}/followups/{followup_id}/dispatch"),
+    ("POST", "/v1/meetings/{meeting_id}/followups/{followup_id}/approve"),
     ("POST", "/v1/ai/morning-brief"),
     ("POST", "/v1/ai/opportunities/{opportunity_id}/score"),
     ("POST", "/v1/ai/meetings/{meeting_id}/prep"),
@@ -168,6 +175,7 @@ def test_the_v1_prefix_is_applied_once_and_only_by_main(
         ("/v1/session/me", "session"),
         ("/v1/command/today", "command"),
         ("/v1/opportunities", "opportunities"),
+        ("/v1/meetings", "meetings"),
         ("/v1/ai/morning-brief", "ai"),
         ("/v1/audit/events", "governance"),
     ],
@@ -286,6 +294,7 @@ def test_every_business_route_refuses_an_anonymous_caller(client: TestClient) ->
             trace_id=nil,
             organisation_id=nil,
             stakeholder_id=nil,
+            followup_id=nil,
         )
         response = client.request(method, url)
         assert response.status_code == 403, f"{method} {url} answered {response.status_code}"

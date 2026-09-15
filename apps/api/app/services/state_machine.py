@@ -14,14 +14,63 @@ guards and the effects -- and executes them. It never re-derives a machine's sha
 in the domain table and target exactly the states that table names. A drifted transcription
 is an ``ImportError``, not a wrong answer at runtime.
 
-Order of operations, verbatim from ``docs/workflows.md`` section 4::
+Order of operations, from ``docs/workflows.md`` section 4 as amended in W3.2::
 
-    state precondition -> table lookup -> permission -> clearance -> guards
-        -> state write -> audit_events row
+    clearance -> a recordable reason -> state precondition -> unknown event -> terminal state
+        -> event authorization, only for an event that declares one:
+               permission -> clearance -> the machine's own authorize callable
+        -> table lookup
+               (an idempotent no-op still demands the event's permission and clearance,
+                and for a section 6 control that no Gateway call is on the stack)
+        -> permission -> clearance -> non-autonomous control -> reason -> guards
+        -> state write -> effects -> audit_events row
 
 Everything before the state write raises without touching the object. Everything from the
 state write onwards is in the caller's transaction, so an audit failure rolls the state
 change back with it (ADR-0004).
+
+**Clearance comes first, before anything that can reveal state.** A precondition refusal
+says "the object is in X", a terminal refusal names the terminal state, an illegal pair
+lists the events legal from here, and every later refusal document carries ``from_state``.
+An actor not cleared to read the object must learn none of that, so the very first check
+is clearance, and its 403 is built without ``from_state`` or ``legal_events``. The DENY row
+keeps ``from_state``: only audit readers see it. The later clearance checks stay, as defence
+in depth, and are now unreachable for an uncleared actor.
+
+**A reason that cannot be recorded is refused, never altered.** Postgres cannot store a NUL
+character in a JSONB payload or a text column, and a flush that tries turns a refusal into a
+500 with no DENY row. Request schemas reject it with a 422; for every other path the executor
+never writes such a reason into a DENY row (``None`` is recorded in its place) and refuses the
+event with 409 ``invalid_reason``. It never strips the NUL and carries on, because the stored
+reason would then differ from what the actor submitted.
+
+**Event authorizations** (W3.2; ``docs/workflows.md`` section 2, "Authorisation beyond the
+matrix"). Rule 0.1 answers every pair missing from a table with 409, and for most refusals
+that is the honest answer. It is the wrong answer for ``send`` on a follow-up nobody has
+approved: the sender may hold ``send:meeting_followup`` -- the matrix grants it widely on
+purpose -- and what is missing is an approval, which is an *authorisation* outcome (403),
+not an illegal pair. So a machine may attach an authorization to an event. It runs after
+the terminal check, so a terminal object still answers 409 first (nothing about a ``SENT``
+follow-up needs authorising), and before the table lookup, so the refusal is the same from
+every non-terminal state and says what is missing. It is opt-in and generic: a machine that
+declares none -- the opportunity machine -- executes exactly as before. The refusal is
+audited like every other, under the event's *own* action, so "who tried to send this" is one
+query over ``action`` whatever the outcome.
+
+**The idempotent no-op is not a way around the gates.** Rule 0.8 makes re-firing a
+satisfied event a 200 with no audit row. Until W3.2 that 200 was returned before any
+permission check, so a role holding no permission for the event could fire it anyway and
+read the object's state from the answer. The no-op now requires the actor to hold the
+permission of at least one rule for the event and to be cleared for the object -- and, when
+the event is a section 6 control, that no AI Gateway call is on the stack; otherwise it is a
+DENY row and a 403, like any other refusal.
+
+**A refusal carries the id of its DENY row.** Every :class:`~app.core.errors.AppError`
+raised after a denial row was written carries that row's id as ``denial_audit_event_id``
+-- an attribute, never a key of the serialised ``extra``. :func:`execute_transition` clears
+it when committing the row fails. A service that reports "the refusal recorded in the audit
+log" uses it rather than querying for the newest matching row, which could be another
+request's.
 
 **A denial is audited.** ``docs/workflows.md`` 0.3 requires a ``policy_result = DENY`` row
 for a refused transition, and rule 0.1 makes an illegal transition a first-class refusal.
@@ -53,6 +102,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
+from types import MappingProxyType
 from typing import Any, Final
 
 from sqlalchemy import func, select
@@ -73,10 +123,12 @@ from app.security.permissions import Permission
 from app.security.principal import Principal
 
 __all__ = [
+    "AUTHORIZATION_RESERVED_EXTRA",
     "DENIAL_AUTONOMOUS_ACTOR",
     "DENIAL_GUARD_FAILED",
     "DENIAL_ILLEGAL_TRANSITION",
     "DENIAL_INSUFFICIENT_CLEARANCE",
+    "DENIAL_INVALID_REASON",
     "DENIAL_MISSING_PERMISSION",
     "DENIAL_MISSING_REASON",
     "DENIAL_REASON_TOO_LONG",
@@ -84,7 +136,9 @@ __all__ = [
     "DENIAL_TERMINAL_STATE",
     "DENIAL_UNKNOWN_EVENT",
     "REASON_MAX_LENGTH",
+    "TRANSITION_PAYLOAD_KEYS",
     "TRANSITION_REJECTED_SUFFIX",
+    "AuthorizationFailure",
     "StateMachine",
     "TransitionContext",
     "TransitionOutcome",
@@ -117,8 +171,24 @@ DENIAL_MISSING_PERMISSION: Final[str] = "missing_permission"
 DENIAL_INSUFFICIENT_CLEARANCE: Final[str] = "insufficient_clearance"
 DENIAL_MISSING_REASON: Final[str] = "missing_reason"
 DENIAL_REASON_TOO_LONG: Final[str] = "reason_too_long"
+#: The reason holds a character the database cannot store (a NUL). Refused, never altered.
+DENIAL_INVALID_REASON: Final[str] = "invalid_reason"
 DENIAL_GUARD_FAILED: Final[str] = "guard_failed"
 DENIAL_AUTONOMOUS_ACTOR: Final[str] = "autonomous_actor"
+
+#: Keys of the fixed ALLOW payload: the five of ``docs/workflows.md`` 0.5 plus
+#: ``reason_stored_in`` (see :func:`_transition_payload`). A rule's ``audit_detail`` may add
+#: keys beside these and may never replace one: a reader filtering on ``payload.to_state``
+#: must be able to trust it whichever machine wrote the row.
+TRANSITION_PAYLOAD_KEYS: Final[frozenset[str]] = frozenset(
+    {"from_state", "to_state", "event", "reason", "trace_id", "reason_stored_in"}
+)
+
+#: Keys the executor itself puts on the problem document of an event-authorization refusal.
+#: An :class:`AuthorizationFailure` may add fields beside these and may never replace one.
+AUTHORIZATION_RESERVED_EXTRA: Final[frozenset[str]] = frozenset(
+    {"reason", "machine", "event", "from_state", "required_permissions"}
+)
 
 # ---------------------------------------------------------------------------
 # The non-autonomy seam (BUILD_BIBLE.md section 6)
@@ -175,6 +245,44 @@ class TransitionContext[ObjT]:
 
 
 @dataclass(frozen=True)
+class AuthorizationFailure:
+    """Why an event authorization refused, in the shape the executor records and raises.
+
+    Returned -- never raised -- by a machine's authorize callable, for the same reason a guard
+    returns a sentence rather than a bool: the executor owns the ordering, the DENY row and
+    the exception, so an authorization cannot forget to audit itself or pick a status of its
+    own. ``error`` chooses which 403 the API renders (``ApprovalRequiredError``,
+    ``SeparationOfDutiesError``). It is typed to :class:`PermissionDeniedError` subclasses
+    because an authorization refusal is an authorisation outcome by definition; a refusal
+    that is really about the object's content is a guard, and a guard answers 409.
+    """
+
+    #: Machine-readable reason: ``payload.denial_reason`` on the row, ``reason`` on the 403.
+    denial_reason: str
+    #: The sentence the caller reads, and ``payload.detail`` on the DENY row.
+    detail: str
+    #: Extra problem-document fields -- who could approve, say. JSON-serialisable values.
+    extra: Mapping[str, Any] = field(default_factory=dict)
+    error: type[PermissionDeniedError] = PermissionDeniedError
+
+    def __post_init__(self) -> None:
+        """Refuse extra fields that would overwrite what the executor reports itself."""
+        clashes = sorted(set(self.extra) & AUTHORIZATION_RESERVED_EXTRA)
+        if clashes:
+            msg = (
+                f"AuthorizationFailure.extra may not set {clashes}: the executor reports those "
+                "itself, and an authorization able to rewrite them could misreport its own "
+                "refusal."
+            )
+            raise ValueError(msg)
+
+
+def _no_event_authorizations() -> Mapping[str, Any]:
+    """The default for :attr:`StateMachine.event_authorizations`: none, immutably."""
+    return MappingProxyType({})
+
+
+@dataclass(frozen=True)
 class TransitionRule[StateT: Enum, ObjT]:
     """One row of a ``docs/workflows.md`` transition table.
 
@@ -202,6 +310,12 @@ class TransitionRule[StateT: Enum, ObjT]:
     #: True for a ``BUILD_BIBLE.md`` section 6 non-autonomous control (marked with a warning
     #: sign in ``docs/workflows.md``). Such an event is refused while :func:`is_ai_actor`.
     is_non_autonomous_control: bool = False
+    #: Extra facts for the ALLOW row's payload -- ``recipient_count`` on a send, say. Called
+    #: after the state write and the effects, so it sees the object as it now is, and merged
+    #: after the fixed keys (:data:`TRANSITION_PAYLOAD_KEYS`), which it may never replace: a
+    #: collision raises before the audit row is written, and the caller's transaction takes
+    #: the state write back with it.
+    audit_detail: Callable[[TransitionContext[ObjT]], Mapping[str, Any]] | None = None
 
 
 @dataclass(frozen=True)
@@ -235,14 +349,24 @@ class StateMachine[StateT: Enum, ObjT]:
     #: can be fired from, and re-firing it means "step back again", never "already done".
     idempotent_events: frozenset[str] = frozenset()
     public_ref_of: Callable[[ObjT], str | None] = field(default=lambda _obj: None)
+    #: Event name -> an authorization evaluated before the table lookup (module docstring).
+    #: It returns ``None`` to pass or an :class:`AuthorizationFailure` to refuse. Empty for a
+    #: machine whose every refusal is table-shaped.
+    event_authorizations: Mapping[
+        str, Callable[[TransitionContext[ObjT]], AuthorizationFailure | None]
+    ] = field(default_factory=_no_event_authorizations)
 
     def __post_init__(self) -> None:
         """Reject a rule set that does not transcribe the domain table exactly.
 
-        Five failures, all of which would otherwise be a silently wrong machine: a rule for
+        Seven failures, all of which would otherwise be a silently wrong machine: a rule for
         a pair the table does not contain (a widened machine), a missing rule (a transition
         the product cannot perform), a rule whose target disagrees with the table, a rule
-        leaving a terminal state, and an action outside this machine's namespace.
+        leaving a terminal state, an action outside this machine's namespace, an
+        authorization for an event the machine does not have, and an authorized event whose
+        rules disagree about the permission it needs -- the authorization runs before the
+        table lookup, so it has no rule to ask and must be able to rely on there being one
+        answer.
         """
         table_keys = set(self.transitions)
         rule_keys = set(self.rules)
@@ -293,6 +417,21 @@ class StateMachine[StateT: Enum, ObjT]:
             msg = f"{self.name}: idempotent_events names unknown events: {unknown}."
             raise ValueError(msg)
 
+        unauthorizable = sorted(set(self.event_authorizations) - self.events)
+        if unauthorizable:
+            msg = f"{self.name}: event_authorizations names unknown events: {unauthorizable}."
+            raise ValueError(msg)
+
+        for event in sorted(self.event_authorizations):
+            permissions = sorted({rule.permission.value for rule in self.rules_for(event)})
+            if len(permissions) != 1:
+                msg = (
+                    f"{self.name}: '{event}' has an event authorization, but its rules require "
+                    f"{permissions}. An authorized event must require exactly one permission, "
+                    "because the authorization runs before the table says which rule applies."
+                )
+                raise ValueError(msg)
+
     @property
     def events(self) -> frozenset[str]:
         """Every event name this machine accepts from at least one state."""
@@ -311,6 +450,10 @@ class StateMachine[StateT: Enum, ObjT]:
     def rejected_action(self) -> str:
         """Audit action for a refusal that has no rule to name."""
         return f"{self.action_prefix}.{TRANSITION_REJECTED_SUFFIX}"
+
+    def rules_for(self, event: str) -> tuple[TransitionRule[StateT, ObjT], ...]:
+        """Every rule firing ``event``, from any source state, in declaration order."""
+        return tuple(rule for rule in self.rules.values() if rule.event == event)
 
     def targets_of(self, event: str) -> frozenset[StateT]:
         """Every state ``event`` can produce, from any source state."""
@@ -457,9 +600,6 @@ def _write_denial[StateT: Enum, ObjT](
     return row
 
 
-# The order of the checks below IS the specification (docs/workflows.md section 4), so this
-# function is deliberately long and deliberately linear. Splitting it into helpers would let
-# a future edit reorder them, and the ordering is the security property.
 def apply_event[StateT: Enum, ObjT](
     session: Session,
     machine: StateMachine[StateT, ObjT],
@@ -499,15 +639,61 @@ def apply_event[StateT: Enum, ObjT](
 
     Raises:
         InvalidTransitionError: 409. Unknown event, terminal state, illegal pair, failed
-            precondition, missing or over-long reason, or a failed guard.
-        PermissionDeniedError: 403. The actor lacks the event's permission, or a
-            non-autonomous control was reached from inside an AI Gateway call.
+            precondition, a reason that cannot be recorded, a missing or over-long reason,
+            or a failed guard.
+        PermissionDeniedError: 403. The actor lacks the event's permission, a
+            non-autonomous control was reached from inside an AI Gateway call, or an event
+            authorization refused -- raised as the subclass the authorization names, such
+            as ``ApprovalRequiredError``.
         ClassificationDeniedError: 403. The actor is not cleared to read the object it is
-            trying to change (ADR-0006 -- both gates must pass).
+            trying to change (ADR-0006 -- both gates must pass). Checked first, so this is
+            the answer whatever else about the request would have been refused.
+
+    Every refusal above is raised after its DENY row was written, and carries that row's id
+    as ``denial_audit_event_id`` (see the module docstring).
     """
+    denials: list[AuditEvent] = []
+    try:
+        return _apply_event_in_order(
+            session,
+            machine,
+            obj,
+            event=event,
+            actor=actor,
+            reason=reason,
+            expected_state=expected_state,
+            trace_id=trace_id,
+            denials=denials,
+        )
+    except AppError as refused:
+        if denials:
+            refused.denial_audit_event_id = denials[-1].id
+        raise
+
+
+# The order of the checks below IS the specification (docs/workflows.md section 4), so this
+# function is deliberately long and deliberately linear. Splitting it into helpers would let
+# a future edit reorder them, and the ordering is the security property.
+def _apply_event_in_order[StateT: Enum, ObjT](
+    session: Session,
+    machine: StateMachine[StateT, ObjT],
+    obj: ObjT,
+    *,
+    event: str,
+    actor: Principal,
+    reason: str | None,
+    expected_state: StateT | None,
+    trace_id: uuid.UUID | None,
+    denials: list[AuditEvent],
+) -> TransitionOutcome[StateT]:
+    """The body of :func:`apply_event`. Every DENY row it writes is appended to ``denials``."""
     from_state = machine.read_state(obj)
     stripped = reason.strip() if reason is not None else ""
     normalised_reason = stripped or None
+    # A NUL cannot be stored (see the module docstring), so no DENY row ever carries one: the
+    # refusal records None in its place, and step 0b refuses the event.
+    reason_is_unrecordable = normalised_reason is not None and "\x00" in normalised_reason
+    recorded_reason = None if reason_is_unrecordable else normalised_reason
 
     def deny(
         denial_reason: str,
@@ -515,18 +701,20 @@ def apply_event[StateT: Enum, ObjT](
         *,
         rule: TransitionRule[StateT, ObjT] | None = None,
     ) -> None:
-        _write_denial(
-            session,
-            machine,
-            obj,
-            actor=actor,
-            event=event,
-            from_state=from_state,
-            rule=rule,
-            denial_reason=denial_reason,
-            detail=detail,
-            reason=normalised_reason,
-            trace_id=trace_id,
+        denials.append(
+            _write_denial(
+                session,
+                machine,
+                obj,
+                actor=actor,
+                event=event,
+                from_state=from_state,
+                rule=rule,
+                denial_reason=denial_reason,
+                detail=detail,
+                reason=recorded_reason,
+                trace_id=trace_id,
+            )
         )
 
     def denial_extra(denial_reason: str, **fields: object) -> dict[str, Any]:
@@ -538,8 +726,44 @@ def apply_event[StateT: Enum, ObjT](
             **fields,
         }
 
-    # 0. Precondition (docs/workflows.md 0.9). Before anything else: a caller acting on a
-    #    stale read must not be told whether their event would otherwise have been legal.
+    # 0a. Clearance, before anything that can reveal state (module docstring). The problem
+    #     document is built WITHOUT denial_extra: no from_state, no legal_events, and a detail
+    #     that names no state. The DENY row is filed under the event's own action whenever the
+    #     event names one permission, so "who tried to send this" stays one query over action.
+    object_zone = machine.classification_of(obj)
+    if not actor.may_read(object_zone):
+        rules_of_event = machine.rules_for(event)
+        uniform_rule = (
+            rules_of_event[0]
+            if len({candidate.permission for candidate in rules_of_event}) == 1
+            else None
+        )
+        deny(
+            DENIAL_INSUFFICIENT_CLEARANCE,
+            f"not cleared for {object_zone.value}",
+            rule=machine.rules.get((from_state, event)) or uniform_rule,
+        )
+        raise ClassificationDeniedError(
+            extra={
+                "reason": DENIAL_INSUFFICIENT_CLEARANCE,
+                "machine": machine.name,
+                "event": event,
+                "classification": object_zone.value,
+                "actor_role": actor.role.value,
+            },
+        )
+
+    # 0b. A reason the database cannot store is refused, never altered (module docstring).
+    if reason_is_unrecordable:
+        detail = "the reason contains a NUL character, which cannot be recorded"
+        deny(DENIAL_INVALID_REASON, detail, rule=machine.rules.get((from_state, event)))
+        raise InvalidTransitionError(
+            f"{detail}. Remove it and try again.",
+            extra=denial_extra(DENIAL_INVALID_REASON),
+        )
+
+    # 0c. Precondition (docs/workflows.md 0.9). Before anything but clearance: a caller acting
+    #     on a stale read must not be told whether their event would otherwise have been legal.
     if expected_state is not None and expected_state is not from_state:
         detail = (
             f"the object is in {from_state.value}, the request expected "
@@ -572,6 +796,65 @@ def apply_event[StateT: Enum, ObjT](
             extra=denial_extra(DENIAL_TERMINAL_STATE),
         )
 
+    # 2b. Event authorization (docs/workflows.md section 2, "Authorisation beyond the
+    #     matrix"), only for an event that declares one. Before the table lookup, so an
+    #     event legal from some state but not authorised on THIS object is a 403 saying what
+    #     is missing rather than a 409 illegal pair; after the terminal check, so a terminal
+    #     object still answers 409 first. Permission and clearance come first, in the order
+    #     of steps 4 and 5, so a caller who may not fire the event at all learns nothing from
+    #     the authorization's answer.
+    authorize = machine.event_authorizations.get(event)
+    if authorize is not None:
+        # The rule for this pair where one exists, else the event's first rule. Either way
+        # the DENY row carries the event's own action (`meeting_followup.sent`), never the
+        # machine's rejection action, and __post_init__ guarantees every rule for an
+        # authorized event requires the same permission.
+        representative = machine.rules.get((from_state, event)) or machine.rules_for(event)[0]
+        authorized_permission = representative.permission
+        if not actor.has(authorized_permission):
+            deny(
+                DENIAL_MISSING_PERMISSION,
+                f"missing {authorized_permission.value}",
+                rule=representative,
+            )
+            raise PermissionDeniedError(
+                extra=denial_extra(
+                    DENIAL_MISSING_PERMISSION,
+                    required_permissions=[authorized_permission.value],
+                    missing_permissions=[authorized_permission.value],
+                    actor_role=actor.role.value,
+                ),
+            )
+        authorization_zone = machine.classification_of(obj)
+        if not actor.may_read(authorization_zone):
+            deny(
+                DENIAL_INSUFFICIENT_CLEARANCE,
+                f"not cleared for {authorization_zone.value}",
+                rule=representative,
+            )
+            raise ClassificationDeniedError(
+                extra=denial_extra(
+                    DENIAL_INSUFFICIENT_CLEARANCE,
+                    classification=authorization_zone.value,
+                    actor_role=actor.role.value,
+                ),
+            )
+        refusal = authorize(
+            TransitionContext(
+                obj=obj, session=session, actor=actor, event=event, reason=normalised_reason
+            )
+        )
+        if refusal is not None:
+            deny(refusal.denial_reason, refusal.detail, rule=representative)
+            raise refusal.error(
+                refusal.detail,
+                extra=denial_extra(
+                    refusal.denial_reason,
+                    required_permissions=[authorized_permission.value],
+                    **refusal.extra,
+                ),
+            )
+
     # 3. Table lookup. The client sent an event; the table computes the target.
     rule = machine.rules.get((from_state, event))
     if rule is None:
@@ -579,6 +862,58 @@ def apply_event[StateT: Enum, ObjT](
         #     current state. A no-op 200 with no second audit row -- not an error, and not
         #     a duplicate transition.
         if event in machine.idempotent_events and from_state in machine.targets_of(event):
+            # The no-op still passes both gates. A 200 returned before them would let a role
+            # with no permission for the event, or no clearance for the object, fire it and
+            # read the object's state from the answer. Holding any one rule's permission
+            # suffices: the event is already satisfied, so no single rule applies.
+            event_rules = machine.rules_for(event)
+            held = [candidate for candidate in event_rules if actor.has(candidate.permission)]
+            if not held:
+                required = sorted({candidate.permission.value for candidate in event_rules})
+                deny(
+                    DENIAL_MISSING_PERMISSION,
+                    f"missing {' or '.join(required)}",
+                    rule=event_rules[0],
+                )
+                raise PermissionDeniedError(
+                    extra=denial_extra(
+                        DENIAL_MISSING_PERMISSION,
+                        required_permissions=required,
+                        missing_permissions=required,
+                        actor_role=actor.role.value,
+                    ),
+                )
+            noop_zone = machine.classification_of(obj)
+            if not actor.may_read(noop_zone):
+                deny(
+                    DENIAL_INSUFFICIENT_CLEARANCE,
+                    f"not cleared for {noop_zone.value}",
+                    rule=held[0],
+                )
+                raise ClassificationDeniedError(
+                    extra=denial_extra(
+                        DENIAL_INSUFFICIENT_CLEARANCE,
+                        classification=noop_zone.value,
+                        actor_role=actor.role.value,
+                    ),
+                )
+            # Nor is the no-op a way around step 6: a section 6 control re-fired from inside
+            # a Gateway call is refused and recorded, exactly as its first firing would be.
+            control_rules = [
+                candidate for candidate in event_rules if candidate.is_non_autonomous_control
+            ]
+            if control_rules and is_ai_actor():
+                detail = "a section 6 control cannot be fired from inside an AI Gateway call"
+                deny(DENIAL_AUTONOMOUS_ACTOR, detail, rule=control_rules[0])
+                raise PermissionDeniedError(
+                    f"{detail}. The Gateway may propose; only a human may decide.",
+                    extra=denial_extra(
+                        DENIAL_AUTONOMOUS_ACTOR,
+                        required_permissions=sorted(
+                            {candidate.permission.value for candidate in control_rules}
+                        ),
+                    ),
+                )
             _logger.info(
                 "workflow.transition_noop",
                 machine=machine.name,
@@ -668,7 +1003,8 @@ def apply_event[StateT: Enum, ObjT](
                 failure, extra=denial_extra(DENIAL_GUARD_FAILED, guard_failure=failure)
             )
 
-    # 9. State write, then effects, then the audit row -- one transaction.
+    # 9. State write, then effects, then the rule's audit detail, then the audit row -- one
+    #    transaction.
     occurred_at = transition_instant(session)
     machine.write_state(obj, rule.to_state, occurred_at)
     if rule.reason_column is not None and normalised_reason is not None:
@@ -677,6 +1013,27 @@ def apply_event[StateT: Enum, ObjT](
         effect(context)
 
     object_id = machine.object_id_of(obj)
+    payload = _transition_payload(
+        machine,
+        from_state=from_state,
+        to_state=rule.to_state,
+        event=event,
+        reason=normalised_reason,
+        reason_column=rule.reason_column,
+        trace_id=trace_id,
+    )
+    if rule.audit_detail is not None:
+        detail_fields = rule.audit_detail(context)
+        clashes = sorted(set(detail_fields) & TRANSITION_PAYLOAD_KEYS)
+        if clashes:
+            msg = (
+                f"{machine.name}: the audit_detail of {from_state.value}/{event} returned "
+                f"{clashes}, which the fixed transition payload owns (docs/workflows.md 0.5). "
+                "Name the extra facts something else."
+            )
+            raise ValueError(msg)
+        payload.update(detail_fields)
+
     audit_row = write_audit_event(
         session,
         actor=actor,
@@ -690,15 +1047,7 @@ def apply_event[StateT: Enum, ObjT](
             f"{actor.full_name} ({actor.role.value}) fired '{event}' on "
             f"{machine.object_type} {object_id}: {from_state.value} -> {rule.to_state.value}."
         ),
-        payload=_transition_payload(
-            machine,
-            from_state=from_state,
-            to_state=rule.to_state,
-            event=event,
-            reason=normalised_reason,
-            reason_column=rule.reason_column,
-            trace_id=trace_id,
-        ),
+        payload=payload,
         trace_id=trace_id,
     )
 
@@ -744,7 +1093,9 @@ def execute_transition[StateT: Enum, ObjT](
     precisely because a refusal made no state change for it to be atomic with.
 
     A failure to commit the denial is logged and swallowed: the caller's action was refused
-    either way, and turning their 403 into a 500 would tell them less, not more.
+    either way, and turning their 403 into a 500 would tell them less, not more. The refusal's
+    ``denial_audit_event_id`` is cleared in that case, because the row it named was rolled
+    back and no longer exists.
     """
     try:
         outcome = apply_event(
@@ -757,11 +1108,12 @@ def execute_transition[StateT: Enum, ObjT](
             expected_state=expected_state,
             trace_id=trace_id,
         )
-    except AppError:
+    except AppError as refused:
         try:
             session.commit()
         except SQLAlchemyError:
             session.rollback()
+            refused.denial_audit_event_id = None
             _logger.error(
                 "workflow.denial_audit_commit_failed",
                 machine=machine.name,

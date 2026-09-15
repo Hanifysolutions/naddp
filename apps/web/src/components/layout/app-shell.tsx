@@ -172,7 +172,7 @@ export function AppShell({
 
           <div className="ml-auto flex items-center gap-3">
             <DemoBadge />
-            <Separator orientation="vertical" className="h-6 bg-slate-700" />
+            <Separator orientation="vertical" className="hidden h-6 bg-slate-700 sm:block" />
             {rolePicker ?? <RolePicker />}
           </div>
         </div>
@@ -227,7 +227,7 @@ function Wordmark(): React.JSX.Element {
       >
         NA
       </span>
-      <span className="flex flex-col leading-none">
+      <span className="hidden flex-col leading-none sm:flex">
         <span className="text-sm font-semibold tracking-tight text-white">NADDP</span>
         <span className="mt-0.5 hidden text-2xs text-slate-300 laptop:block">
           Nigeria-Australia Digital Diplomacy Platform

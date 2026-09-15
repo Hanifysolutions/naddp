@@ -24,7 +24,7 @@ Cross-module foreign key emitted by this module, declared by table-name string w
 import of the owning module: ``ai_traces.user_id -> users.id`` (governance).
 
 Five sibling modules point *at* this table -- ``audit_events.trace_id``,
-``briefs.trace_id``, ``meetings.pre_read_trace_id``, ``meetings.followup_trace_id``,
+``briefs.trace_id``, ``meetings.pre_read_trace_id``, ``meeting_followups.trace_id``,
 ``opportunities.score_trace_id`` and ``cases`` -- and none of them declares a
 ``relationship()``, because the other side lives in a different module. Neither does this
 module, for the same reason: a ``relationship()`` here would require importing a sibling

@@ -152,13 +152,14 @@ def test_the_negotiation_column_is_empty_for_a_trade_officer_not_partially_fille
 def test_the_commitment_gate_refuses_a_trade_officer_and_records_it(db: Session) -> None:
     """BUILD_BIBLE section 6: the demo must SHOW a never-autonomous control being refused.
 
-    The refusal has to be **legible and recorded**, not merely effective. The machine checks
-    the event's permission before the classification, so a TRADE_OFFICER gets
-    ``permission_denied`` naming ``commit:opportunity`` rather than a vaguer
-    ``classification_denied`` - and a DENY row is written either way, because a refusal
-    nobody can point at afterwards is not a demonstrable control (ADR-0003 rule 6).
+    The refusal has to be **legible and recorded**, not merely effective. Since W3.2 the
+    machine checks clearance before anything that could reveal the object's state, so a
+    TRADE_OFFICER facing a ``CONFIDENTIAL`` negotiation is refused ``classification_denied``
+    (and would be refused ``permission_denied`` naming ``commit:opportunity`` on one it could
+    read). Either way it is a 403 and a DENY row under ``opportunity.partnered``, because a
+    refusal nobody can point at afterwards is not a demonstrable control (ADR-0003 rule 6).
     """
-    from app.core.errors import PermissionDeniedError
+    from app.core.errors import ClassificationDeniedError, PermissionDeniedError
     from app.domain.enums import PolicyResult
     from app.models.governance import AuditEvent
     from app.services.opportunities import transition_opportunity
@@ -170,7 +171,7 @@ def test_the_commitment_gate_refuses_a_trade_officer_and_records_it(db: Session)
         pytest.skip("no opportunity at NEGOTIATION; the gate has nothing to sit on")
     before = negotiating.stage
 
-    with pytest.raises(PermissionDeniedError):
+    with pytest.raises((ClassificationDeniedError, PermissionDeniedError)):
         transition_opportunity(
             db,
             principal_for_role(RoleCode.TRADE_OFFICER),

@@ -137,8 +137,8 @@ stateDiagram-v2
 
 ## 2. Meeting follow-up
 
-**Object:** `actions` (follow-up artefact attached to a `meetings.meeting`) · **Context:** `meetings` ·
-**`object_type`:** `meetings.followup`
+**Object:** `meeting_followups` (a follow-up artefact attached to a `meetings.meeting`; one meeting may
+accumulate several, at most one of them live) · **Context:** `meetings` · **`object_type`:** `meetings.followup`
 
 `BUILD_BIBLE.md` §9: `DRAFTED → OFFICER_REVIEW → APPROVED → SENT`
 
@@ -154,20 +154,20 @@ holding `approve:meeting_followup`.*
 | `OFFICER_REVIEW` | Submitted for approval. **Locked for editing** — the artefact an approver sees is the artefact that gets sent. Any edit requires returning to `DRAFTED`. | |
 | `APPROVED` | A human other than the drafter has approved it. Sending is now permitted. Still not sent. | |
 | `SENT` | Dispatched to the external recipient. Success terminal; content immutable thereafter. | ⏹ |
-| `DISCARDED` | Abandoned without sending. Non-success terminal. **Proposed addition** beyond §9 — see `docs/OPEN_QUESTIONS.md` Q-05. | ⏹ |
+| `DISCARDED` | Abandoned without sending, with who, when and a recorded reason. Non-success terminal. **Confirmed** by the architect's Q-05 ruling (`docs/OPEN_QUESTIONS.md`, RESOLVED 2026-09-15): a drafted diplomatic communication is never deleted — discarding it is itself an audited act, and the row is kept. | ⏹ |
 
 ### Transitions
 
 | # | From | Event | To | Required permission | Audit action | Notes |
 |---|---|---|---|---|---|---|
-| 1 | *(none)* | `draft` | `DRAFTED` | `draft:meeting_followup` | `meeting_followup.drafted` | `detail.trace_id` required when AI-generated. Records `drafted_by`. |
-| 2 | `DRAFTED` | `edit` | `DRAFTED` | `draft:meeting_followup` | `meeting_followup.edited` | Self-transition. Audited because the content of an outbound communication changed. |
+| 1 | *(none)* | `draft` | `DRAFTED` | `draft:meeting_followup` | `meeting_followup.drafted` | `detail.trace_id` required when AI-generated. Records `drafted_by`. A meeting holds one live follow-up (`DRAFTED`, `OFFICER_REVIEW`, `APPROVED`) at a time; a second draft is refused (409 `live_followup_exists`, audited against the meeting). A re-draft after `SENT` or `DISCARDED` is a new row carrying `supersedes_followup_id`. |
+| 2 | `DRAFTED` | `edit` | `DRAFTED` | `draft:meeting_followup` | `meeting_followup.edited` | Self-transition. Audited because the content of an outbound communication changed. **Only the drafter** may edit: anyone else is refused as 403 `separation_of_duties` (see *Authorisation beyond the matrix*), so the approver can never be the author of the words they approve. |
 | 3 | `DRAFTED` | `submit_for_review` | `OFFICER_REVIEW` | `submit:meeting_followup` | `meeting_followup.submitted` | Recipient list and subject must be non-empty. Content locks. |
 | 4 | `DRAFTED` | `discard` | `DISCARDED` ⏹ | `discard:meeting_followup` | `meeting_followup.discarded` | ✎ |
-| 5 | `OFFICER_REVIEW` | `approve` | `APPROVED` | `approve:meeting_followup` ⚠ | `meeting_followup.approved` | **§6 control — external outreach.** Approver **must not** be the drafter (separation of duties, enforced server-side). `AMBASSADOR` / `DEPUTY` only. |
+| 5 | `OFFICER_REVIEW` | `approve` | `APPROVED` | `approve:meeting_followup` ⚠ | `meeting_followup.approved` | **§6 control — external outreach.** Approver **must not** be the drafter (separation of duties, enforced server-side as 403 `separation_of_duties` and by `ck_meeting_followups_approver_is_not_drafter`). `AMBASSADOR` / `DEPUTY` only. |
 | 6 | `OFFICER_REVIEW` | `request_changes` | `DRAFTED` | `approve:meeting_followup` | `meeting_followup.changes_requested` | ✎ Rejection path. Content unlocks. |
 | 7 | `OFFICER_REVIEW` | `discard` | `DISCARDED` ⏹ | `discard:meeting_followup` | `meeting_followup.discarded` | ✎ |
-| 8 | `APPROVED` | `send` | `SENT` ⏹ | `send:meeting_followup` ⚠ | `meeting_followup.sent` | **§6 control — diplomatic communication.** Legal **only** from `APPROVED`. `detail.recipient_count` required. |
+| 8 | `APPROVED` | `send` | `SENT` ⏹ | `send:meeting_followup` ⚠ | `meeting_followup.sent` | **§6 control — diplomatic communication.** Legal **only** from `APPROVED`. `detail.recipient_count` required; the row also names the approver (`approved_by_user_id`, `approved_by_name`) and records `dispatch_simulated: true`. From `DRAFTED` or `OFFICER_REVIEW` a `send` is refused as 403 `approval_required`, not 409 — see *Authorisation beyond the matrix* below. |
 | 9 | `APPROVED` | `revoke_approval` | `DRAFTED` | `approve:meeting_followup` | `meeting_followup.approval_revoked` | ✎ Withdraws approval before dispatch. Content unlocks. |
 | 10 | `APPROVED` | `discard` | `DISCARDED` ⏹ | `discard:meeting_followup` | `meeting_followup.discarded` | ✎ |
 
@@ -176,6 +176,93 @@ Terminal states: `SENT`, `DISCARDED`. A follow-up to a sent follow-up is a new a
 **The load-bearing invariant:** `SENT` is reachable from `APPROVED` and from nowhere else. There is no
 event, no permission, no administrative path, and no AI purpose that produces `SENT` from any other
 state. A test asserts this directly over the transition table.
+
+### Authorisation beyond the matrix
+
+*Added in W3.2 (2026-09-15). This subsection explicitly supersedes rule 0.1 for the `send` event, and
+refines it for `approve`.*
+
+Rule 0.1 answers every `(state, event)` pair missing from a table with 409. For `send` on a follow-up
+nobody has approved, that is the wrong answer: the sender holds `send:meeting_followup` — the grant is
+wide on purpose — and what is missing is an **approval**, which is an authorisation outcome, not an
+illegal pair. So the shared executor (`app/services/state_machine.py`) lets a machine attach an
+**event authorization** to an event, and this machine attaches two.
+
+An event authorization runs **after** the terminal-state check and **before** the table lookup, in this
+order: (i) the actor must hold the event's permission, else 403 `permission_denied`; (ii) the actor must
+be cleared for the follow-up's zone, else 403 `classification_denied`; (iii) the authorization itself
+must pass. Every refusal writes a `policy_result = DENY` row under the **event's own** audit action.
+
+| Event | Passes when | Refusal |
+|---|---|---|
+| `send` | The follow-up is `APPROVED` and names an approver who is not its drafter. | 403 `approval_required` from `DRAFTED` or `OFFICER_REVIEW`, carrying the officers who could approve it. DENY row `meeting_followup.sent`. State unchanged. |
+| `approve` | The actor is not the follow-up's drafter. | 403 `separation_of_duties`. DENY row `meeting_followup.approved`. |
+
+Terminal states still answer first: `send` on a `SENT` follow-up is 409 `terminal_state`, never
+`approval_required`. An idempotent re-fire (`submit_for_review` on `OFFICER_REVIEW`, `approve` on
+`APPROVED`) is still a 200 no-op, but only for an actor holding the event's permission and cleared for
+the follow-up; anyone else is refused (403, audited) rather than told the current state.
+
+**The dispatch intent (200 or 202).** "Send" in the product is a request to dispatch, not a raw event.
+`POST /v1/meetings/{meeting_id}/followups/{followup_id}/dispatch`:
+
+- `APPROVED`: fires `send`. **200**, `SENT`.
+- `DRAFTED`: the executor refuses `send` (DENY row committed). Because a send can only ever follow an
+  approval, the service then fires `submit_for_review` as the same officer (ALLOW row) and answers
+  **202 Accepted**: the follow-up is `OFFICER_REVIEW`, and the response names who can approve it.
+- `OFFICER_REVIEW`: the refusal is recorded. **202**, state unchanged.
+
+The raw transition endpoint still exists, and `{"event": "send"}` there on a follow-up that is not
+approved is a plain **403 `approval_required`** with no auto-submit. That is the API refusing a direct
+send.
+
+**Approve-and-dispatch.** `POST /v1/meetings/{meeting_id}/followups/{followup_id}/approve` fires `approve`
+(`OFFICER_REVIEW` to `APPROVED`, committed) and then `send` (`APPROVED` to `SENT`, committed), both as the
+approver: two audit rows, and the `meeting_followup.sent` payload carries `approved_by_user_id` and
+`approved_by_name`. If that `send` were refused, the follow-up rests legitimately at `APPROVED`.
+
+**Dispatch is simulated.** Nothing is transmitted. Recipients are role or organisation labels, never
+addresses (a CHECK forbids `@`); the `meeting_followup.sent` payload records `dispatch_simulated: true`,
+and the API reports `dispatch_is_simulated: true`.
+
+**What the database guarantees on its own** (`meeting_followups`, W3.2 migration), whatever issued the
+statement:
+
+- `ck_meeting_followups_sent_requires_approval` — `sent_at` requires `approved_by_user_id` and
+  `approved_at`.
+- `ck_meeting_followups_sent_status_iff_timestamp` — `SENT` if and only if `sent_at` is set.
+- `ck_meeting_followups_approved_states_name_approver` — `APPROVED` and `SENT` rows name their approver.
+- `ck_meeting_followups_approved_states_were_submitted` — `APPROVED` and `SENT` rows record a submission.
+- `ck_meeting_followups_unapproved_states_carry_no_approval` — `DRAFTED` and `OFFICER_REVIEW` rows carry no
+  approver and no approval time, so an approval cannot survive a return to `DRAFTED`.
+- `ck_meeting_followups_approval_follows_submission` and `ck_meeting_followups_dispatch_follows_approval` —
+  where both moments are recorded, `submitted_at <= approved_at <= sent_at`.
+- `ck_meeting_followups_approver_is_not_drafter` — separation of duties.
+- `ck_meeting_followups_discarded_requires_reason` and `ck_meeting_followups_discard_fields_only_when_discarded`
+  — a discard names who, when and a reason with at least one non-whitespace character
+  (`discard_reason ~ '[^[:space:]]'`), and only a discarded row carries them.
+- `ck_meeting_followups_recipients_are_labels` — one to eight labels, no `@`.
+- `uq_meeting_followups_one_live_per_meeting` — a partial unique index: at most one follow-up per
+  meeting in `DRAFTED`, `OFFICER_REVIEW` or `APPROVED`.
+- Triggers: `trg_meeting_followups_no_delete` and `trg_meeting_followups_no_truncate` — rows are never
+  deleted. `trg_meeting_followups_guard_update`, on every `UPDATE`, in order: (1) a `SENT` or `DISCARDED`
+  row is immutable; (2) `meeting_id`, `drafted_by_user_id`, `drafted_at`, `trace_id` and
+  `supersedes_followup_id` never change; (3) a status change must be one of the table's pairs —
+  `DRAFTED` → `OFFICER_REVIEW`/`DISCARDED`, `OFFICER_REVIEW` → `APPROVED`/`DRAFTED`/`DISCARDED`,
+  `APPROVED` → `SENT`/`DRAFTED`/`DISCARDED` — so no single statement skips review or approval;
+  (4) `subject`, `recipients` and `body` change only on a `DRAFTED` → `DRAFTED` update, never in the
+  statement that leaves `DRAFTED`; (5) `approved_by_user_id` and `approved_at` are set together only on
+  `OFFICER_REVIEW` → `APPROVED` and cleared together only on a return to `DRAFTED` — an approval, once
+  given, is never rewritten, including in the `APPROVED` → `SENT` statement.
+
+**What that adds up to, and where it stops.** By `UPDATE`, a follow-up can reach `SENT` only from
+`APPROVED`, with its approval unchanged since it was given and its content frozen since submission. Every
+`SENT` row names an approver other than the drafter, an approval time and a submission. The database
+**cannot** tell whether the named approver actually held `approve:meeting_followup`: the service (the
+matrix and the event authorizations above) and the append-only `audit_events` chain are what prove a
+human with that permission approved it. And a raw `INSERT` of a row that is already `SENT` — the path the
+seed and the migration's data copy use to record history — satisfies every constraint without being an
+approval act; the triggers guard `UPDATE`, not `INSERT`.
 
 ### Permission grants
 
@@ -213,6 +300,7 @@ stateDiagram-v2
 
     note right of OFFICER_REVIEW : Content locked while under review.
     note right of SENT : Terminal. Reachable ONLY from APPROVED.
+    note right of DISCARDED : Terminal. Kept on record, never deleted.
 ```
 
 ---
@@ -345,13 +433,22 @@ stateDiagram-v2
   `dict[tuple[State, Event], Transition]` where `Transition` carries `to_state`, `permission`,
   `audit_action`, `requires_reason`, and a tuple of guard callables. The tables above are the source;
   the module is the transcription.
-- **One generic executor** in `app/services/workflow.py`:
+- **One generic executor** in `app/services/workflow.py` (built as `app/services/state_machine.py`):
   `apply_event(session, obj, event, actor, reason=None, detail=None) -> Transition`. It performs, in
   order: version check → table lookup → permission check → guards → state write → `audit_events`
   insert → (consular only) `case_events` insert. Any failure raises before the state write.
-- **Guards are pure predicates** over `(obj, session, actor)`. Examples above: "approver ≠ drafter",
-  "linked stakeholder exists", "a reminder was previously sent". They return a reason string on
-  failure so the API can explain the block rather than merely returning 409.
+- **Order as amended in W3.2** (the event-authorization step of §2, "Authorisation beyond the matrix"):
+  version check (precondition) → unknown event → terminal state → **event authorization**, only for an
+  event that declares one (permission → clearance → the authorization itself; refusal is 403 and a DENY
+  row under the event's own action) → table lookup (an idempotent no-op now also requires the event's
+  permission and the object's clearance, else 403) → permission → clearance → non-autonomous control →
+  reason → guards → state write → effects → `audit_events` insert. A machine that declares no event
+  authorization — the opportunity machine — runs exactly the original order.
+- **Guards are pure predicates** over `(obj, session, actor)`. Examples above: "linked stakeholder
+  exists", "a reminder was previously sent". They return a reason string on failure so the API can
+  explain the block rather than merely returning 409. "Approver ≠ drafter" is no longer a guard: it is
+  the `approve` event authorization (403 `separation_of_duties`) and a CHECK constraint, because a
+  refusal about *who is acting* is an authorisation outcome, not a property of the object.
 - **Non-autonomous controls (⚠)** additionally assert `actor.is_human` and that no Gateway call is on
   the current call stack. The four §6 controls landing in these tables are: `commit:opportunity`
   (commitments), `approve`/`send:meeting_followup` (diplomatic communication and external outreach),
@@ -364,7 +461,7 @@ stateDiagram-v2
   4. A rolled-back transition writes no audit row.
   5. Every terminal state rejects every event.
   6. `SENT` is unreachable except from `APPROVED`.
-  7. `approve:meeting_followup` by the drafter is refused.
+  7. `approve:meeting_followup` by the drafter is refused (403 `separation_of_duties`).
   8. Every permission in the grant tables exists in the RBAC matrix, and no machine references a
      permission the matrix does not define.
   9. Re-firing a satisfied event is idempotent and writes no second audit row.

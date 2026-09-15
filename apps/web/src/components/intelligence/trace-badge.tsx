@@ -39,29 +39,41 @@ import { Sheet, SheetTrigger } from '@/components/ui/sheet';
  */
 export function TraceBadge({
   trace,
+  subject = 'brief',
 }: {
   trace: BriefTrace | null;
+  /**
+   * What was routed, in the words of the sentence it completes: "How this {subject} was
+   * routed". Defaults to `brief`, so every existing call site reads exactly as before.
+   */
+  subject?: string;
 }): React.JSX.Element | null {
   if (trace === null) return null;
 
   const badge = trace.route_badge === '' ? 'routing not recorded' : trace.route_badge;
 
   return (
-    <span className="inline-flex items-center gap-1.5">
+    // `flex-wrap` and a wrapping trigger so the verbatim route string can break at its own
+    // spaces on a phone instead of pushing the card wider than the screen. Layout only.
+    <span className="inline-flex max-w-full flex-wrap items-center gap-1.5">
       <Sheet>
         <SheetTrigger asChild>
           {/* The Button is the control; the Badge inside it is the badge's own styling. The
               sr-only clause completes the accessible name, which would otherwise be the raw
               route string - readable, but not obviously a thing to press. */}
-          <Button variant="ghost" size="sm" className="h-auto px-1.5 py-1">
-            <Badge variant="outline" className="gap-1 font-mono text-2xs">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-auto max-w-full whitespace-normal px-1.5 py-1 text-left"
+          >
+            <Badge variant="outline" className="gap-1 break-words font-mono text-2xs">
               <Route aria-hidden="true" className="h-3 w-3 text-slate-700" />
               {badge}
             </Badge>
-            <span className="sr-only">Show how this brief was routed</span>
+            <span className="sr-only">Show how this {subject} was routed</span>
           </Button>
         </SheetTrigger>
-        <TraceDrawer trace={trace} />
+        <TraceDrawer trace={trace} subject={subject} />
       </Sheet>
 
       {trace.fallback ? (

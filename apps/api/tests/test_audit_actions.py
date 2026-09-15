@@ -18,6 +18,7 @@ Three directions are checked, and all three matter:
 from __future__ import annotations
 
 import re
+from itertools import combinations
 from typing import Final
 
 import pytest
@@ -25,6 +26,10 @@ import pytest
 from app.audit.actions import (
     ACCESS_ACTIONS,
     AUDIT_ACTIONS,
+    MEETING_FOLLOWUP_ACTIONS,
+    MEETING_FOLLOWUP_DRAFTED,
+    MEETING_FOLLOWUP_SENT,
+    MEETING_FOLLOWUP_TRANSITION_REJECTED,
     OPPORTUNITY_ACTIONS,
     SESSION_ACTIONS,
     TRANSITION_REJECTED_SUFFIX,
@@ -32,6 +37,8 @@ from app.audit.actions import (
     transition_rejected_action,
 )
 from app.audit.middleware import DEFAULT_RULES, MIDDLEWARE_ACTIONS
+from app.services.followups import FOLLOWUP_ACTIONS as FOLLOWUP_EVENT_ACTIONS
+from app.services.followups import FOLLOWUP_MACHINE
 from app.services.opportunities import OPPORTUNITY_ACTIONS as OPPORTUNITY_EVENT_ACTIONS
 from app.services.opportunities import OPPORTUNITY_MACHINE
 from app.services.session import SESSION_ROLE_ASSUMED
@@ -73,6 +80,20 @@ def test_every_opportunity_event_action_is_in_the_vocabulary() -> None:
         assert is_known_action(action), f"event {event!r} writes unknown action {action!r}"
 
 
+def test_the_followup_machine_emits_only_known_actions() -> None:
+    """Every action the follow-up machine can write, including its refusal action."""
+    assert FOLLOWUP_MACHINE.audit_actions() <= MEETING_FOLLOWUP_ACTIONS
+    assert FOLLOWUP_MACHINE.audit_actions() <= AUDIT_ACTIONS
+
+
+def test_every_followup_event_action_is_in_the_vocabulary() -> None:
+    """The service's event map, value by value -- the creation event ``draft`` included."""
+    for event, action in FOLLOWUP_EVENT_ACTIONS.items():
+        assert action in MEETING_FOLLOWUP_ACTIONS, f"event {event!r} writes {action!r}"
+    assert FOLLOWUP_EVENT_ACTIONS["draft"] == MEETING_FOLLOWUP_DRAFTED
+    assert FOLLOWUP_EVENT_ACTIONS["send"] == MEETING_FOLLOWUP_SENT
+
+
 # ---------------------------------------------------------------------------
 # 2. The vocabulary contains nothing dead
 # ---------------------------------------------------------------------------
@@ -84,29 +105,39 @@ def test_the_vocabulary_is_exactly_what_this_build_can_emit() -> None:
     ``ACCESS_ACTIONS`` is the one group where a member -- ``export.performed`` -- has no
     registered route yet: the middleware writes it for any path with an ``/export``
     segment, which is a capability rather than a route, so it is emittable without being
-    registered.
+    registered. ``meeting_followup.drafted`` is not a machine transition -- a follow-up that
+    does not exist has no state to leave -- so it is emitted by the service's own event map.
     """
     emittable = (
         set(MIDDLEWARE_ACTIONS)
         | set(OPPORTUNITY_MACHINE.audit_actions())
         | set(OPPORTUNITY_EVENT_ACTIONS.values())
+        | set(FOLLOWUP_MACHINE.audit_actions())
+        | set(FOLLOWUP_EVENT_ACTIONS.values())
         | {SESSION_ROLE_ASSUMED}
     )
     assert emittable == AUDIT_ACTIONS
 
 
 def test_the_groups_partition_the_vocabulary() -> None:
-    """The three groups are disjoint and together are the whole set."""
-    assert SESSION_ACTIONS | ACCESS_ACTIONS | OPPORTUNITY_ACTIONS == AUDIT_ACTIONS
-    assert not SESSION_ACTIONS & ACCESS_ACTIONS
-    assert not SESSION_ACTIONS & OPPORTUNITY_ACTIONS
-    assert not ACCESS_ACTIONS & OPPORTUNITY_ACTIONS
+    """The four groups are pairwise disjoint and together are the whole set."""
+    groups = (SESSION_ACTIONS, ACCESS_ACTIONS, OPPORTUNITY_ACTIONS, MEETING_FOLLOWUP_ACTIONS)
+    assert frozenset().union(*groups) == AUDIT_ACTIONS
+    for left, right in combinations(groups, 2):
+        assert not left & right
 
 
 def test_close_and_dismiss_share_one_action() -> None:
     """Two events, one terminal stage, one verb. The event is in ``payload.event``."""
     assert OPPORTUNITY_EVENT_ACTIONS["close"] == OPPORTUNITY_EVENT_ACTIONS["dismiss"]
     assert len(set(OPPORTUNITY_EVENT_ACTIONS.values())) == len(OPPORTUNITY_ACTIONS) - 1
+
+
+def test_every_followup_event_has_its_own_verb() -> None:
+    """Eight events, eight verbs, plus the refusal action -- no synonyms in this machine."""
+    verbs = set(FOLLOWUP_EVENT_ACTIONS.values())
+    assert len(verbs) == len(FOLLOWUP_EVENT_ACTIONS) == 8
+    assert verbs | {MEETING_FOLLOWUP_TRANSITION_REJECTED} == MEETING_FOLLOWUP_ACTIONS
 
 
 # ---------------------------------------------------------------------------
@@ -119,13 +150,16 @@ def test_every_action_is_dotted_snake_case(action: str) -> None:
     assert ACTION_SHAPE.fullmatch(action), action
 
 
-def test_the_rejection_action_helper_agrees_with_the_state_machine() -> None:
-    """One concept, one spelling. The machine and the vocabulary must not diverge."""
+def test_the_rejection_action_helper_agrees_with_the_state_machines() -> None:
+    """One concept, one spelling. The machines and the vocabulary must not diverge."""
     assert transition_rejected_action("opportunity") == OPPORTUNITY_MACHINE.rejected_action
     assert OPPORTUNITY_MACHINE.rejected_action.endswith(TRANSITION_REJECTED_SUFFIX)
+    assert transition_rejected_action("meeting_followup") == FOLLOWUP_MACHINE.rejected_action
+    assert FOLLOWUP_MACHINE.rejected_action == MEETING_FOLLOWUP_TRANSITION_REJECTED
 
 
 def test_an_unknown_action_is_not_known() -> None:
     """The negative case, so the predicate is not vacuously true."""
     assert not is_known_action("opportunity.moved")
+    assert not is_known_action("meeting_followup.deleted")
     assert not is_known_action("")

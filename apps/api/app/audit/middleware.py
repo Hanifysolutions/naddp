@@ -178,8 +178,22 @@ PRIVILEGED_CLASSIFICATIONS: Final[frozenset[Classification]] = frozenset(
 #: denial row rather than losing the row.
 DENIAL_STATUS: Final[int] = 403
 
-#: The RFC 9457 ``code`` values the two gates produce.
-_DENIAL_CODES: Final[frozenset[str]] = frozenset({"permission_denied", "classification_denied"})
+#: The RFC 9457 ``code`` values an authorisation refusal can carry.
+#:
+#: The two gates, plus the two refinements of the permission gate a workflow raises when the
+#: actor holds the permission but may not use it on this artefact: ``approval_required``
+#: (a follow-up sent without a named approval) and ``separation_of_duties`` (a drafter
+#: approving their own). All four render as 403, so the status test above already records
+#: them; listing the codes keeps a refusal a denial even if a later change gives one of them
+#: a different status line.
+_DENIAL_CODES: Final[frozenset[str]] = frozenset(
+    {
+        "permission_denied",
+        "classification_denied",
+        "approval_required",
+        "separation_of_duties",
+    }
+)
 
 #: A path segment that makes a route an export regardless of the registry.
 #:
@@ -318,6 +332,39 @@ DEFAULT_RULES: Final[tuple[AuditRule, ...]] = (
         # trace drawer on a routine answer is silent, and the handler reports the dominant
         # of the trace's data_class and result_class so a drawer opened on confidential
         # material -- and only that -- appends a row.
+        Classification.MISSION_INTERNAL,
+    ),
+    # The Meetings context (W3.2). Three GET rules, in this order because first match wins:
+    # the index, then the approval queue, then one meeting -- whose pattern would otherwise
+    # also match /v1/meetings/approvals and file a queue read as a meeting read. Each handler
+    # reports the dominant zone it actually served, so an ordinary diary read is silent and a
+    # CONFIDENTIAL meeting read by the Ambassador or Deputy is recorded. The POST routes match
+    # none of these: their services write their own rows.
+    _rule(
+        "meetings.list_meetings",
+        ("GET",),
+        r"/v1/meetings/?",
+        AuditKind.PRIVILEGED_READ,
+        ACCESS_PRIVILEGED_READ,
+        "meetings.meeting",
+        Classification.MISSION_INTERNAL,
+    ),
+    _rule(
+        "meetings.read_approval_queue",
+        ("GET",),
+        r"/v1/meetings/approvals/?",
+        AuditKind.PRIVILEGED_READ,
+        ACCESS_PRIVILEGED_READ,
+        "meetings.followup",
+        Classification.MISSION_INTERNAL,
+    ),
+    _rule(
+        "meetings.read_meeting",
+        ("GET",),
+        r"/v1/meetings/[^/]+/?",
+        AuditKind.PRIVILEGED_READ,
+        ACCESS_PRIVILEGED_READ,
+        "meetings.meeting",
         Classification.MISSION_INTERNAL,
     ),
 )

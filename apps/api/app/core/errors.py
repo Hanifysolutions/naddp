@@ -9,6 +9,7 @@ traceback server-side and rendered as a generic 500.
 from __future__ import annotations
 
 import http
+import uuid
 from typing import Any, ClassVar, Final
 
 from fastapi import FastAPI
@@ -35,14 +36,22 @@ class AppError(Exception):
     title: ClassVar[str] = "Internal Server Error"
     default_detail: ClassVar[str] = "The request could not be completed."
 
+    #: The ``audit_events`` row that recorded this refusal, when the code that raised it wrote
+    #: one -- ``None`` when it wrote none, or when committing that row failed. Deliberately an
+    #: attribute and never a key of :attr:`extra`: ``extra`` is serialised into the problem
+    #: document, and this is for the service that raised the error, not for the caller.
+    denial_audit_event_id: uuid.UUID | None
+
     def __init__(
         self,
         detail: str | None = None,
         *,
         extra: dict[str, Any] | None = None,
+        denial_audit_event_id: uuid.UUID | None = None,
     ) -> None:
         self.detail = detail or self.default_detail
         self.extra: dict[str, Any] = dict(extra or {})
+        self.denial_audit_event_id = denial_audit_event_id
         super().__init__(self.detail)
 
 
@@ -75,6 +84,45 @@ class ClassificationDeniedError(AppError):
     status_code = 403
     title = "Classification Denied"
     default_detail = "Your clearance does not permit access to this classification."
+
+
+class ApprovalRequiredError(PermissionDeniedError):
+    """A consequential act was refused because the named human approval it needs is absent.
+
+    Winning moment #2 as an error class. Sending a meeting follow-up that no authorised
+    officer has approved is not an illegal *pair* (409): the sender may well hold
+    ``send:meeting_followup`` -- the matrix grants it widely on purpose -- and what they lack
+    is an approval on the artefact. That is an authorisation outcome, so it renders as 403
+    and the audit middleware records it as a denial (``docs/workflows.md`` section 2,
+    "Authorisation beyond the matrix").
+
+    A subclass of :class:`PermissionDeniedError` rather than a sibling, so everything that
+    treats "refused by authorisation" as one family -- a handler, a test, the web client's
+    ``isDeniedError`` -- keeps doing so, while the ``code`` tells the two apart. The detail is
+    specific rather than generic: the caller already holds the follow-up, so naming the
+    missing approval discloses nothing they do not know.
+    """
+
+    code = "approval_required"
+    title = "Approval Required"
+    default_detail = (
+        "This action requires approval by an authorised officer other than its author before "
+        "it can proceed."
+    )
+
+
+class SeparationOfDutiesError(PermissionDeniedError):
+    """The actor holds the permission, but may not exercise it on an artefact they authored.
+
+    ``approve:meeting_followup`` held by the officer who drafted the follow-up is still a
+    refusal: an approval is only a control if a *second* person gives it. The database
+    refuses the same row by CHECK (``ck_meeting_followups_approver_is_not_drafter``); this
+    is the legible, audited 403 in front of it.
+    """
+
+    code = "separation_of_duties"
+    title = "Separation of Duties"
+    default_detail = "An authorised officer other than the author must approve this."
 
 
 class InvalidTransitionError(AppError):

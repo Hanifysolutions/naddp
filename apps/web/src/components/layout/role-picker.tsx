@@ -177,7 +177,7 @@ export function RolePicker({
                * would have managed only 1.49:1. The label text is white (14.29:1) and
                * the placeholder --slate-300 (4.61:1).
                */
-              'h-8 w-[13.5rem] border-slate-400 bg-slate-900 text-sm text-white shadow-none',
+              'h-8 w-[10.5rem] border-slate-400 bg-slate-900 text-sm text-white shadow-none sm:w-[13.5rem]',
               'hover:bg-ink data-[placeholder]:text-slate-300',
               'focus:ring-accent-on-dark focus:ring-offset-slate-900',
               /*

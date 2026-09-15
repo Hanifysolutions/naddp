@@ -261,7 +261,9 @@ def _opportunity(
     )
     if scored:
         row.score = Decimal("72.50")
-        row.score_rationale = [
+        # The pre-W2.3 list shape the seed still writes (docs/W2_STATUS.md section 4 item 7).
+        # Deliberately not the dict the column is typed as: the machine must accept both.
+        row.score_rationale = [  # type: ignore[assignment]
             {"factor": "demand_signal", "weight": 0.4, "value": 0.8, "evidence_ids": ["ev-1"]}
         ]
     session.add(row)
@@ -618,6 +620,44 @@ def test_re_firing_a_satisfied_event_is_a_no_op_with_no_second_row(db: Session) 
     assert second.audit_event_id is None
     assert opportunity.stage is OpportunityStage.QUALIFIED
     assert len(_audit_rows(db, opportunity.id)) == 1
+
+
+@pytest.mark.integration
+def test_a_satisfied_event_is_not_a_no_op_for_a_role_without_its_permission(db: Session) -> None:
+    """W3.2 hardening of rule 0.8: the no-op no longer answers before the permission gate.
+
+    Before it, a DIASPORA_OFFICER -- who holds no opportunity verb at all -- could fire
+    ``qualify`` on a QUALIFIED opportunity and get a 200 carrying its stage.
+    """
+    diaspora = _actor(db, RoleCode.DIASPORA_OFFICER)
+    opportunity = _opportunity(db, stage=OpportunityStage.QUALIFIED)
+
+    with pytest.raises(PermissionDeniedError) as raised:
+        transition_opportunity(db, diaspora, opportunity.id, event="qualify")
+
+    assert raised.value.extra["reason"] == DENIAL_MISSING_PERMISSION
+    assert raised.value.extra["required_permissions"] == ["qualify:opportunity"]
+    assert opportunity.stage is OpportunityStage.QUALIFIED
+    rows = _audit_rows(db, opportunity.id)
+    assert len(rows) == 1
+    assert rows[0].policy_result is PolicyResult.DENY
+    assert rows[0].action == "opportunity.qualified"
+
+
+@pytest.mark.integration
+def test_a_satisfied_event_is_not_a_no_op_for_a_role_without_clearance(db: Session) -> None:
+    """The same hardening on the second gate: a stage is not disclosed above clearance."""
+    trade = _actor(db, RoleCode.TRADE_OFFICER)
+    opportunity = _opportunity(
+        db, stage=OpportunityStage.QUALIFIED, classification=Classification.CONFIDENTIAL
+    )
+
+    with pytest.raises(ClassificationDeniedError):
+        transition_opportunity(db, trade, opportunity.id, event="qualify")
+
+    row = _audit_rows(db, opportunity.id)[-1]
+    assert row.policy_result is PolicyResult.DENY
+    assert row.payload["denial_reason"] == DENIAL_INSUFFICIENT_CLEARANCE
 
 
 # -- reads ------------------------------------------------------------------

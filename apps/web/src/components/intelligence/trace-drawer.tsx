@@ -39,15 +39,22 @@ import { cn } from '@/lib/utils';
  * model authored a deterministic snapshot, and naming one - or leaving the row ambiguous -
  * would be the exact fabrication CLAUDE.md rule 2.5 exists to prevent.
  */
-export function TraceDrawer({ trace }: { trace: BriefTrace }): React.JSX.Element {
+export function TraceDrawer({
+  trace,
+  subject = 'brief',
+}: {
+  trace: BriefTrace;
+  /** What was routed ("pre-read", "draft"). Defaults to `brief`; wording only. */
+  subject?: string;
+}): React.JSX.Element {
   return (
     <SheetContent side="right" className="w-full sm:max-w-md">
       <SheetHeader>
-        <SheetTitle>How this brief was routed</SheetTitle>
+        <SheetTitle>How this {subject} was routed</SheetTitle>
         <SheetDescription>
           Every AI call declares the sensitivity of the data it is about, and that
           declaration - not convenience - picks the route. This is the decision the
-          Gateway made for this brief, recorded before the call was attempted.
+          Gateway made for this {subject}, recorded before the call was attempted.
         </SheetDescription>
       </SheetHeader>
 

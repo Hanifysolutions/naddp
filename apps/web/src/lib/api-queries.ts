@@ -2,10 +2,18 @@ import {
   toApiError,
   toNetworkError,
   type ApiError,
+  type ApprovalQueue,
   type AuditEventPage,
   type BriefList,
   type CommandTodayResponse,
   type Dossier,
+  type FollowupApproveResponse,
+  type FollowupDispatchResponse,
+  type FollowupDraftResponse,
+  type FollowupStatus,
+  type FollowupTransitionResponse,
+  type MeetingDetail,
+  type MeetingList,
   type MorningBrief,
   type OpportunityPage,
   type OrganisationList,
@@ -267,6 +275,156 @@ export async function fetchBriefHistory(
 ): Promise<BriefList> {
   const { data, error, response } = await guard(
     api.GET('/v1/intelligence/briefs', { params: { query: { limit } }, signal }),
+  );
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/**
+ * `GET /v1/meetings` - the diary the caller is cleared to read, split into upcoming and
+ * recent at the API's clock.
+ *
+ * `total` is the number of meetings returned, never a count of what exists: the clearance
+ * predicate is inside the SQL, so a TRADE_OFFICER's total simply omits the Confidential
+ * meeting rather than revealing that one was withheld.
+ *
+ * Throws {@link ApiError} with status 403 when the role does not hold `read:meeting`
+ * (ADMIN does not).
+ */
+export async function fetchMeetings(signal?: AbortSignal): Promise<MeetingList> {
+  const { data, error, response } = await guard(api.GET('/v1/meetings', { signal }));
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/**
+ * `GET /v1/meetings/{meeting_id}` - one meeting in full: agenda, attendees, the stored
+ * pre-read and every follow-up the caller may read.
+ *
+ * The pre-read is read from the database. This page never calls the Gateway's prep route:
+ * for a meeting without its own snapshot that route would fall back to another meeting's
+ * content, which on stage would be a fabrication.
+ *
+ * Throws 403 when the meeting sits above the caller's zone (the API names the zone rather
+ * than pretending the meeting does not exist) and 404 when there is no such meeting.
+ */
+export async function fetchMeeting(
+  meetingId: string,
+  signal?: AbortSignal,
+): Promise<MeetingDetail> {
+  const { data, error, response } = await guard(
+    api.GET('/v1/meetings/{meeting_id}', {
+      params: { path: { meeting_id: meetingId } },
+      signal,
+    }),
+  );
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/**
+ * `GET /v1/meetings/approvals` - follow-ups waiting on a named human decision, oldest
+ * submission first.
+ *
+ * Throws 403 for a role that does not hold `approve:meeting_followup`. That refusal is the
+ * API's to make and to audit, so the approval-queue page asks and renders the answer.
+ */
+export async function fetchApprovalQueue(signal?: AbortSignal): Promise<ApprovalQueue> {
+  const { data, error, response } = await guard(
+    api.GET('/v1/meetings/approvals', { signal }),
+  );
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/**
+ * `POST /v1/meetings/{meeting_id}/followups` - ask the AI Gateway to draft a follow-up.
+ *
+ * Only offered where the meeting detail said `ai_draft_available`. A BLOCKED envelope is a
+ * 200 with `followup: null` and is returned, not thrown: the Gateway declining to draft is an
+ * answer the caller renders in the envelope's own words. A 409 (a live follow-up already
+ * exists, or no draft is offered for this meeting) is thrown.
+ */
+export async function draftFollowup(meetingId: string): Promise<FollowupDraftResponse> {
+  const { data, error, response } = await guard(
+    api.POST('/v1/meetings/{meeting_id}/followups', {
+      params: { path: { meeting_id: meetingId } },
+    }),
+  );
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/**
+ * `POST .../followups/{followup_id}/transition` - fire one raw workflow event.
+ *
+ * Used for `discard`, `request_changes` and `revoke_approval`, each of which carries a reason
+ * that reaches the audit row. It is never used for `send`: the product's Send button is
+ * {@link dispatchFollowup}, and `send` here on an unapproved follow-up is a plain 403.
+ *
+ * `expectedStatus` is the status the caller was shown, sent as a precondition so a follow-up
+ * somebody else has already moved answers 409 rather than silently changing under the click.
+ */
+export async function transitionFollowup(
+  meetingId: string,
+  followupId: string,
+  event: string,
+  reason: string | null,
+  expectedStatus: FollowupStatus,
+): Promise<FollowupTransitionResponse> {
+  const { data, error, response } = await guard(
+    api.POST('/v1/meetings/{meeting_id}/followups/{followup_id}/transition', {
+      params: { path: { meeting_id: meetingId, followup_id: followupId } },
+      body: { event, reason, expected_status: expectedStatus },
+    }),
+  );
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/**
+ * `POST .../followups/{followup_id}/dispatch` - the Send button. Winning moment #2.
+ *
+ * **Resolves for HTTP 200 AND for HTTP 202, with the same body.** 200 means an approved
+ * follow-up was sent (simulated). 202 means the server refused to send, recorded the refusal
+ * in the audit log and - for a draft - submitted it for approval. A 202 is the control
+ * working, not a failure, so it must never land in an error branch: openapi-fetch returns any
+ * 2xx as `data`, and the caller reads `blocked` to tell the two apart.
+ *
+ * A 403 or 409 is still thrown and rendered in the server's words.
+ */
+export async function dispatchFollowup(
+  meetingId: string,
+  followupId: string,
+  expectedStatus: FollowupStatus,
+): Promise<FollowupDispatchResponse> {
+  const { data, error, response } = await guard(
+    api.POST('/v1/meetings/{meeting_id}/followups/{followup_id}/dispatch', {
+      params: { path: { meeting_id: meetingId, followup_id: followupId } },
+      body: { expected_status: expectedStatus },
+    }),
+  );
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/**
+ * `POST .../followups/{followup_id}/approve` - approve and send, as the approver.
+ *
+ * Two committed, audited transitions on the server. `dispatched: false` is a legitimate
+ * answer (the approval stands, the send was refused) and resolves; a 403 - a drafter trying
+ * to approve their own follow-up, or a role without the grant - is thrown.
+ */
+export async function approveFollowup(
+  meetingId: string,
+  followupId: string,
+  expectedStatus: FollowupStatus,
+): Promise<FollowupApproveResponse> {
+  const { data, error, response } = await guard(
+    api.POST('/v1/meetings/{meeting_id}/followups/{followup_id}/approve', {
+      params: { path: { meeting_id: meetingId, followup_id: followupId } },
+      body: { expected_status: expectedStatus },
+    }),
   );
   if (data === undefined) throw toApiError(response.status, error);
   return data;

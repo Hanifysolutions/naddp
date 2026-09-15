@@ -150,8 +150,9 @@ class FollowupStatus(str, Enum):  # noqa: UP042
     """Meeting follow-up state. ``BUILD_BIBLE.md`` section 9, ``docs/workflows.md`` 2.
 
     This is winning moment #2: ``SENT`` is reachable from ``APPROVED`` and from nowhere
-    else. ``DISCARDED`` is the non-success terminal added by ``docs/workflows.md`` section
-    2 (``docs/OPEN_QUESTIONS.md`` Q-05).
+    else. ``DISCARDED`` is the non-success terminal of ``docs/workflows.md`` section 2,
+    confirmed by the architect's Q-05 ruling (``docs/OPEN_QUESTIONS.md``, 2026-09-15): a
+    drafted diplomatic communication is discarded with a reason, never deleted.
     """
 
     DRAFTED = "DRAFTED"
@@ -159,6 +160,27 @@ class FollowupStatus(str, Enum):  # noqa: UP042
     APPROVED = "APPROVED"
     SENT = "SENT"
     DISCARDED = "DISCARDED"
+
+
+class FollowupAction(str, Enum):  # noqa: UP042
+    """What the API offers a caller to *ask for* on one meeting follow-up.
+
+    Not the machine's event vocabulary, which is why the values are lower-case intent names
+    rather than the ``UPPER_SNAKE_CASE`` of a state. Two members are intents that fire more
+    than one event: ``DISPATCH`` fires ``send`` and, when the follow-up is still ``DRAFTED``,
+    the ``submit_for_review`` that a refused send implies; ``APPROVE_AND_DISPATCH`` fires
+    ``approve`` and then ``send`` as the approver. The other three are one event each.
+
+    The web client renders buttons from this list and never from a role (``CLAUDE.md``
+    2.4). It is advisory only: every action is re-checked by the state machine when it is
+    attempted, and a refusal is audited whatever the list said.
+    """
+
+    DISPATCH = "dispatch"
+    APPROVE_AND_DISPATCH = "approve_and_dispatch"
+    DISCARD = "discard"
+    REQUEST_CHANGES = "request_changes"
+    REVOKE_APPROVAL = "revoke_approval"
 
 
 class CaseStatus(str, Enum):  # noqa: UP042

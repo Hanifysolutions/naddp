@@ -37,8 +37,8 @@ Prompt: `PROMPT_W1_foundation.md`
 
 ---
 
-## Week 3 — AI + Citizen Operations  ⬜
-- ⬜ Meeting Copilot: pre-read + follow-up draft — **follow-up SEND blocks on human approval** (winning moment #2)
+## Week 3 — AI + Citizen Operations  🟡
+- ✅ Meeting Copilot: pre-read + follow-up draft — **follow-up SEND blocks on human approval** (winning moment #2)
 - ⬜ Consular dashboard (volumes, ageing, SLA-risk)
 - ⬜ Case workspace + full case state machine + immutable case_events timeline
 - ⬜ Grounded knowledge answers (approved-only; refuse/escalate when source absent)

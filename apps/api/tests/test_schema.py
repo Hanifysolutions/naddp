@@ -20,10 +20,17 @@ rows behind. That matters more than usual here: `audit_events` is append-only
 (ADR-0004), so a committed test row could not be deleted afterwards.
 
 Covers:
-  * all 27 tables exist (the 26 from PROMPT_W1 Phase 2, plus document_chunks from W2.1);
+  * all 28 tables exist (the 26 from PROMPT_W1 Phase 2, document_chunks from W2.1 and
+    meeting_followups from W3.2);
   * the three embedding columns are `vector(1536)` with HNSW indexes;
   * `audit_events` and `case_events` reject UPDATE and DELETE (ADR-0004);
-  * the three BUILD_BIBLE section 6 non-autonomy CHECK constraints bite;
+  * the BUILD_BIBLE section 6 non-autonomy CHECK constraints bite -- for meeting
+    follow-ups, the whole W3.2 set: no dispatch without a named approval, a submission
+    before any approval and times in order, no approval left on an unapproved row,
+    separation of duties, discard reasons, recipient labels, one live follow-up per
+    meeting, and the update guard (no delete, terminal rows immutable, provenance fixed,
+    only the machine's status pairs, content changed only while DRAFTED, an approval never
+    rewritten) -- each refusal paired with the legitimate statement it must still allow;
   * `cases.public_ref` is UNIQUE, NOT NULL, not the primary key, and shares no
     entropy with `id` (ADR-0007).
 """
@@ -32,7 +39,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Final
 
 import pytest
@@ -43,6 +50,7 @@ from sqlalchemy.orm import Session
 from app.domain.enums import (
     CaseStatus,
     Classification,
+    FollowupStatus,
     KnowledgeStatus,
     MeetingType,
     PolicyResult,
@@ -51,7 +59,7 @@ from app.domain.enums import (
 from app.models.consular import Case
 from app.models.governance import AuditEvent, User
 from app.models.knowledge import KnowledgeArticle
-from app.models.meetings import Meeting
+from app.models.meetings import Meeting, MeetingFollowup
 
 pytestmark = pytest.mark.integration
 
@@ -88,6 +96,7 @@ EXPECTED_TABLES: Final[frozenset[str]] = frozenset(
         "opportunities",
         # meetings
         "meetings",
+        "meeting_followups",
         "meeting_attendees",
         "actions",
         # consular
@@ -122,6 +131,31 @@ EMBEDDING_TABLES: Final[tuple[str, ...]] = (
 
 #: Tables ADR-0004 makes append-only at the database level.
 APPEND_ONLY_TABLES: Final[tuple[str, ...]] = ("audit_events", "case_events")
+
+#: The two CHECKs that refuse a follow-up recorded as dispatched without a named approval.
+#: Postgres tests CHECK constraints in alphabetical order by name and reports the first
+#: that fails, so a SENT row with no approver at all is refused by
+#: ``approved_states_name_approver`` before ``sent_requires_approval`` is reached. Either
+#: refusing it is the guarantee; which one speaks is an ordering detail.
+SEND_WITHOUT_APPROVAL_CONSTRAINTS: Final[tuple[str, ...]] = (
+    "ck_meeting_followups_approved_states_name_approver",
+    "ck_meeting_followups_sent_requires_approval",
+)
+
+#: What ``naddp_guard_followup_update`` says, by rule, so each refusal is pinned to the rule
+#: that made it rather than to "some error happened".
+NOT_A_TRANSITION: Final[str] = "is not a transition of the follow-up machine"
+CONTENT_LOCKED: Final[str] = "locked outside DRAFTED"
+APPROVAL_FROZEN: Final[str] = "the approval is frozen once given"
+
+#: The W3.2 follow-up triggers, by name.
+FOLLOWUP_TRIGGERS: Final[frozenset[str]] = frozenset(
+    {
+        "trg_meeting_followups_no_delete",
+        "trg_meeting_followups_no_truncate",
+        "trg_meeting_followups_guard_update",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -186,7 +220,7 @@ def _make_case(**overrides: object) -> Case:
 
 
 # ---------------------------------------------------------------------------
-# 1. All 27 tables exist
+# 1. All 28 tables exist
 # ---------------------------------------------------------------------------
 
 
@@ -200,9 +234,9 @@ def _live_tables(db: Session) -> frozenset[str]:
     return frozenset(rows)
 
 
-def test_expected_table_count_is_twenty_seven() -> None:
+def test_expected_table_count_is_twenty_eight() -> None:
     """Guards the expectation itself: a typo that drops a name must not pass silently."""
-    assert len(EXPECTED_TABLES) == 27
+    assert len(EXPECTED_TABLES) == 28
 
 
 def test_all_expected_tables_exist(db: Session) -> None:
@@ -423,43 +457,765 @@ def test_append_only_guard_is_scoped_not_global(db: Session) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_meeting_followup_cannot_be_sent_without_an_approver(db: Session) -> None:
-    """Winning moment 2: external outreach blocks on a named human."""
-    with pytest.raises(IntegrityError) as excinfo, db.begin_nested():
-        db.add(
-            Meeting(
-                title="Non-autonomy probe",
-                meeting_type=MeetingType.BILATERAL,
-                scheduled_start=datetime.now(UTC),
-                scheduled_end=datetime.now(UTC),
-                agenda="probe",
-                classification=Classification.MISSION_INTERNAL,
-                followup_sent_at=datetime.now(UTC),
-                followup_approved_by_user_id=None,
-            )
-        )
-        db.flush()
-
-    assert "ck_meetings_followup_sent_requires_approval" in str(excinfo.value)
-
-
-def test_meeting_followup_is_accepted_with_an_approver(db: Session) -> None:
-    """The constraint must block the unapproved case only -- not the whole feature."""
-    approver = _make_user(db)
+def _make_meeting(db: Session) -> Meeting:
+    """Insert and flush a meeting for a follow-up to hang off."""
     meeting = Meeting(
-        title="Non-autonomy control",
+        title="Follow-up constraint probe",
         meeting_type=MeetingType.BILATERAL,
         scheduled_start=datetime.now(UTC),
         scheduled_end=datetime.now(UTC),
-        agenda="control",
+        agenda="probe",
         classification=Classification.MISSION_INTERNAL,
-        followup_sent_at=datetime.now(UTC),
-        followup_approved_by_user_id=approver.id,
     )
     db.add(meeting)
     db.flush()
+    return meeting
 
-    assert meeting.id is not None
+
+def _followup(meeting: Meeting, drafter: User, **overrides: object) -> MeetingFollowup:
+    """A minimally valid DRAFTED follow-up, with ``overrides`` applied."""
+    fields: dict[str, object] = {
+        "meeting_id": meeting.id,
+        "status": FollowupStatus.DRAFTED,
+        "subject": "Follow-up constraint probe",
+        "recipients": ["Probe Organisation -- External Affairs"],
+        "body": "synthetic row created by tests/test_schema.py",
+        "drafted_by_user_id": drafter.id,
+        "drafted_at": datetime.now(UTC),
+        "classification": Classification.MISSION_INTERNAL,
+    }
+    fields.update(overrides)
+    return MeetingFollowup(**fields)
+
+
+#: A fixed, ordered timeline for the moments the ordering CHECKs compare: submitted, then
+#: approved, then sent. Fixed and in the past rather than ``datetime.now()``: two
+#: ``datetime.now()`` calls in one expression can land out of order, and a later statement
+#: stamping the database's ``now()`` must come after every moment inserted here.
+_TIMELINE_START: Final[datetime] = datetime(2026, 9, 1, 9, 0, tzinfo=UTC)
+
+
+def _at(minutes: int) -> datetime:
+    return _TIMELINE_START + timedelta(minutes=minutes)
+
+
+def _submitted(submitter: User) -> dict[str, object]:
+    """The fields a submitted follow-up carries."""
+    return {"submitted_by_user_id": submitter.id, "submitted_at": _at(10)}
+
+
+def _approved(approver: User) -> dict[str, object]:
+    """The fields a properly approved follow-up carries (after :func:`_submitted`)."""
+    return {"approved_by_user_id": approver.id, "approved_at": _at(20)}
+
+
+def _sent(sender: User) -> dict[str, object]:
+    """The fields a dispatched follow-up carries (after :func:`_approved`)."""
+    return {"sent_by_user_id": sender.id, "sent_at": _at(30)}
+
+
+def _insert(db: Session, followup: MeetingFollowup) -> MeetingFollowup:
+    db.add(followup)
+    db.flush()
+    return followup
+
+
+def _refused_insert(db: Session, followup: MeetingFollowup) -> str:
+    """Insert ``followup``, require the database to refuse it, and return its message."""
+    with pytest.raises(IntegrityError) as excinfo, db.begin_nested():
+        db.add(followup)
+        db.flush()
+    return str(excinfo.value)
+
+
+def _refused_statement(
+    db: Session, statement: str, followup_id: uuid.UUID, **params: object
+) -> str:
+    """Execute raw SQL against one follow-up, require a refusal, and return its message.
+
+    Raw SQL on purpose: these are the writes that bypass every service, which is exactly
+    what the constraints and triggers exist to stop. ``:id`` is bound to ``followup_id``;
+    ``params`` binds the rest.
+    """
+    with pytest.raises(IntegrityError) as excinfo, db.begin_nested():
+        db.execute(text(statement), {"id": followup_id, **params})
+    return str(excinfo.value)
+
+
+def _accepted_statement(
+    db: Session, statement: str, followup_id: uuid.UUID, **params: object
+) -> None:
+    """Execute raw SQL against one follow-up and require the database to accept it."""
+    with db.begin_nested():
+        db.execute(text(statement), {"id": followup_id, **params})
+
+
+def _stored(db: Session, followup_id: uuid.UUID) -> tuple[str, str, uuid.UUID | None, bool]:
+    """``(status, body, approved_by_user_id, approved_at IS NOT NULL)`` as the database holds it."""
+    row = db.execute(
+        text(
+            "SELECT CAST(status AS text), body, approved_by_user_id, approved_at IS NOT NULL "
+            "FROM meeting_followups WHERE id = :id"
+        ),
+        {"id": followup_id},
+    ).one()
+    return str(row[0]), str(row[1]), row[2], bool(row[3])
+
+
+def _status_of(db: Session, followup_id: uuid.UUID) -> str:
+    status = db.execute(
+        text("SELECT CAST(status AS text) FROM meeting_followups WHERE id = :id"),
+        {"id": followup_id},
+    ).scalar_one()
+    return str(status)
+
+
+def test_a_sent_followup_with_no_approver_is_refused(db: Session) -> None:
+    """Winning moment 2: an outbound communication cannot be recorded as sent unapproved."""
+    meeting = _make_meeting(db)
+    drafter = _make_user(db)
+    message = _refused_insert(
+        db, _followup(meeting, drafter, status=FollowupStatus.SENT, sent_at=datetime.now(UTC))
+    )
+    assert any(name in message for name in SEND_WITHOUT_APPROVAL_CONSTRAINTS), message
+
+
+@pytest.mark.parametrize(
+    "shape",
+    ["dispatch_time_with_no_approver", "approver_named_but_never_approved"],
+)
+def test_sent_requires_approval_is_the_constraint_that_refuses_it(db: Session, shape: str) -> None:
+    """``ck_meeting_followups_sent_requires_approval`` by name: the winning-moment constraint.
+
+    Two shapes in which it is the first CHECK to fail, so the name is asserted exactly: a
+    dispatch time with no approver on a row not (yet) claiming ``SENT``, and a ``SENT`` row
+    naming an approver who never recorded an approval time.
+    """
+    meeting = _make_meeting(db)
+    drafter = _make_user(db)
+    if shape == "dispatch_time_with_no_approver":
+        followup = _followup(
+            meeting, drafter, status=FollowupStatus.OFFICER_REVIEW, sent_at=datetime.now(UTC)
+        )
+    else:
+        approver = _make_user(db)
+        followup = _followup(
+            meeting,
+            drafter,
+            status=FollowupStatus.SENT,
+            **_submitted(drafter),
+            **_sent(drafter),
+            approved_by_user_id=approver.id,
+            approved_at=None,
+        )
+    message = _refused_insert(db, followup)
+    assert "ck_meeting_followups_sent_requires_approval" in message, message
+
+
+def test_a_status_only_update_from_review_to_sent_is_refused(db: Session) -> None:
+    """Writing ``SENT`` and a dispatch time, and nothing else, onto a row under review.
+
+    What this proves is narrow: that shape is refused, and the row is still waiting for its
+    human afterwards. It names no approver, so the CHECKs would refuse it as well; the
+    guard's transition rule speaks first because a BEFORE trigger runs before constraints.
+    It is not, on its own, proof that the path is enforced -- a statement that also names
+    an approver is, and the tests below issue exactly that.
+    """
+    meeting = _make_meeting(db)
+    drafter = _make_user(db)
+    followup = _insert(
+        db, _followup(meeting, drafter, status=FollowupStatus.OFFICER_REVIEW, **_submitted(drafter))
+    )
+    message = _refused_statement(
+        db,
+        "UPDATE meeting_followups SET status = 'SENT', sent_at = now() WHERE id = :id",
+        followup.id,
+    )
+    assert NOT_A_TRANSITION in message, message
+    assert _status_of(db, followup.id) == FollowupStatus.OFFICER_REVIEW.value
+
+
+#: The forged-approval statement, and the same statement rewriting the body on the way.
+_FORGED_SEND: Final[str] = (
+    "UPDATE meeting_followups SET status = 'SENT', submitted_by_user_id = :drafter, "
+    "submitted_at = now(), approved_by_user_id = :approver, approved_at = now(), "
+    "sent_by_user_id = :drafter, sent_at = now() WHERE id = :id"
+)
+_FORGED_SEND_WITH_NEW_BODY: Final[str] = (
+    "UPDATE meeting_followups SET status = 'SENT', submitted_by_user_id = :drafter, "
+    "submitted_at = now(), approved_by_user_id = :approver, approved_at = now(), "
+    "sent_by_user_id = :drafter, sent_at = now(), body = 'ALTERED AFTER NOBODY APPROVED' "
+    "WHERE id = :id"
+)
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [_FORGED_SEND, _FORGED_SEND_WITH_NEW_BODY],
+    ids=["as_drafted", "body_rewritten"],
+)
+def test_one_update_cannot_take_a_draft_straight_to_sent(db: Session, statement: str) -> None:
+    """The forged approval: every column a sent row needs, in one statement, from DRAFTED.
+
+    The statement names a real approver who is not the drafter, a submission, an approval
+    time and a dispatch time -- all in order -- so it satisfies every CHECK. Nothing about
+    it passed through review or approval, and in the second shape it rewrites the body on
+    the way. The guard refuses both because DRAFTED to SENT is not a pair of the machine.
+    """
+    meeting = _make_meeting(db)
+    drafter, approver = _make_user(db), _make_user(db)
+    followup = _insert(db, _followup(meeting, drafter))
+    message = _refused_statement(
+        db, statement, followup.id, drafter=drafter.id, approver=approver.id
+    )
+    assert NOT_A_TRANSITION in message, message
+    assert _stored(db, followup.id) == (
+        FollowupStatus.DRAFTED.value,
+        "synthetic row created by tests/test_schema.py",
+        None,
+        False,
+    )
+
+
+def test_one_update_cannot_take_a_followup_under_review_straight_to_sent(db: Session) -> None:
+    """Skipping APPROVED with the approver columns filled in is refused, not just the bare shape."""
+    meeting = _make_meeting(db)
+    drafter, approver = _make_user(db), _make_user(db)
+    followup = _insert(
+        db, _followup(meeting, drafter, status=FollowupStatus.OFFICER_REVIEW, **_submitted(drafter))
+    )
+    message = _refused_statement(
+        db,
+        "UPDATE meeting_followups SET status = 'SENT', approved_by_user_id = :approver, "
+        "approved_at = now(), sent_by_user_id = :drafter, sent_at = now() WHERE id = :id",
+        followup.id,
+        drafter=drafter.id,
+        approver=approver.id,
+    )
+    assert NOT_A_TRANSITION in message, message
+    status, _, approved_by, approved = _stored(db, followup.id)
+    assert (status, approved_by, approved) == (FollowupStatus.OFFICER_REVIEW.value, None, False)
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "UPDATE meeting_followups SET approved_by_user_id = :other WHERE id = :id",
+        "UPDATE meeting_followups SET status = 'SENT', approved_by_user_id = :other, "
+        "sent_by_user_id = :other, sent_at = now() WHERE id = :id",
+        "UPDATE meeting_followups SET status = 'SENT', approved_at = now(), "
+        "sent_by_user_id = :other, sent_at = now() WHERE id = :id",
+    ],
+    ids=[
+        "approver_swapped_on_approved_row",
+        "approver_swapped_on_send",
+        "approval_restamped_on_send",
+    ],
+)
+def test_an_approval_once_given_is_never_rewritten(db: Session, statement: str) -> None:
+    """Who approved it, and when, is history: not reassignable, not even by the send itself."""
+    meeting = _make_meeting(db)
+    drafter, approver, other = _make_user(db), _make_user(db), _make_user(db)
+    followup = _insert(
+        db,
+        _followup(
+            meeting,
+            drafter,
+            status=FollowupStatus.APPROVED,
+            **_submitted(drafter),
+            **_approved(approver),
+        ),
+    )
+    message = _refused_statement(db, statement, followup.id, other=other.id)
+    assert APPROVAL_FROZEN in message, message
+    status, _, approved_by, approved = _stored(db, followup.id)
+    assert (status, approved_by, approved) == (FollowupStatus.APPROVED.value, approver.id, True)
+
+
+def test_a_return_to_draft_cannot_keep_its_approval(db: Session) -> None:
+    """A status-only APPROVED to DRAFTED would leave an approval of content about to unlock.
+
+    Refused by CHECK: the transition is legal, the approval columns are unchanged, and a
+    DRAFTED row may not carry them. Without this, the content could be rewritten under
+    DRAFTED and then sent under the old approval.
+    """
+    meeting = _make_meeting(db)
+    drafter, approver = _make_user(db), _make_user(db)
+    followup = _insert(
+        db,
+        _followup(
+            meeting,
+            drafter,
+            status=FollowupStatus.APPROVED,
+            **_submitted(drafter),
+            **_approved(approver),
+        ),
+    )
+    message = _refused_statement(
+        db, "UPDATE meeting_followups SET status = 'DRAFTED' WHERE id = :id", followup.id
+    )
+    assert "ck_meeting_followups_unapproved_states_carry_no_approval" in message, message
+    assert _status_of(db, followup.id) == FollowupStatus.APPROVED.value
+
+
+@pytest.mark.parametrize(
+    ("from_status", "statement"),
+    [
+        (
+            FollowupStatus.DRAFTED,
+            "UPDATE meeting_followups SET status = 'OFFICER_REVIEW', "
+            "submitted_by_user_id = :drafter, submitted_at = now(), "
+            "body = 'rewritten on the way into review' WHERE id = :id",
+        ),
+        (
+            FollowupStatus.OFFICER_REVIEW,
+            "UPDATE meeting_followups SET status = 'APPROVED', approved_by_user_id = :approver, "
+            "approved_at = now(), body = 'rewritten while approving' WHERE id = :id",
+        ),
+        (
+            FollowupStatus.APPROVED,
+            "UPDATE meeting_followups SET body = 'rewritten after approval' WHERE id = :id",
+        ),
+        (
+            FollowupStatus.APPROVED,
+            "UPDATE meeting_followups SET status = 'SENT', sent_by_user_id = :drafter, "
+            "sent_at = now(), body = 'rewritten while sending' WHERE id = :id",
+        ),
+    ],
+    ids=["leaving_drafted", "in_the_approving_update", "after_approval", "in_the_send"],
+)
+def test_content_never_changes_in_or_after_the_update_that_leaves_drafted(
+    db: Session, from_status: FollowupStatus, statement: str
+) -> None:
+    """The artefact an approver sees is the artefact that gets sent -- from submission on."""
+    meeting = _make_meeting(db)
+    drafter, approver = _make_user(db), _make_user(db)
+    fields: dict[str, object] = {}
+    if from_status is not FollowupStatus.DRAFTED:
+        fields.update(_submitted(drafter))
+    if from_status is FollowupStatus.APPROVED:
+        fields.update(_approved(approver))
+    followup = _insert(db, _followup(meeting, drafter, status=from_status, **fields))
+    message = _refused_statement(
+        db, statement, followup.id, drafter=drafter.id, approver=approver.id
+    )
+    assert CONTENT_LOCKED in message, message
+    status, body, _, _ = _stored(db, followup.id)
+    assert (status, body) == (from_status.value, "synthetic row created by tests/test_schema.py")
+
+
+def test_the_service_shaped_revoke_is_accepted(db: Session) -> None:
+    """The control for the freeze: returning to DRAFTED and clearing the approval is allowed.
+
+    The shape ``revoke_approval`` flushes (``_write_status`` clears submission and approval
+    together), followed by the edit it exists to permit.
+    """
+    meeting = _make_meeting(db)
+    drafter, approver = _make_user(db), _make_user(db)
+    followup = _insert(
+        db,
+        _followup(
+            meeting,
+            drafter,
+            status=FollowupStatus.APPROVED,
+            **_submitted(drafter),
+            **_approved(approver),
+        ),
+    )
+    _accepted_statement(
+        db,
+        "UPDATE meeting_followups SET status = 'DRAFTED', submitted_by_user_id = NULL, "
+        "submitted_at = NULL, approved_by_user_id = NULL, approved_at = NULL WHERE id = :id",
+        followup.id,
+    )
+    _accepted_statement(
+        db,
+        "UPDATE meeting_followups SET body = 'edited after revocation' WHERE id = :id",
+        followup.id,
+    )
+    assert _stored(db, followup.id) == (
+        FollowupStatus.DRAFTED.value,
+        "edited after revocation",
+        None,
+        False,
+    )
+
+
+def test_a_real_submit_approve_send_sequence_is_accepted(db: Session) -> None:
+    """The control for the whole guard: the path the service walks, one flush per event.
+
+    Each UPDATE carries what the executor writes for that event -- the status and its moment
+    from ``_write_status``, the actor from the rule's effect -- through the ORM, as the
+    service does. A guard that refused this would have broken the feature to block the bypass.
+    """
+    meeting = _make_meeting(db)
+    drafter, approver = _make_user(db), _make_user(db)
+    followup = _insert(db, _followup(meeting, drafter))
+
+    followup.status = FollowupStatus.OFFICER_REVIEW
+    followup.submitted_at = _at(10)
+    followup.submitted_by_user_id = drafter.id
+    db.flush()
+
+    followup.status = FollowupStatus.APPROVED
+    followup.approved_at = _at(20)
+    followup.approved_by_user_id = approver.id
+    db.flush()
+
+    followup.status = FollowupStatus.SENT
+    followup.sent_at = _at(30)
+    followup.sent_by_user_id = drafter.id
+    db.flush()
+
+    assert _stored(db, followup.id) == (
+        FollowupStatus.SENT.value,
+        "synthetic row created by tests/test_schema.py",
+        approver.id,
+        True,
+    )
+
+
+def test_an_approved_followup_must_have_been_submitted(db: Session) -> None:
+    """An approval of something nobody submitted for review is not an approval."""
+    meeting = _make_meeting(db)
+    drafter, approver = _make_user(db), _make_user(db)
+    message = _refused_insert(
+        db, _followup(meeting, drafter, status=FollowupStatus.APPROVED, **_approved(approver))
+    )
+    assert "ck_meeting_followups_approved_states_were_submitted" in message, message
+
+
+@pytest.mark.parametrize("status", [FollowupStatus.DRAFTED, FollowupStatus.OFFICER_REVIEW])
+def test_an_unapproved_followup_carries_no_approval(db: Session, status: FollowupStatus) -> None:
+    """An approval cannot be parked on a row that is not approved, waiting to be sent under."""
+    meeting = _make_meeting(db)
+    drafter, approver = _make_user(db), _make_user(db)
+    message = _refused_insert(
+        db,
+        _followup(meeting, drafter, status=status, **_submitted(drafter), **_approved(approver)),
+    )
+    assert "ck_meeting_followups_unapproved_states_carry_no_approval" in message, message
+
+
+@pytest.mark.parametrize(
+    ("minutes", "constraint"),
+    [
+        ((20, 10, 30), "ck_meeting_followups_approval_follows_submission"),
+        ((10, 30, 20), "ck_meeting_followups_dispatch_follows_approval"),
+    ],
+    ids=["approved_before_submitted", "sent_before_approved"],
+)
+def test_submission_approval_and_dispatch_are_in_order(
+    db: Session, minutes: tuple[int, int, int], constraint: str
+) -> None:
+    """``submitted_at <= approved_at <= sent_at``: nothing is approved before it was submitted."""
+    meeting = _make_meeting(db)
+    drafter, approver = _make_user(db), _make_user(db)
+    submitted, approved, sent = minutes
+    message = _refused_insert(
+        db,
+        _followup(
+            meeting,
+            drafter,
+            status=FollowupStatus.SENT,
+            submitted_by_user_id=drafter.id,
+            submitted_at=_at(submitted),
+            approved_by_user_id=approver.id,
+            approved_at=_at(approved),
+            sent_by_user_id=drafter.id,
+            sent_at=_at(sent),
+        ),
+    )
+    assert constraint in message, message
+
+
+def test_a_send_stamped_before_its_approval_is_refused(db: Session) -> None:
+    """The ordering CHECK binds the legal APPROVED to SENT update too, not only inserts."""
+    meeting = _make_meeting(db)
+    drafter, approver = _make_user(db), _make_user(db)
+    followup = _insert(
+        db,
+        _followup(
+            meeting,
+            drafter,
+            status=FollowupStatus.APPROVED,
+            **_submitted(drafter),
+            **_approved(approver),
+        ),
+    )
+    message = _refused_statement(
+        db,
+        "UPDATE meeting_followups SET status = 'SENT', sent_by_user_id = :drafter, "
+        "sent_at = :sent_at WHERE id = :id",
+        followup.id,
+        drafter=drafter.id,
+        sent_at=_at(15),
+    )
+    assert "ck_meeting_followups_dispatch_follows_approval" in message, message
+    assert _status_of(db, followup.id) == FollowupStatus.APPROVED.value
+
+
+def test_a_sent_status_without_a_dispatch_time_is_refused(db: Session) -> None:
+    """The status alone cannot claim SENT: that is what makes the approval check airtight."""
+    meeting = _make_meeting(db)
+    drafter, approver = _make_user(db), _make_user(db)
+    message = _refused_insert(
+        db,
+        _followup(
+            meeting,
+            drafter,
+            status=FollowupStatus.SENT,
+            **_submitted(drafter),
+            **_approved(approver),
+        ),
+    )
+    assert "ck_meeting_followups_sent_status_iff_timestamp" in message, message
+
+
+def test_the_drafter_cannot_be_the_approver(db: Session) -> None:
+    """Separation of duties is structural now that the drafter is on the row."""
+    meeting = _make_meeting(db)
+    drafter = _make_user(db)
+    message = _refused_insert(
+        db,
+        _followup(
+            meeting,
+            drafter,
+            status=FollowupStatus.APPROVED,
+            **_submitted(drafter),
+            **_approved(drafter),
+        ),
+    )
+    assert "ck_meeting_followups_approver_is_not_drafter" in message, message
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [None, "   ", "\n\t", "\t\r\n"],
+    ids=["none", "spaces", "newline_tab", "tab_return_newline"],
+)
+def test_a_discard_requires_a_reason(db: Session, reason: str | None) -> None:
+    """Discarding a drafted communication is a consequential act; it says why (Q-05).
+
+    Whitespace of any kind is not a reason. One-argument ``btrim`` strips only spaces, so
+    the CHECK asks for a non-whitespace character (``~ '[^[:space:]]'``) instead.
+    """
+    meeting = _make_meeting(db)
+    drafter = _make_user(db)
+    message = _refused_insert(
+        db,
+        _followup(
+            meeting,
+            drafter,
+            status=FollowupStatus.DISCARDED,
+            discarded_by_user_id=drafter.id,
+            discarded_at=datetime.now(UTC),
+            discard_reason=reason,
+        ),
+    )
+    assert "ck_meeting_followups_discarded_requires_reason" in message, message
+
+
+def test_discard_fields_exist_only_on_a_discarded_row(db: Session) -> None:
+    meeting = _make_meeting(db)
+    drafter = _make_user(db)
+    message = _refused_insert(db, _followup(meeting, drafter, discard_reason="not discarded"))
+    assert "ck_meeting_followups_discard_fields_only_when_discarded" in message, message
+
+
+@pytest.mark.parametrize(
+    "recipients",
+    [
+        ["counterpart@example.org"],
+        ["Covalent Lithium -- External Affairs", "someone@example.org"],
+        [],
+        [f"Recipient label {index}" for index in range(9)],
+        {"to": "Covalent Lithium"},
+    ],
+    ids=["address", "address_among_labels", "empty", "nine_labels", "not_an_array"],
+)
+def test_recipients_are_one_to_eight_labels_never_addresses(
+    db: Session, recipients: object
+) -> None:
+    """A drafted email with a real address in it is one careless click from a real email."""
+    meeting = _make_meeting(db)
+    drafter = _make_user(db)
+    message = _refused_insert(db, _followup(meeting, drafter, recipients=recipients))
+    assert "ck_meeting_followups_recipients_are_labels" in message, message
+
+
+def test_a_meeting_holds_at_most_one_live_followup(db: Session) -> None:
+    meeting = _make_meeting(db)
+    drafter = _make_user(db)
+    _insert(db, _followup(meeting, drafter))
+    message = _refused_insert(
+        db,
+        _followup(meeting, drafter, status=FollowupStatus.OFFICER_REVIEW, **_submitted(drafter)),
+    )
+    assert "uq_meeting_followups_one_live_per_meeting" in message, message
+
+
+def test_a_new_draft_is_accepted_beside_terminal_followups(db: Session) -> None:
+    """The control for the index: sent and discarded follow-ups do not block a re-draft."""
+    meeting = _make_meeting(db)
+    drafter, approver = _make_user(db), _make_user(db)
+    discarded = _insert(
+        db,
+        _followup(
+            meeting,
+            drafter,
+            status=FollowupStatus.DISCARDED,
+            discarded_by_user_id=drafter.id,
+            discarded_at=datetime.now(UTC),
+            discard_reason="Superseded by a written note.",
+        ),
+    )
+    _insert(
+        db,
+        _followup(
+            meeting,
+            drafter,
+            status=FollowupStatus.SENT,
+            **_submitted(drafter),
+            **_approved(approver),
+            **_sent(drafter),
+        ),
+    )
+    redraft = _insert(db, _followup(meeting, drafter, supersedes_followup_id=discarded.id))
+    assert redraft.id is not None
+
+
+def test_a_properly_approved_sent_followup_is_accepted(db: Session) -> None:
+    """The positive control: the constraints block the unapproved case, not the feature."""
+    meeting = _make_meeting(db)
+    drafter, approver = _make_user(db), _make_user(db)
+    followup = _insert(
+        db,
+        _followup(
+            meeting,
+            drafter,
+            status=FollowupStatus.SENT,
+            **_submitted(drafter),
+            **_approved(approver),
+            **_sent(drafter),
+        ),
+    )
+    assert _status_of(db, followup.id) == FollowupStatus.SENT.value
+
+
+def test_a_followup_cannot_be_deleted(db: Session) -> None:
+    """Q-05: never delete a drafted diplomatic communication. Discard it, with a reason."""
+    meeting = _make_meeting(db)
+    drafter = _make_user(db)
+    followup = _insert(db, _followup(meeting, drafter))
+    message = _refused_statement(db, "DELETE FROM meeting_followups WHERE id = :id", followup.id)
+    assert "never deleted" in message, message
+    assert _status_of(db, followup.id) == FollowupStatus.DRAFTED.value
+
+
+def test_a_meeting_with_a_followup_cannot_be_deleted(db: Session) -> None:
+    """``ON DELETE RESTRICT``: deleting the meeting must not take its follow-up with it."""
+    meeting = _make_meeting(db)
+    drafter = _make_user(db)
+    followup = _insert(db, _followup(meeting, drafter))
+    with pytest.raises(IntegrityError) as excinfo, db.begin_nested():
+        db.execute(text("DELETE FROM meetings WHERE id = :id"), {"id": meeting.id})
+    assert "fk_meeting_followups_meeting_id_meetings" in str(excinfo.value)
+    assert _status_of(db, followup.id) == FollowupStatus.DRAFTED.value
+
+
+def test_content_is_locked_outside_drafted(db: Session) -> None:
+    """The artefact an approver sees is the artefact that gets sent (workflows section 2)."""
+    meeting = _make_meeting(db)
+    drafter = _make_user(db)
+    followup = _insert(
+        db, _followup(meeting, drafter, status=FollowupStatus.OFFICER_REVIEW, **_submitted(drafter))
+    )
+    message = _refused_statement(
+        db, "UPDATE meeting_followups SET body = 'changed under review' WHERE id = :id", followup.id
+    )
+    assert CONTENT_LOCKED in message, message
+
+
+def test_content_is_editable_while_drafted(db: Session) -> None:
+    """The control for the lock: a guard that froze every edit would break drafting."""
+    meeting = _make_meeting(db)
+    drafter = _make_user(db)
+    followup = _insert(db, _followup(meeting, drafter))
+    db.execute(
+        text("UPDATE meeting_followups SET body = 'edited while drafted' WHERE id = :id"),
+        {"id": followup.id},
+    )
+    body = db.execute(
+        text("SELECT body FROM meeting_followups WHERE id = :id"), {"id": followup.id}
+    ).scalar_one()
+    assert body == "edited while drafted"
+
+
+@pytest.mark.parametrize("terminal", [FollowupStatus.SENT, FollowupStatus.DISCARDED])
+def test_a_terminal_followup_is_immutable(db: Session, terminal: FollowupStatus) -> None:
+    """Nothing about a sent or discarded follow-up changes -- not even its timestamps."""
+    meeting = _make_meeting(db)
+    drafter, approver = _make_user(db), _make_user(db)
+    terminal_fields: dict[str, object] = (
+        {**_submitted(drafter), **_approved(approver), **_sent(drafter)}
+        if terminal is FollowupStatus.SENT
+        else {
+            "discarded_by_user_id": drafter.id,
+            "discarded_at": datetime.now(UTC),
+            "discard_reason": "Superseded by a written note.",
+        }
+    )
+    followup = _insert(db, _followup(meeting, drafter, status=terminal, **terminal_fields))
+    message = _refused_statement(
+        db, "UPDATE meeting_followups SET updated_at = now() WHERE id = :id", followup.id
+    )
+    assert "terminal" in message, message
+
+
+def test_provenance_never_changes(db: Session) -> None:
+    """Who drafted it, when, for which meeting and from which trace is history, not state."""
+    meeting = _make_meeting(db)
+    drafter, somebody_else = _make_user(db), _make_user(db)
+    followup = _insert(db, _followup(meeting, drafter))
+    with pytest.raises(IntegrityError) as excinfo, db.begin_nested():
+        db.execute(
+            text("UPDATE meeting_followups SET drafted_by_user_id = :other WHERE id = :id"),
+            {"other": somebody_else.id, "id": followup.id},
+        )
+    assert "provenance" in str(excinfo.value)
+
+
+def test_followup_triggers_are_installed(db: Session) -> None:
+    """Behaviour is proven above; this pins the mechanism, including TRUNCATE.
+
+    TRUNCATE is pinned in the catalog rather than exercised, because issuing it would take
+    an ACCESS EXCLUSIVE lock on a table other test sessions may be reading.
+    """
+    rows = db.execute(
+        text(
+            "SELECT t.tgname, pg_get_triggerdef(t.oid) FROM pg_trigger t "
+            "WHERE t.tgrelid = CAST('meeting_followups' AS regclass) AND NOT t.tgisinternal"
+        )
+    ).all()
+    definitions = {str(name): str(definition) for name, definition in rows}
+    assert set(definitions) == FOLLOWUP_TRIGGERS
+    assert "BEFORE DELETE" in definitions["trg_meeting_followups_no_delete"]
+    assert "BEFORE TRUNCATE" in definitions["trg_meeting_followups_no_truncate"]
+    assert "BEFORE UPDATE" in definitions["trg_meeting_followups_guard_update"]
+
+
+def test_meetings_no_longer_carry_followup_columns(db: Session) -> None:
+    """One source of truth: every follow-up reader moved to ``meeting_followups`` (W3.2)."""
+    rows = db.execute(
+        text(
+            "SELECT column_name, data_type FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = 'meetings'"
+        )
+    ).all()
+    columns: dict[str, str] = {str(name): str(data_type) for name, data_type in rows}
+    assert not [name for name in columns if name.startswith("followup_")]
+    assert columns.get("pre_read_result") == "jsonb"
 
 
 def test_case_determination_requires_a_named_human(db: Session) -> None:

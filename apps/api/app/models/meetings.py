@@ -1,13 +1,16 @@
-"""Meetings, their attendees, and the cross-cutting action list.
+"""Meetings, their follow-ups, their attendees, and the cross-cutting action list.
 
-Three tables, one narrative. A Trade Officer walks into a bilateral with an AI-generated
+Four tables, one narrative. A Trade Officer walks into a bilateral with an AI-generated
 pre-read; afterwards the Gateway drafts a follow-up email; the follow-up **stops** until a
 second, more senior human approves it; whatever was agreed becomes an ``action`` that
 someone owns and that shows up on the Outcomes board.
 
-* ``meetings`` -- the engagement itself, plus both AI artefacts attached to it (the
-  ``MEETING_PREP`` pre-read and the ``MEETING_FOLLOWUP`` draft) and the follow-up approval
-  trail.
+* ``meetings`` -- the engagement itself, plus the ``MEETING_PREP`` pre-read attached to it
+  (as prose in ``pre_read`` and as the structured, validated result in
+  ``pre_read_result``).
+* ``meeting_followups`` -- the ``MEETING_FOLLOWUP`` draft and its approval trail. One
+  meeting may accumulate several over its life, because a discarded draft is kept rather
+  than overwritten (``docs/OPEN_QUESTIONS.md`` Q-05).
 * ``meeting_attendees`` -- who was in the room. An association row, so meeting prep has
   someone to prepare *about*.
 * ``actions`` -- a task that may hang off an opportunity, a meeting or a consular case.
@@ -16,8 +19,9 @@ someone owns and that shows up on the Outcomes board.
 
 **Winning moment #2 lives in this module.** ``BUILD_BIBLE.md`` section 3.2 and
 ``docs/workflows.md`` section 2 both make the meeting follow-up the demonstration of "AI
-drafts, humans decide", and :class:`Meeting` carries that gate as a database CHECK
-constraint rather than as a service-layer convention. See the class docstring for why.
+drafts, humans decide", and :class:`MeetingFollowup` carries that gate as database CHECK
+constraints and triggers rather than as a service-layer convention. See its class
+docstring for why, and for exactly which guarantees are structural.
 
 Every foreign key that leaves this bounded context is declared by **table-name string**
 (``ForeignKey("users.id")``), never by importing the owning model module: ``app.models.*``
@@ -30,10 +34,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Final
+from typing import Any, Final
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, Text, text
 from sqlalchemy import Enum as SAEnum
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.domain.enums import (
@@ -49,12 +54,14 @@ from app.models.mixins import ClassifiedMixin, TimestampMixin, UUIDPrimaryKeyMix
 __all__ = [
     "ACTION_STATUS_ENUM",
     "APPROVAL_STATUS_ENUM",
+    "FOLLOWUP_LIVE_STATUSES",
     "FOLLOWUP_STATUS_ENUM",
     "MEETING_TYPE_ENUM",
     "PRIORITY_ENUM",
     "Action",
     "Meeting",
     "MeetingAttendee",
+    "MeetingFollowup",
 ]
 
 # ---------------------------------------------------------------------------
@@ -66,11 +73,14 @@ __all__ = [
 # "priority")`` would be N SQLAlchemy objects all claiming to own ``CREATE TYPE priority``.
 # Sharing one instance means one CREATE TYPE.
 #
-# ``meeting_type`` and ``followup_status`` are unambiguously ours. ``priority``,
-# ``action_status`` and ``approval_status`` are declared here because ``actions`` is the
-# table that uses all three -- but ``Priority`` is also the consular triage scale and
-# ``ApprovalStatus`` is the AI Gateway response field, so sibling modules may want the same
-# types. They must reuse these instances rather than mint rivals.
+# ``meeting_type`` and ``followup_status`` are unambiguously ours. ``followup_status`` was
+# created by the initial migration for the old ``meetings.followup_status`` column and is
+# now used by ``meeting_followups.status``; the type outlived the column, and the W3.2
+# migration reuses it rather than minting a second one. ``priority``, ``action_status`` and
+# ``approval_status`` are declared here because ``actions`` is the table that uses all
+# three -- but ``Priority`` is also the consular triage scale and ``ApprovalStatus`` is the
+# AI Gateway response field, so sibling modules may want the same types. They must reuse
+# these instances rather than mint rivals.
 
 MEETING_TYPE_ENUM: Final[SAEnum] = pg_enum(MeetingType, "meeting_type")
 FOLLOWUP_STATUS_ENUM: Final[SAEnum] = pg_enum(FollowupStatus, "followup_status")
@@ -78,9 +88,17 @@ ACTION_STATUS_ENUM: Final[SAEnum] = pg_enum(ActionStatus, "action_status")
 PRIORITY_ENUM: Final[SAEnum] = pg_enum(Priority, "priority")
 APPROVAL_STATUS_ENUM: Final[SAEnum] = pg_enum(ApprovalStatus, "approval_status")
 
+#: The non-terminal follow-up states. A meeting holds at most one follow-up in these states
+#: at a time -- ``uq_meeting_followups_one_live_per_meeting`` is the partial unique index
+#: that says so -- and any number in the two terminal states. Exported so the readers and
+#: the index predicate below cannot drift onto different definitions of "live".
+FOLLOWUP_LIVE_STATUSES: Final[frozenset[FollowupStatus]] = frozenset(
+    {FollowupStatus.DRAFTED, FollowupStatus.OFFICER_REVIEW, FollowupStatus.APPROVED}
+)
+
 
 class Meeting(UUIDPrimaryKeyMixin, TimestampMixin, ClassifiedMixin, Base):
-    """A scheduled engagement with a counterpart, and the two AI artefacts attached to it.
+    """A scheduled engagement with a counterpart, and the AI pre-read attached to it.
 
     A meeting is where the pipeline becomes a conversation. It optionally hangs off an
     ``opportunity`` (the reason the meeting is happening) and an ``organisation`` (who it is
@@ -89,36 +107,24 @@ class Meeting(UUIDPrimaryKeyMixin, TimestampMixin, ClassifiedMixin, Base):
     linked meeting row (``docs/workflows.md`` section 1, row 8), so this table is evidence,
     not decoration.
 
-    **The follow-up columns are winning moment #2.**
+    **The pre-read is stored twice, deliberately.** ``pre_read`` is the prose rendering an
+    officer can print; ``pre_read_result`` is the structured ``MeetingPrepResult`` the
+    Gateway produced -- objectives, talking points each carrying its own citation ids,
+    questions, sensitivities, confidence -- validated against that schema before it is
+    written. The structured form is what the detail page renders, because a talking point
+    whose sources resolve to real registry entries is winning moment #1 applied to a
+    meeting, and prose cannot carry that. ``pre_read_trace_id`` is the provenance of both.
 
-    ``followup_status`` is ``NULL`` until someone drafts a follow-up -- a real and distinct
-    state meaning "this meeting has produced no outbound communication", not a missing
-    value. Once drafting starts it runs the ``FollowupStatus`` machine of
-    ``docs/workflows.md`` section 2: ``DRAFTED -> OFFICER_REVIEW -> APPROVED -> SENT``, with
-    ``DISCARDED`` as the non-success terminal. ``SENT`` is reachable from ``APPROVED`` and
-    from nowhere else.
-
-    That invariant is enforced here in the schema, not only in the workflow service:
-
-    ``ck_meetings_followup_sent_requires_approval``
-        ``followup_sent_at IS NULL OR followup_approved_by_user_id IS NOT NULL`` -- a sent
-        follow-up must name the human who approved it.
-
-    ``ck_meetings_followup_sent_status_requires_timestamp``
-        ``followup_status <> 'SENT' OR followup_sent_at IS NOT NULL`` -- and a row cannot
-        claim the ``SENT`` status without a dispatch timestamp, which is what makes the
-        first constraint airtight rather than side-steppable by writing the status alone.
-
-    Together they make "a follow-up was sent that nobody approved" an unrepresentable state.
-    Postgres rejects it whatever wrote the row: the API, a buggy service refactor, the seed
-    script, or somebody in psql. The demo's central trust claim is that a consequential
-    outbound communication cannot escape human approval, and a claim that rests only on an
-    ``if`` statement in a service is a claim one careless commit can retract.
-
-    What the database cannot enforce, and what therefore stays in the service layer: the
-    approver must be a *different* person from the drafter (separation of duties,
-    ``docs/workflows.md`` section 2, row 5). The row does not know who is holding the
-    session. "Approved by somebody" is structural; "approved by somebody else" is not.
+    **The follow-up no longer lives on this row.** Until W3.2 a meeting carried eight
+    ``followup_*`` columns, which meant a meeting could hold exactly one follow-up ever: a
+    re-draft after a discard would have had to overwrite -- that is, delete -- the discarded
+    draft, which the Q-05 ruling forbids. Follow-ups are now rows of
+    :class:`MeetingFollowup`, one-to-many from here, and :attr:`followups` reads them in
+    drafting order. The relationship carries no delete cascade and ``passive_deletes="all"``
+    so that the ORM never tries to null out or remove a follow-up on the meeting's behalf;
+    the foreign key is ``ON DELETE RESTRICT`` and the follow-up table refuses ``DELETE``
+    outright, so deleting a meeting that has produced an outbound communication fails
+    loudly, which is the correct outcome.
 
     Classification: a meeting agenda is ordinary working material, so ``MISSION_INTERNAL``
     is the right inherited default (ADR-0006). A meeting attached to an opportunity that has
@@ -128,17 +134,6 @@ class Meeting(UUIDPrimaryKeyMixin, TimestampMixin, ClassifiedMixin, Base):
     """
 
     __tablename__ = "meetings"
-
-    __table_args__ = (
-        CheckConstraint(
-            "followup_sent_at IS NULL OR followup_approved_by_user_id IS NOT NULL",
-            name="followup_sent_requires_approval",
-        ),
-        CheckConstraint(
-            "followup_status <> 'SENT' OR followup_sent_at IS NOT NULL",
-            name="followup_sent_status_requires_timestamp",
-        ),
-    )
 
     title: Mapped[str] = mapped_column(
         String(300),
@@ -202,52 +197,20 @@ class Meeting(UUIDPrimaryKeyMixin, TimestampMixin, ClassifiedMixin, Base):
         nullable=True,
         comment="Gateway MEETING_PREP output. NULL until a pre-read has been generated.",
     )
+    # ``none_as_null``: Python ``None`` is bound as SQL NULL, not as the JSON literal
+    # ``'null'``, so ``pre_read_result IS NULL`` means "not prepared" as the comment says.
+    pre_read_result: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True),
+        nullable=True,
+        comment=(
+            "Structured MEETING_PREP result, validated against MeetingPrepResult before "
+            "write. NULL until prepared."
+        ),
+    )
     pre_read_trace_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("ai_traces.id"),
         nullable=True,
         comment="ai_traces row behind pre_read: model route, evidence, fallback flag, latency.",
-    )
-
-    followup_status: Mapped[FollowupStatus | None] = mapped_column(
-        FOLLOWUP_STATUS_ENUM,
-        nullable=True,
-        index=True,
-        comment="NULL means no follow-up drafted yet: a real state, not a missing value.",
-    )
-    followup_draft: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True,
-        comment="Outbound text under review. Locked for editing once status is OFFICER_REVIEW.",
-    )
-    followup_trace_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("ai_traces.id"),
-        nullable=True,
-        comment="ai_traces row behind followup_draft. NULL when the draft was written by hand.",
-    )
-    followup_submitted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-        comment="When the draft entered OFFICER_REVIEW and its content locked.",
-    )
-    followup_approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("users.id"),
-        nullable=True,
-        comment="Approver. Must not be the drafter; that half is enforced in the service layer.",
-    )
-    followup_approved_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-        comment="When approval was granted. Cleared with the approver if approval is revoked.",
-    )
-    followup_sent_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-        comment="Dispatch time. Non-NULL requires an approver: see this table's CHECK constraints.",
-    )
-    followup_discarded_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-        comment="When the draft was abandoned unsent. Mutually exclusive with followup_sent_at.",
     )
 
     attendees: Mapped[list[MeetingAttendee]] = relationship(
@@ -256,7 +219,277 @@ class Meeting(UUIDPrimaryKeyMixin, TimestampMixin, ClassifiedMixin, Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    followups: Mapped[list[MeetingFollowup]] = relationship(
+        "MeetingFollowup",
+        back_populates="meeting",
+        order_by="MeetingFollowup.drafted_at",
+        passive_deletes="all",
+    )
     actions: Mapped[list[Action]] = relationship("Action", back_populates="meeting")
+
+
+class MeetingFollowup(UUIDPrimaryKeyMixin, TimestampMixin, ClassifiedMixin, Base):
+    """An outbound follow-up drafted after a meeting, and the human approval trail on it.
+
+    **This class is winning moment #2.** ``status`` runs the ``FollowupStatus`` machine of
+    ``docs/workflows.md`` section 2: ``DRAFTED -> OFFICER_REVIEW -> APPROVED -> SENT``, with
+    ``DISCARDED`` (audited, with a reason) as the non-success terminal
+    (``docs/OPEN_QUESTIONS.md`` Q-05, resolved 2026-09-15). The transitions are driven by
+    the follow-up service, which checks who holds the session and writes the audit row.
+    What follows is what the *database* guarantees on its own, whatever issued the
+    statement -- the API, a buggy service refactor, the seed script, or somebody in psql --
+    and, at the end, exactly where that guarantee stops.
+
+    **CHECK constraints** (names rendered by ``NAMING_CONVENTION``):
+
+    ``ck_meeting_followups_sent_requires_approval``
+        ``sent_at IS NULL OR (approved_by_user_id IS NOT NULL AND approved_at IS NOT NULL)``
+        -- no row carries a dispatch time without naming an approver and an approval time.
+    ``ck_meeting_followups_sent_status_iff_timestamp``
+        ``(status = 'SENT') = (sent_at IS NOT NULL)`` -- the status cannot claim ``SENT``
+        without a dispatch time, and a dispatch time cannot hide under another status. This
+        is what stops the first constraint being side-stepped by writing the status alone.
+    ``ck_meeting_followups_approved_states_name_approver``
+        ``APPROVED`` and ``SENT`` rows name their approver.
+    ``ck_meeting_followups_approved_states_were_submitted``
+        ``APPROVED`` and ``SENT`` rows record a submission (``submitted_at``).
+    ``ck_meeting_followups_unapproved_states_carry_no_approval``
+        ``DRAFTED`` and ``OFFICER_REVIEW`` rows carry no approver and no approval time, so an
+        approval of old content cannot survive a return to ``DRAFTED``.
+    ``ck_meeting_followups_approval_follows_submission`` and
+    ``ck_meeting_followups_dispatch_follows_approval``
+        Where both moments are recorded, ``submitted_at <= approved_at <= sent_at``.
+    ``ck_meeting_followups_approver_is_not_drafter``
+        **Separation of duties, structurally.** The old ``meetings.followup_*`` design said
+        the database "cannot enforce" that the approver differs from the drafter; that was
+        true only because no drafter column existed. ``drafted_by_user_id`` is NOT NULL
+        here, so "approved by somebody *else*" is now a CHECK, not an ``if``.
+    ``ck_meeting_followups_discarded_requires_reason`` and
+    ``ck_meeting_followups_discard_fields_only_when_discarded``
+        A discard is a consequential act: it names who, when and a reason containing at
+        least one non-whitespace character (``discard_reason ~ '[^[:space:]]'``, so tabs and
+        newlines do not count as a reason), and those three fields exist only on a
+        discarded row.
+    ``ck_meeting_followups_recipients_are_labels``
+        ``recipients`` is a JSON array of one to eight role or organisation *labels*, and
+        contains no ``@`` anywhere. Dispatch in this demo is simulated; a drafted email
+        with a real address in it is one careless click from being a real email
+        (``BUILD_BIBLE.md`` section 11).
+
+    Postgres evaluates CHECK constraints in alphabetical order by name, so a row that
+    breaks several reports the first: a ``SENT`` row with no approver at all is refused by
+    ``approved_states_name_approver`` before ``sent_requires_approval`` is reached. Both
+    refuse it; the tests pin which one speaks.
+
+    **Index.** ``uq_meeting_followups_one_live_per_meeting`` is a partial unique index on
+    ``meeting_id`` over the live states (:data:`FOLLOWUP_LIVE_STATUSES`): a meeting holds
+    at most one follow-up in progress, and any number of sent or discarded ones.
+
+    **Triggers** (installed by the W3.2 migration; a trigger is DDL the ORM cannot declare):
+
+    * ``trg_meeting_followups_no_delete`` / ``trg_meeting_followups_no_truncate`` -- rows
+      are **never deleted**. Discarding a drafted diplomatic communication is itself an
+      audited act (Q-05); deletion would erase the thing the audit row points at.
+    * ``trg_meeting_followups_guard_update``, in this order:
+
+      1. a ``SENT`` or ``DISCARDED`` row is immutable;
+      2. ``meeting_id``, ``drafted_by_user_id``, ``drafted_at``, ``trace_id`` and
+         ``supersedes_followup_id`` never change once written (provenance);
+      3. a status change must be one of the pairs in
+         :data:`~app.domain.enums.FOLLOWUP_TRANSITIONS` -- ``DRAFTED`` to
+         ``OFFICER_REVIEW``/``DISCARDED``, ``OFFICER_REVIEW`` to
+         ``APPROVED``/``DRAFTED``/``DISCARDED``, ``APPROVED`` to
+         ``SENT``/``DRAFTED``/``DISCARDED`` -- so no single statement skips review or
+         approval;
+      4. ``subject``, ``recipients`` and ``body`` change only on a ``DRAFTED`` to ``DRAFTED``
+         update, never in the statement that leaves ``DRAFTED`` or anywhere after it;
+      5. ``approved_by_user_id`` and ``approved_at`` change only when they are set together
+         on ``OFFICER_REVIEW`` to ``APPROVED``, or cleared together on a return to
+         ``DRAFTED``. An approval, once given, is not rewritten -- not even in the
+         ``APPROVED`` to ``SENT`` statement.
+
+    **What that adds up to, and where it stops.** By ``UPDATE``, a row reaches ``SENT`` only
+    from ``APPROVED``, with its approval unchanged since it was given and its content frozen
+    since submission. Every ``SENT`` row, however it was written, names an approver other
+    than the drafter, an approval time and a submission. The database **cannot** tell
+    whether the named approver actually held ``approve:meeting_followup``: that is proven by
+    the service (the permission matrix, the 403 on a send without approval) and by the
+    append-only ``audit_events`` chain every transition writes. And a raw ``INSERT`` of a row
+    that is already ``SENT`` -- the path the seed and the W3.2 migration's data copy use to
+    record history -- satisfies the constraints without being an approval act; the triggers
+    guard ``UPDATE``, not ``INSERT``.
+
+    ``trace_id`` is NULL for a hand-written draft and points at the ``ai_traces`` row that
+    served the draft otherwise. ``supersedes_followup_id`` links a re-draft to the terminal
+    follow-up it replaces (``docs/workflows.md`` rule 0.6): a new artefact, never a revived
+    one.
+
+    Classification is the meeting's zone at drafting time; readers apply
+    ``dominant(followup.classification, meeting.classification)`` so a meeting raised to
+    ``CONFIDENTIAL`` later carries its follow-ups up with it.
+    """
+
+    __tablename__ = "meeting_followups"
+
+    __table_args__ = (
+        CheckConstraint(
+            "sent_at IS NULL OR (approved_by_user_id IS NOT NULL AND approved_at IS NOT NULL)",
+            name="sent_requires_approval",
+        ),
+        CheckConstraint(
+            "(status = 'SENT') = (sent_at IS NOT NULL)",
+            name="sent_status_iff_timestamp",
+        ),
+        CheckConstraint(
+            "status NOT IN ('APPROVED', 'SENT') OR approved_by_user_id IS NOT NULL",
+            name="approved_states_name_approver",
+        ),
+        CheckConstraint(
+            "approved_by_user_id IS NULL OR approved_by_user_id <> drafted_by_user_id",
+            name="approver_is_not_drafter",
+        ),
+        CheckConstraint(
+            "status NOT IN ('DRAFTED', 'OFFICER_REVIEW') "
+            "OR (approved_by_user_id IS NULL AND approved_at IS NULL)",
+            name="unapproved_states_carry_no_approval",
+        ),
+        CheckConstraint(
+            "status NOT IN ('APPROVED', 'SENT') OR submitted_at IS NOT NULL",
+            name="approved_states_were_submitted",
+        ),
+        CheckConstraint(
+            "approved_at IS NULL OR submitted_at IS NULL OR submitted_at <= approved_at",
+            name="approval_follows_submission",
+        ),
+        CheckConstraint(
+            "sent_at IS NULL OR approved_at IS NULL OR approved_at <= sent_at",
+            name="dispatch_follows_approval",
+        ),
+        CheckConstraint(
+            "status <> 'DISCARDED' OR (discard_reason IS NOT NULL "
+            "AND discard_reason ~ '[^[:space:]]' AND discarded_at IS NOT NULL "
+            "AND discarded_by_user_id IS NOT NULL)",
+            name="discarded_requires_reason",
+        ),
+        CheckConstraint(
+            "status = 'DISCARDED' OR (discarded_at IS NULL AND discard_reason IS NULL "
+            "AND discarded_by_user_id IS NULL)",
+            name="discard_fields_only_when_discarded",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(recipients) = 'array' AND jsonb_array_length(recipients) "
+            "BETWEEN 1 AND 8 AND position('@' in recipients::text) = 0",
+            name="recipients_are_labels",
+        ),
+        # Named explicitly: the "ix" naming convention would render
+        # ``ix_meeting_followups_meeting_id`` and collide with the plain index on that
+        # column. The predicate lists the FOLLOWUP_LIVE_STATUSES values.
+        Index(
+            "uq_meeting_followups_one_live_per_meeting",
+            "meeting_id",
+            unique=True,
+            postgresql_where=text("status IN ('DRAFTED', 'OFFICER_REVIEW', 'APPROVED')"),
+        ),
+    )
+
+    meeting_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("meetings.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+        comment="Meeting this follows up. RESTRICT: an outbound communication outlives nothing.",
+    )
+    status: Mapped[FollowupStatus] = mapped_column(
+        FOLLOWUP_STATUS_ENUM,
+        nullable=False,
+        index=True,
+        comment=(
+            "docs/workflows.md section 2 state. By UPDATE, SENT is reachable only from "
+            "APPROVED (trigger); the DB cannot tell whether the approver held the permission."
+        ),
+    )
+    subject: Mapped[str] = mapped_column(
+        String(300),
+        nullable=False,
+        comment="Subject line of the outbound message. Locked outside DRAFTED by trigger.",
+    )
+    recipients: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        comment="JSON array of role/organisation LABELS, never addresses (CHECK forbids '@').",
+    )
+    body: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment="Drafted message text, stored verbatim. Locked outside DRAFTED by trigger.",
+    )
+    trace_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("ai_traces.id"),
+        nullable=True,
+        comment="ai_traces row that served this draft. NULL means written by hand.",
+    )
+    supersedes_followup_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("meeting_followups.id"),
+        nullable=True,
+        comment="Terminal follow-up this re-draft replaces (workflows rule 0.6). NULL if first.",
+    )
+
+    drafted_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=False,
+        comment="Drafter. May never be the approver: see ck_..._approver_is_not_drafter.",
+    )
+    drafted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        comment="When the draft was recorded. Provenance: immutable once written.",
+    )
+    submitted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+        comment="Who submitted the draft for review. Cleared if it returns to DRAFTED.",
+    )
+    submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When the draft entered OFFICER_REVIEW and its content locked.",
+    )
+    approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+        comment="Approver. NULL until approved; never the drafter (CHECK).",
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When approval was granted. Cleared with the approver if approval is revoked.",
+    )
+    sent_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+        comment="Who dispatched it. Dispatch is simulated in the demo; nothing is transmitted.",
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Dispatch time. Non-NULL requires a named approver and approval time (CHECK).",
+    )
+    discarded_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+        comment="Who discarded it. Set only on a DISCARDED row (CHECK).",
+    )
+    discarded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When it was discarded. The row is kept: a discard is never a deletion.",
+    )
+    discard_reason: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="Why it was discarded. Required, non-blank, on a DISCARDED row (CHECK).",
+    )
+
+    meeting: Mapped[Meeting] = relationship("Meeting", back_populates="followups")
 
 
 class MeetingAttendee(Base):
@@ -325,7 +558,7 @@ class Action(UUIDPrimaryKeyMixin, TimestampMixin, ClassifiedMixin, Base):
     ``status`` runs the ordinary :class:`~app.domain.enums.ActionStatus` lifecycle. It is
     deliberately *not* the follow-up machine: an action is internal task tracking, whereas a
     meeting follow-up is an approval-gated outbound communication and lives on
-    :class:`Meeting`.
+    :class:`MeetingFollowup`.
 
     **Approval.** Most actions need none, so ``requires_approval`` defaults to ``False`` and
     ``approval_status`` to ``NOT_REQUIRED``. When an action *is* one of the

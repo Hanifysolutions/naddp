@@ -42,9 +42,11 @@ from sqlalchemy import ColumnElement, Select, func, select
 from sqlalchemy.orm import Session
 
 from app.ai.evidence import citation_registry
+from app.ai.schemas import MeetingPrepResult
 from app.audit.writer import verify_chain
 from app.core.config import REPO_ROOT, SNAPSHOT_DIR
 from app.domain.enums import (
+    AiPurpose,
     CaseStatus,
     ConsentStatus,
     FollowupStatus,
@@ -59,7 +61,7 @@ from app.models.diaspora import DiasporaExpertise, DiasporaProfile, ExpertiseTag
 from app.models.governance import AuditEvent, Permission, Role, User
 from app.models.intelligence import Brief, BriefItem, Document, Signal, Source
 from app.models.knowledge import KnowledgeArticle
-from app.models.meetings import Meeting
+from app.models.meetings import FOLLOWUP_LIVE_STATUSES, Meeting, MeetingFollowup
 from app.models.opportunities import Opportunity
 from app.models.stakeholders import Organisation, Stakeholder
 
@@ -96,6 +98,7 @@ NON_EMPTY_TABLES: Final[tuple[tuple[str, type], ...]] = (
     ("expertise_tags", ExpertiseTag),
     ("diaspora_expertise", DiasporaExpertise),
     ("ai_traces", AiTrace),
+    ("meeting_followups", MeetingFollowup),
 )
 
 #: Q-13, the architect's ruling.
@@ -534,7 +537,8 @@ def test_no_seeded_text_claims_a_refinery_expansion(db: Session) -> None:
         ("knowledge_articles.body", select(KnowledgeArticle.body)),
         ("meetings.agenda", select(Meeting.agenda)),
         ("meetings.pre_read", select(Meeting.pre_read)),
-        ("meetings.followup_draft", select(Meeting.followup_draft)),
+        ("meeting_followups.subject", select(MeetingFollowup.subject)),
+        ("meeting_followups.body", select(MeetingFollowup.body)),
         ("organisations.description", select(Organisation.description)),
         ("documents.summary", select(Document.summary)),
     )
@@ -641,22 +645,144 @@ def test_hero_opportunity_reaches_an_organisation_and_a_stakeholder(
     assert stakeholder.is_synthetic is True, "every named individual in the demo is invented"
 
 
-def test_hero_meeting_followup_is_blocked_on_approval(
-    db: Session,
-    hero_opportunity: Opportunity,
-) -> None:
-    """Winning moment #2: the follow-up exists, and it has not been and cannot be sent."""
+@pytest.fixture(scope="module")
+def hero_meeting(db: Session, hero_opportunity: Opportunity) -> Meeting:
     meeting = db.scalar(select(Meeting).where(Meeting.opportunity_id == hero_opportunity.id))
     assert meeting is not None, "the hero opportunity has no meeting"
-    assert meeting.followup_status is FollowupStatus.DRAFTED, (
-        f"the hero follow-up is {meeting.followup_status}, expected DRAFTED so that the "
-        "approval gate is what the audience sees"
+    return meeting
+
+
+def _snapshot_result(purpose: AiPurpose, scenario: str) -> dict[str, object]:
+    """The ``result`` object of a deterministic snapshot, read straight from the file."""
+    path = SNAPSHOT_DIR / f"{purpose.value.lower()}_{scenario}.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    result = document["result"]
+    assert isinstance(result, dict), f"{path.name} carries no result object"
+    return result
+
+
+def test_hero_meeting_followup_is_blocked_on_approval(db: Session, hero_meeting: Meeting) -> None:
+    """Winning moment #2: the follow-up exists, and it has not been and cannot be sent."""
+    live = list(
+        db.scalars(
+            select(MeetingFollowup).where(
+                MeetingFollowup.meeting_id == hero_meeting.id,
+                MeetingFollowup.status.in_(FOLLOWUP_LIVE_STATUSES),
+            )
+        )
     )
-    assert meeting.followup_draft, "a blocked follow-up with no draft shows nothing"
-    assert meeting.followup_sent_at is None
-    assert meeting.followup_approved_by_user_id is None
-    assert meeting.pre_read, "the trade officer's pre-read is part of the beat"
-    assert meeting.pre_read_trace_id is not None
+    assert len(live) == 1, f"the hero meeting has {len(live)} live follow-ups, expected one"
+    followup = live[0]
+    assert followup.status is FollowupStatus.DRAFTED, (
+        f"the hero follow-up is {followup.status}, expected DRAFTED so that the approval "
+        "gate is what the audience sees"
+    )
+    assert followup.body.strip(), "a blocked follow-up with no draft shows nothing"
+    assert followup.trace_id is not None, "the hero follow-up is AI-drafted; its trace is the proof"
+    assert followup.approved_by_user_id is None
+    assert followup.approved_at is None
+    assert followup.sent_at is None
+    assert hero_meeting.pre_read, "the trade officer's pre-read is part of the beat"
+    assert hero_meeting.pre_read_trace_id is not None
+
+
+def test_hero_followup_text_is_what_its_trace_says_was_served(
+    db: Session, hero_meeting: Meeting
+) -> None:
+    """Provenance: the stored draft is the snapshot its own trace drawer points at, verbatim."""
+    followup = db.scalar(
+        select(MeetingFollowup).where(
+            MeetingFollowup.meeting_id == hero_meeting.id,
+            MeetingFollowup.status == FollowupStatus.DRAFTED,
+        )
+    )
+    assert followup is not None and followup.trace_id is not None
+    trace = db.get(AiTrace, followup.trace_id)
+    assert trace is not None
+    assert trace.purpose is AiPurpose.MEETING_FOLLOWUP
+    assert trace.scenario, "a seeded trace must name the snapshot scenario it served"
+    served = _snapshot_result(AiPurpose.MEETING_FOLLOWUP, trace.scenario)
+    assert followup.subject == served["subject"]
+    assert followup.recipients == served["recipients"]
+    assert followup.body == served["body"]
+
+
+def test_hero_followup_trace_runs_after_the_meeting_and_before_the_draft(
+    db: Session, hero_meeting: Meeting
+) -> None:
+    """Provenance in time: the Gateway call that served the draft happened between the two.
+
+    A draft recorded before the call its own trace says produced it would be a provenance the
+    trace drawer contradicts; a follow-up generated before the meeting ended would be a
+    follow-up to a conversation that had not happened yet. Both hold whatever hour the seed
+    runs, because the trace is pinned to a clock hour on the meeting day.
+    """
+    followup = db.scalar(
+        select(MeetingFollowup).where(
+            MeetingFollowup.meeting_id == hero_meeting.id,
+            MeetingFollowup.status == FollowupStatus.DRAFTED,
+        )
+    )
+    assert followup is not None and followup.trace_id is not None
+    trace = db.get(AiTrace, followup.trace_id)
+    assert trace is not None
+    assert hero_meeting.scheduled_end <= trace.created_at <= followup.drafted_at, (
+        f"meeting ended {hero_meeting.scheduled_end}, follow-up trace ran {trace.created_at}, "
+        f"draft recorded {followup.drafted_at}"
+    )
+
+
+def test_hero_pre_read_trace_runs_before_the_meeting(db: Session, hero_meeting: Meeting) -> None:
+    """A pre-read is prepared ahead of the meeting it prepares for."""
+    assert hero_meeting.pre_read_trace_id is not None
+    trace = db.get(AiTrace, hero_meeting.pre_read_trace_id)
+    assert trace is not None
+    assert trace.created_at < hero_meeting.scheduled_start, (
+        f"pre-read trace ran {trace.created_at}, meeting started {hero_meeting.scheduled_start}"
+    )
+
+
+def test_an_unprepared_meeting_stores_sql_null_not_json_null(
+    db: Session, hero_meeting: Meeting
+) -> None:
+    """``pre_read_result IS NULL`` means "not prepared", as the column comment promises.
+
+    Written as SQL on purpose: the ORM reads the JSON literal ``'null'`` back as ``None``, so
+    only a query that asks the database can tell the two apart. Exactly the hero meeting has
+    a structured pre-read.
+    """
+    json_nulls = _count(
+        db,
+        select(func.count())
+        .select_from(Meeting)
+        .where(func.jsonb_typeof(Meeting.pre_read_result) == "null"),
+    )
+    assert json_nulls == 0, f"{json_nulls} meetings store the JSON literal 'null' as a pre-read"
+    prepared = set(db.scalars(select(Meeting.id).where(Meeting.pre_read_result.is_not(None))))
+    assert prepared == {hero_meeting.id}
+
+
+def test_hero_pre_read_result_validates_and_cites_only_verified_sources(
+    db: Session, hero_meeting: Meeting
+) -> None:
+    """The structured pre-read is a valid ``MeetingPrepResult`` resting on VERIFIED citations."""
+    assert hero_meeting.pre_read_result is not None, "the hero meeting has no structured pre-read"
+    result = MeetingPrepResult.model_validate(hero_meeting.pre_read_result)
+    cited = result.cited_evidence_ids()
+    assert cited, "a pre-read that cites nothing is a chatbot answer"
+    registry = citation_registry()
+    offenders = sorted(
+        citation_id
+        for citation_id in cited
+        if (entry := registry.get(citation_id)) is None or not entry.verified
+    )
+    assert not offenders, f"the hero pre-read cites missing or unverified sources: {offenders}"
+
+    assert hero_meeting.pre_read_trace_id is not None
+    trace = db.get(AiTrace, hero_meeting.pre_read_trace_id)
+    assert trace is not None and trace.purpose is AiPurpose.MEETING_PREP
+    assert trace.scenario is not None
+    assert hero_meeting.pre_read_result == _snapshot_result(AiPurpose.MEETING_PREP, trace.scenario)
 
 
 def test_a_followup_awaits_approval_somewhere_in_the_dataset(db: Session) -> None:
@@ -664,20 +790,23 @@ def test_a_followup_awaits_approval_somewhere_in_the_dataset(db: Session) -> Non
     awaiting = _count(
         db,
         select(func.count())
-        .select_from(Meeting)
-        .where(Meeting.followup_status == FollowupStatus.OFFICER_REVIEW),
+        .select_from(MeetingFollowup)
+        .where(MeetingFollowup.status == FollowupStatus.OFFICER_REVIEW),
     )
     assert awaiting >= 1
 
 
-def test_a_sent_followup_names_its_approver(db: Session) -> None:
-    """``SENT`` is reachable only from ``APPROVED``, and an approval has a human on it."""
-    statement = select(Meeting).where(Meeting.followup_status == FollowupStatus.SENT)
+def test_a_sent_followup_names_an_approver_who_is_not_its_drafter(db: Session) -> None:
+    """``SENT`` is reachable only from ``APPROVED``, and an approval has a second human on it."""
+    statement = select(MeetingFollowup).where(MeetingFollowup.status == FollowupStatus.SENT)
     sent = list(db.scalars(statement))
     assert sent, "no follow-up has ever been sent; the success path is undemonstrated"
-    for meeting in sent:
-        assert meeting.followup_approved_by_user_id is not None
-        assert meeting.followup_sent_at is not None
+    for followup in sent:
+        assert followup.approved_by_user_id is not None
+        assert followup.approved_by_user_id != followup.drafted_by_user_id
+        assert followup.approved_at is not None
+        assert followup.sent_at is not None
+        assert followup.approved_at <= followup.sent_at, "sent before it was approved"
 
 
 def test_hero_consular_case_exists_and_is_compartmented(db: Session) -> None:

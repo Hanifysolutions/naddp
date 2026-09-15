@@ -4,6 +4,8 @@ import type {
   CaseStatus,
   ConsentStatus,
   DataClassification,
+  FollowupStatus,
+  MeetingType,
   OpportunityStage,
   RelationshipStrength,
   SignalStatus,
@@ -145,4 +147,30 @@ export const CLASSIFICATION_LABELS: Record<DataClassification, string> = {
   MISSION_INTERNAL: 'Mission internal',
   CONFIDENTIAL: 'Confidential',
   CONSULAR_SENSITIVE: 'Consular sensitive',
+};
+
+/**
+ * Meeting follow-up lifecycle (docs/workflows.md section 2), in workflow order.
+ *
+ * OFFICER_REVIEW is captioned for what it means to the person reading it rather than for
+ * where it sits in the table: "Awaiting approval" is the state winning moment #2 puts on the
+ * screen, and "Officer review" would hide the fact that a named human has to decide.
+ * APPROVED says "not sent" out loud because the two are different acts - the approval is
+ * recorded, and until dispatch nothing has left the mission.
+ */
+export const FOLLOWUP_STATUS_LABELS: Record<FollowupStatus, string> = {
+  DRAFTED: 'Draft',
+  OFFICER_REVIEW: 'Awaiting approval',
+  APPROVED: 'Approved, not sent',
+  SENT: 'Sent',
+  DISCARDED: 'Discarded',
+};
+
+/** Meeting formats, sentence case. The API's enum member travels unchanged. */
+export const MEETING_TYPE_LABELS: Record<MeetingType, string> = {
+  BILATERAL: 'Bilateral',
+  INTRODUCTORY: 'Introductory',
+  SITE_VISIT: 'Site visit',
+  ROUNDTABLE: 'Roundtable',
+  CALL: 'Call',
 };

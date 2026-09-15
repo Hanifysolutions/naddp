@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from app.domain.enums import Classification, RoleCode
 from app.models.opportunities import Opportunity
 from app.models.stakeholders import Interaction, Organisation, Stakeholder
-from app.security.principal import principal_for_role
+from app.security.principal import Principal, principal_for_role
 from app.services.stakeholders import (
     list_organisations,
     organisation_dossier,
@@ -76,7 +76,7 @@ def hero(db: Session) -> Opportunity:
     return opportunity
 
 
-def _officer() -> object:
+def _officer() -> Principal:
     return principal_for_role(RoleCode.TRADE_OFFICER)
 
 

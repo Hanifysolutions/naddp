@@ -19,7 +19,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Final
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.domain.enums import Classification, OpportunityStage
 from app.services.state_machine import REASON_MAX_LENGTH
@@ -31,6 +31,7 @@ __all__ = [
     "OpportunitySummary",
     "TransitionRequest",
     "TransitionResponse",
+    "reject_nul_characters",
 ]
 
 #: Event names are lower ``snake_case`` (``docs/workflows.md`` sections 1-3).
@@ -40,6 +41,21 @@ __all__ = [
 #: audit row*; a 422 from schema validation would refuse it and record nothing, which is
 #: precisely the attempt a security reviewer wants to see logged.
 EVENT_PATTERN: Final[str] = r"^[a-z][a-z_]{1,62}$"
+
+
+def reject_nul_characters(value: str | None) -> str | None:
+    """Refuse text holding a NUL character; return anything else unchanged.
+
+    For every request field whose text reaches an audit payload or a text column. Postgres
+    cannot store a NUL in either, so such a value would otherwise fail at flush -- a 500, and
+    for a refused event no DENY row at all. Unlike an unknown event, this is a malformed
+    body rather than an attempt worth recording, so it is a 422 before any policy decision.
+    The value is refused, never stripped: a stored reason must be what the actor submitted.
+    """
+    if value is not None and "\x00" in value:
+        msg = "must not contain a NUL character (U+0000), which cannot be stored"
+        raise ValueError(msg)
+    return value
 
 
 class OpportunitySummary(BaseModel):
@@ -187,7 +203,8 @@ class TransitionRequest(BaseModel):
         description=(
             "Why. Required by close, dismiss and revert (marked with a pencil in "
             "docs/workflows.md section 1) and capped at 500 characters. For a closure it "
-            "is stored in opportunities.closed_reason and referenced from the audit row."
+            "is stored in opportunities.closed_reason and referenced from the audit row. "
+            "A NUL character is refused with 422."
         ),
     )
     expected_stage: OpportunityStage | None = Field(
@@ -199,6 +216,12 @@ class TransitionRequest(BaseModel):
             "cannot race the same opportunity into two states."
         ),
     )
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_is_storable(cls, value: str | None) -> str | None:
+        """A NUL in the reason is a malformed body: 422, never a 500 (``reject_nul_characters``)."""
+        return reject_nul_characters(value)
 
 
 class TransitionResponse(BaseModel):

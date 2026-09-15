@@ -24,7 +24,7 @@ from app.models.diaspora import DiasporaExpertise, DiasporaProfile, ExpertiseTag
 from app.models.governance import AuditEvent, Permission, Role, RolePermission, User, UserRole
 from app.models.intelligence import Brief, BriefItem, Document, Signal, Source
 from app.models.knowledge import KnowledgeArticle
-from app.models.meetings import Action, Meeting, MeetingAttendee
+from app.models.meetings import Action, Meeting, MeetingAttendee, MeetingFollowup
 from app.models.opportunities import Opportunity
 from app.models.stakeholders import Interaction, Organisation, Stakeholder
 from seed_parts.context import SEED_MARKER, SeedContext
@@ -86,6 +86,7 @@ _INFORMATIONAL: Final[tuple[tuple[str, type, str], ...]] = (
     ("organisations", Organisation, "real public actors only"),
     ("interactions", Interaction, "contact history behind last_contact_at"),
     ("meeting_attendees", MeetingAttendee, ""),
+    ("meeting_followups", MeetingFollowup, "insert-once; never deleted (Q-05)"),
     ("actions", Action, ""),
     ("case_events", CaseEvent, "append-only"),
     ("case_evidence", CaseEvidence, ""),

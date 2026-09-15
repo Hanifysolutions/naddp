@@ -150,9 +150,9 @@ def test_an_item_with_no_evidence_is_refused(db: Session) -> None:
         summary="No citations anywhere.",
         confidence=0.5,
         items=[
-            MorningBriefResult.model_fields["items"]
+            MorningBriefResult.model_fields["items"]  # type: ignore[union-attr]
             .annotation.__args__[0]
-            .model_construct(  # type: ignore[union-attr]
+            .model_construct(
                 title="Claim with nothing behind it",
                 item_type="SIGNAL",
                 detail="A claim.",

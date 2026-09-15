@@ -37,11 +37,15 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.domain.enums import (
     CaseStatus,
     Classification,
+    FollowupStatus,
+    MeetingType,
     OpportunityStage,
     Priority,
     RoleCode,
 )
 from app.models.consular import Case
+from app.models.governance import User
+from app.models.meetings import Meeting, MeetingFollowup
 from app.models.opportunities import Opportunity
 from app.security.principal import demo_persona
 from app.security.session import SESSION_COOKIE_NAME, issue_session
@@ -146,6 +150,66 @@ def _seed_case(
         opened_at=datetime.now(UTC) - timedelta(days=3),
         sla_due_at=sla_due_at,
         classification=Classification.CONSULAR_SENSITIVE,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def _seed_followup(
+    session: Session,
+    *,
+    status: FollowupStatus,
+    meeting_classification: Classification = Classification.MISSION_INTERNAL,
+    followup_classification: Classification = Classification.MISSION_INTERNAL,
+) -> MeetingFollowup:
+    """Insert a meeting and one follow-up on it, inside the rolled-back transaction.
+
+    One meeting per follow-up, because a meeting holds at most one live follow-up
+    (``uq_meeting_followups_one_live_per_meeting``). Only the states these tests need are
+    supported; each carries the fields its CHECK constraints require.
+    """
+    now = datetime.now(UTC)
+    drafter = User(
+        email=f"command-test-{uuid.uuid4().hex[:12]}@naddp.test",
+        full_name="Command Test Drafter",
+        mission="Canberra",
+        is_demo_persona=True,
+        is_active=True,
+    )
+    meeting = Meeting(
+        title="Synthetic meeting for the command centre tests",
+        meeting_type=MeetingType.BILATERAL,
+        scheduled_start=now - timedelta(days=1),
+        scheduled_end=now - timedelta(days=1) + timedelta(hours=1),
+        agenda="Fixture meeting.",
+        classification=meeting_classification,
+    )
+    session.add_all([drafter, meeting])
+    session.flush()
+
+    fields: dict[str, Any] = {}
+    if status is FollowupStatus.OFFICER_REVIEW:
+        fields = {"submitted_by_user_id": drafter.id, "submitted_at": now}
+    elif status is FollowupStatus.DISCARDED:
+        fields = {
+            "discarded_by_user_id": drafter.id,
+            "discarded_at": now,
+            "discard_reason": "Fixture discard.",
+        }
+    elif status is not FollowupStatus.DRAFTED:
+        msg = f"_seed_followup does not build {status.value} follow-ups"
+        raise ValueError(msg)
+    row = MeetingFollowup(
+        meeting_id=meeting.id,
+        status=status,
+        subject="Fixture follow-up",
+        recipients=["Fixture Organisation"],
+        body="Fixture follow-up for the command centre tests.",
+        drafted_by_user_id=drafter.id,
+        drafted_at=now,
+        classification=followup_classification,
+        **fields,
     )
     session.add(row)
     session.flush()
@@ -363,6 +427,78 @@ def test_an_awaiting_citizen_case_does_not_count_as_breached(
     after = _today(client)["consular"]
     assert after["sla_breached"] == before["sla_breached"]
     assert after["awaiting_citizen"] == before["awaiting_citizen"] + 1
+
+
+def test_a_followup_awaiting_approval_is_counted_from_the_followup_table(
+    api: tuple[TestClient, Session],
+) -> None:
+    """Winning moment #2's number: an ``OFFICER_REVIEW`` row in ``meeting_followups``."""
+    client, session = api
+
+    _as(client, RoleCode.TRADE_OFFICER, session)
+    before = _today(client)["meetings"]
+
+    _seed_followup(session, status=FollowupStatus.OFFICER_REVIEW)
+
+    after = _today(client)["meetings"]
+    assert after["followups_awaiting_approval"] == before["followups_awaiting_approval"] + 1
+    assert after["followups_drafted"] == before["followups_drafted"]
+
+
+def test_a_drafted_followup_counts_as_drafted_and_a_discarded_one_counts_nowhere(
+    api: tuple[TestClient, Session],
+) -> None:
+    """A discard is kept on record, but it is not work waiting for anybody."""
+    client, session = api
+
+    _as(client, RoleCode.TRADE_OFFICER, session)
+    before = _today(client)["meetings"]
+
+    _seed_followup(session, status=FollowupStatus.DRAFTED)
+    _seed_followup(session, status=FollowupStatus.DISCARDED)
+
+    after = _today(client)["meetings"]
+    assert after["followups_drafted"] == before["followups_drafted"] + 1
+    assert after["followups_awaiting_approval"] == before["followups_awaiting_approval"]
+
+
+@pytest.mark.parametrize(
+    ("meeting_classification", "followup_classification"),
+    [
+        (Classification.CONFIDENTIAL, Classification.MISSION_INTERNAL),
+        (Classification.MISSION_INTERNAL, Classification.CONFIDENTIAL),
+    ],
+    ids=["confidential_meeting", "confidential_followup"],
+)
+def test_a_followup_is_counted_only_when_both_zones_are_readable(
+    api: tuple[TestClient, Session],
+    meeting_classification: Classification,
+    followup_classification: Classification,
+) -> None:
+    """The follow-up's zone AND its meeting's zone, both in SQL (ADR-0006 dominant rule).
+
+    A ``TRADE_OFFICER`` (clearance 20) does not count a follow-up whose meeting or whose own
+    row is ``CONFIDENTIAL`` (rank 30); an ``AMBASSADOR`` (40) does. Either zone alone
+    being readable is not enough, which is the leak a single-table count would open.
+    """
+    client, session = api
+
+    _as(client, RoleCode.TRADE_OFFICER, session)
+    trade_before = _today(client)["meetings"]["followups_awaiting_approval"]
+    _as(client, RoleCode.AMBASSADOR, session)
+    ambassador_before = _today(client)["meetings"]["followups_awaiting_approval"]
+
+    _seed_followup(
+        session,
+        status=FollowupStatus.OFFICER_REVIEW,
+        meeting_classification=meeting_classification,
+        followup_classification=followup_classification,
+    )
+
+    _as(client, RoleCode.TRADE_OFFICER, session)
+    assert _today(client)["meetings"]["followups_awaiting_approval"] == trade_before
+    _as(client, RoleCode.AMBASSADOR, session)
+    assert _today(client)["meetings"]["followups_awaiting_approval"] == ambassador_before + 1
 
 
 # ---------------------------------------------------------------------------

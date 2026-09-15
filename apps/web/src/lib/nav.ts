@@ -132,8 +132,7 @@ export const NAV_CATALOGUE: readonly NavItem[] = [
     description: 'Pre-reads and follow-ups. Sending requires human approval.',
     icon: 'meetings',
     permission: 'read:meeting',
-    availability: 'planned',
-    plannedFor: 'Week 3',
+    availability: 'available',
   },
   {
     href: '/consular',

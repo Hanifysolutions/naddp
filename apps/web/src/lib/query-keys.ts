@@ -47,4 +47,19 @@ export const queryKeys = {
    */
   briefHistory: (role: NaddpRole | null, limit: number) =>
     ['intelligence', 'briefs', role, limit] as const,
+  /**
+   * The meeting diary. `GET /v1/meetings` is narrowed to the caller's zones inside the SQL,
+   * so the same URL answers a TRADE_OFFICER without the Confidential meeting an AMBASSADOR
+   * sees - the role is part of the address, not decoration on it.
+   */
+  meetings: (role: NaddpRole | null) => ['meetings', 'list', role] as const,
+  /**
+   * One meeting in full. Beyond clearance, every follow-up on it carries
+   * `available_actions` and `approval.caller_is_drafter`, which are statements about THIS
+   * caller: an Ambassador's cached copy offers "Approve and send", a Trade Officer's must
+   * not. Keyed without the role, a role switch could paint the wrong buttons for a frame.
+   */
+  meeting: (role: NaddpRole | null, id: string) => ['meetings', 'detail', role, id] as const,
+  /** The follow-ups awaiting a named human decision that this caller may read and act on. */
+  approvalQueue: (role: NaddpRole | null) => ['meetings', 'approvals', role] as const,
 } as const;
