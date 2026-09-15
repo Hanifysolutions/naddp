@@ -3,7 +3,7 @@
   "purpose": "DIASPORA_MATCH",
   "scenario": "lithium-migration",
   "approval_status": "NOT_REQUIRED",
-  "notes": "Hero diaspora beat: the search returns BOTH a lithium-processing engineer AND a migration-pathway academic, which is what ties the dual-sector thread together in one result.",
+  "notes": "Reference answer only, NEVER SERVED (see diaspora_match___default__.json). Hero diaspora beat: the search returns BOTH a lithium-processing engineer AND a migration-pathway academic, which is what ties the dual-sector thread together in one result.",
   "evidence_ids": [
     "abs-census-2021-quickstats-nigeria-born",
     "homeaffairs-immi-temporary-graduate-485",

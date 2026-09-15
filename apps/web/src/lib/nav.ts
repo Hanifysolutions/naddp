@@ -148,8 +148,7 @@ export const NAV_CATALOGUE: readonly NavItem[] = [
     description: 'Consent-filtered expertise and capability search.',
     icon: 'diaspora',
     permission: 'read:diaspora_profile',
-    availability: 'planned',
-    plannedFor: 'Week 4',
+    availability: 'available',
   },
   {
     href: '/knowledge',

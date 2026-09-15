@@ -215,10 +215,10 @@ class PurposeSpec:
     #: deterministic path until someone rules otherwise, and the band table stays intact.
     live_eligible: bool = True
     #: Whether a deterministic snapshot may stand in for a live answer. True for the purposes
-    #: that reason over a known object. False for ``KNOWLEDGE_ANSWER``: its question is free
-    #: text, so a cached answer is an answer to a different question -- a fabrication with a
-    #: citation attached. Its deterministic path is the approved text itself, or a refusal
-    #: (``app.ai.knowledge_answer``, OPEN_QUESTIONS A-17).
+    #: that reason over a known object. False for ``KNOWLEDGE_ANSWER`` and ``DIASPORA_MATCH``:
+    #: their request is free text, so a cached answer is an answer to a different request -- a
+    #: fabrication, and for diaspora one that names people who are not in the directory. Their
+    #: deterministic path is the mission's own records, or a decline (OPEN_QUESTIONS A-17, A-18).
     snapshot_fallback: bool = True
     summary: str = ""
     #: Zones this purpose may process. Derived, never hand-written -- see the module
@@ -412,9 +412,12 @@ _SPECS: Final[tuple[PurposeSpec, ...]] = (
         default_model_route="standard-analysis",
         context_policy=_OPEN_POLICY,
         default_sector_codes=("diaspora", "skilled-migration", "lithium"),
+        snapshot_fallback=False,
         summary=(
-            "Consent-filtered capability search across diaspora profiles. Consent, not "
-            "classification, is the gate here (app.domain.enums.ConsentStatus)."
+            "Returns a CANDIDATE SET of consented diaspora profiles for a capability requirement: "
+            "never an outreach list, and no contact action. Profiles whose consent is not given "
+            "or withdrawn are excluded inside the query and never loaded. Never answered from a "
+            "snapshot."
         ),
     ),
 )

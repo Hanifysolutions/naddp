@@ -82,4 +82,6 @@ export const queryKeys = {
   /** One knowledge article, as a citation resolves to it. Audience-scoped, so keyed by role. */
   knowledgeArticle: (role: NaddpRole | null, slug: string) =>
     ['knowledge', 'article', role, slug] as const,
+  /** The consented diaspora directory, in counts. Scope differs by role, so keyed by role. */
+  diasporaOverview: (role: NaddpRole | null) => ['diaspora', 'overview', role] as const,
 } as const;

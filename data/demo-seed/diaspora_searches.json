@@ -1,0 +1,30 @@
+{
+  "$schema_version": "1.0",
+  "purpose": "Demo capability searches for the Diaspora screen. Each states what the consent-gated search is expected to return for the roles listed: CANDIDATES names the synthetic, consented profiles that must appear (must_include) and the synthetic profiles whose consent is not given or withdrawn that must never appear however well they fit (must_exclude); NO_MATCH means no consented profile in scope fits. tests/test_diaspora_search.py holds this file to the seeded directory. Only id, requirement and expect are served to the web app.",
+  "searches": [
+    {
+      "id": "hero-lithium-skills-corridor",
+      "requirement": "Who in the diaspora could advise on lithium refinery process skills and on the migration pathway that would carry them?",
+      "expect": "CANDIDATES",
+      "must_include": ["Ijeoma Nwachukwu", "Femi Balogun-Wright"],
+      "must_exclude": ["Abdulmalik Jibril", "Adanna Chukwu"],
+      "roles": ["AMBASSADOR", "DEPUTY", "TRADE_OFFICER", "DIASPORA_OFFICER"]
+    },
+    {
+      "id": "renewables-remote-areas",
+      "requirement": "Renewable energy engineering for remote communities",
+      "expect": "CANDIDATES",
+      "must_include": ["Chibueze Nnaji"],
+      "must_exclude": [],
+      "roles": ["AMBASSADOR", "DEPUTY", "TRADE_OFFICER", "DIASPORA_OFFICER"]
+    },
+    {
+      "id": "nuclear-reactor-safety",
+      "requirement": "Nuclear reactor licensing and radiation protection",
+      "expect": "NO_MATCH",
+      "must_include": [],
+      "must_exclude": [],
+      "roles": ["AMBASSADOR", "DEPUTY", "TRADE_OFFICER", "DIASPORA_OFFICER"]
+    }
+  ]
+}

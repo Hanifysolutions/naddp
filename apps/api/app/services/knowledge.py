@@ -29,7 +29,7 @@ from functools import cache
 from types import MappingProxyType
 from typing import Any, Final
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import seed_path
@@ -61,6 +61,7 @@ from app.models.knowledge import KnowledgeArticle
 from app.security.deps import assert_may_read
 from app.security.principal import Principal
 from app.services.ingestion import EmbedFn
+from app.services.lexemes import english_lexemes
 from app.services.retrieval import (
     RetrievalQuery,
     authorised_zones,
@@ -94,14 +95,6 @@ RETRIEVAL_DEPTH: Final[int] = 60
 #: DRAFT and IN_REVIEW are not yet something the mission stands behind.
 READABLE_STATUSES: Final[frozenset[KnowledgeStatus]] = frozenset(
     {KnowledgeStatus.APPROVED, KnowledgeStatus.RETIRED}
-)
-
-#: One round trip for any number of texts: Postgres ``english`` lexemes, the stemming the
-#: lexical half of retrieval uses, so the support test and the ranking agree on what a term is.
-_LEXEMES: Final = text(
-    "SELECT tsvector_to_array(to_tsvector('english', item.body)) "
-    "FROM unnest(CAST(:bodies AS text[])) WITH ORDINALITY AS item(body, ordinal) "
-    "ORDER BY item.ordinal"
 )
 
 _EXPECTATIONS: Final[frozenset[str]] = frozenset({"GROUNDED", "NO_APPROVED_SOURCE"})
@@ -165,13 +158,6 @@ class ArticleDetail:
 # ---------------------------------------------------------------------------
 
 
-def _lexemes(session: Session, bodies: Sequence[str]) -> list[frozenset[str]]:
-    if not bodies:
-        return []
-    rows = session.execute(_LEXEMES, {"bodies": list(bodies)}).scalars().all()
-    return [frozenset(row or ()) for row in rows]
-
-
 def _article_text(article: KnowledgeArticle) -> str:
     return "\n\n".join(
         part
@@ -221,9 +207,9 @@ def ground_question(
     articles = list(
         session.scalars(select(KnowledgeArticle).where(scope).order_by(KnowledgeArticle.slug))
     )
-    question_lexemes = _lexemes(session, [question])[0]
+    question_lexemes = english_lexemes(session, [question])[0]
     terms, framing = split_question_terms(question_lexemes)
-    article_terms = _lexemes(session, [_article_text(article) for article in articles])
+    article_terms = english_lexemes(session, [_article_text(article) for article in articles])
     weights = term_weights(terms, article_terms)
     by_slug = {
         article.slug: (article, lexemes)
@@ -335,7 +321,7 @@ def _sources(
     for article, support in chosen:
         full_text = "\n\n".join(part for part in (article.summary, article.body) if part)
         sentences = split_sentences(full_text)
-        passage = select_passage(sentences, _lexemes(session, sentences), terms, weights)
+        passage = select_passage(sentences, english_lexemes(session, sentences), terms, weights)
         sources.append(
             GroundingSource(
                 article_id=article.id,

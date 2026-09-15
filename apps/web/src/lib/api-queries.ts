@@ -12,6 +12,8 @@ import {
   type CaseWorkspace,
   type CommandTodayResponse,
   type ConsularDashboard,
+  type DiasporaMatchRequest,
+  type DiasporaOverview,
   type Dossier,
   type FollowupApproveResponse,
   type FollowupDispatchResponse,
@@ -571,6 +573,32 @@ export async function fetchKnowledgeArticle(
  */
 export async function askKnowledge(body: KnowledgeAnswerRequest): Promise<AiEnvelope<unknown>> {
   const { data, error, response } = await guard(api.POST('/v1/ai/knowledge/answer', { body }));
+  if (data === undefined) throw toApiError(response.status, error);
+  return { ...data, result: data.result ?? null };
+}
+
+/**
+ * `GET /v1/diaspora` - the consented directory this caller may search, in counts, with the
+ * selection rule and the role's demo searches.
+ *
+ * Throws 403 for a role without `read:diaspora_profile` (CONSULAR_OFFICER, ADMIN), which the page
+ * renders as a deny state rather than as an empty directory.
+ */
+export async function fetchDiasporaOverview(signal?: AbortSignal): Promise<DiasporaOverview> {
+  const { data, error, response } = await guard(api.GET('/v1/diaspora', { signal }));
+  if (data === undefined) throw toApiError(response.status, error);
+  return data;
+}
+
+/**
+ * `POST /v1/ai/diaspora/match` - search the consented directory for a capability.
+ *
+ * The result is a candidate set of consented profiles, or no candidates and the reason; both are
+ * HTTP 200 and both resolve here. Candidates only: nothing this app calls contacts anyone.
+ * `result` is `unknown` on the wire and is narrowed by the caller before a name is rendered.
+ */
+export async function searchDiaspora(body: DiasporaMatchRequest): Promise<AiEnvelope<unknown>> {
+  const { data, error, response } = await guard(api.POST('/v1/ai/diaspora/match', { body }));
   if (data === undefined) throw toApiError(response.status, error);
   return { ...data, result: data.result ?? null };
 }

@@ -635,6 +635,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/diaspora": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The consented diaspora directory this caller may search
+         * @description Return counts inside the consent gate the search uses, and the role's demo searches.
+         */
+        get: operations["read_overview_v1_diaspora_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ai/morning-brief": {
         parameters: {
             query?: never;
@@ -828,11 +848,16 @@ export interface paths {
         put?: never;
         /**
          * Match a capability requirement against diaspora profiles
-         * @description Find diaspora members matching a capability requirement.
+         * @description Return consented diaspora candidates for a capability requirement. Candidates only.
          *
-         *     Consent is the gate here, not classification: a profile is reachable only at the
-         *     consent status its owner recorded (``app.domain.enums.ConsentStatus``), and a withdrawn
-         *     profile is not matched however senior the caller.
+         *     Consent is the gate, not classification, and it runs inside the query (OPEN_QUESTIONS A-18):
+         *     the Gateway loads only profiles whose consent is GIVEN_DIRECTORY_ONLY or GIVEN_CONTACTABLE and
+         *     that are not tombstoned, within the caller's zones, before anything is ranked. A profile whose
+         *     consent is not given or withdrawn is never read, however well it would fit. Each candidate
+         *     carries expertise, sector, institution, coarse location (state and country, never the city)
+         *     and consent state. No contact or outreach action exists anywhere in this API: the mission
+         *     approaches people through its own process. A requirement nobody fits is a 200 with no
+         *     candidates and the reason.
          */
         post: operations["match_diaspora_v1_ai_diaspora_match_post"];
         delete?: never;
@@ -2310,7 +2335,8 @@ export interface components {
          * @description A capability requirement for ``DIASPORA_MATCH``.
          *
          *     Consent, not classification, is the gate on a diaspora profile
-         *     (``app.domain.enums.ConsentStatus``); the Gateway applies it during retrieval.
+         *     (``app.domain.enums.ConsentStatus``); the Gateway applies it inside the query that loads
+         *     profiles, before anything is ranked.
          */
         DiasporaMatchRequest: {
             /**
@@ -2320,9 +2346,56 @@ export interface components {
             requirement: string;
             /**
              * Sector Codes
-             * @description Optional sector codes narrowing retrieval.
+             * @description Optional sector codes (data/taxonomy/sectors.json): only profiles whose primary sector or an expertise tag is in these sectors are searched.
              */
             sector_codes?: string[];
+        };
+        /**
+         * DiasporaOverviewResponse
+         * @description The searchable directory for this caller, in counts.
+         */
+        DiasporaOverviewResponse: {
+            /**
+             * Searchable Count
+             * @description Consented (directory-only or contactable), not tombstoned, within the caller's zones. Profiles without consent are never loaded and are not counted here.
+             */
+            searchable_count: number;
+            /**
+             * Contactable Count
+             * @description Of those, consented to be approached.
+             */
+            contactable_count: number;
+            /**
+             * Directory Only Count
+             * @description Of those, consented to listing only.
+             */
+            directory_only_count: number;
+            /** Suggested Searches */
+            suggested_searches: components["schemas"]["SuggestedSearchResponse"][];
+            selection: components["schemas"]["DiasporaSelectionRuleResponse"];
+            /**
+             * Measured At
+             * Format: date-time
+             */
+            measured_at: string;
+        };
+        /**
+         * DiasporaSelectionRuleResponse
+         * @description The rule that turns consented profiles into a candidate set.
+         */
+        DiasporaSelectionRuleResponse: {
+            /**
+             * Min Matched Terms
+             * @description Key terms a profile must carry (fewer if asked).
+             */
+            min_matched_terms: number;
+            /**
+             * Relative Floor
+             * @description After the requirement's facets are covered, share of the best score needed.
+             */
+            relative_floor: number;
+            /** Max Candidates */
+            max_candidates: number;
         };
         /**
          * DiasporaTileResponse
@@ -4323,6 +4396,22 @@ export interface components {
             expect: "GROUNDED" | "NO_APPROVED_SOURCE";
         };
         /**
+         * SuggestedSearchResponse
+         * @description A demo capability search for this role.
+         */
+        SuggestedSearchResponse: {
+            /** Id */
+            id: string;
+            /** Requirement */
+            requirement: string;
+            /**
+             * Expect
+             * @description What the consent-gated search is expected to return for this role. Demo data (data/demo-seed/diaspora_searches.json); the test suite holds the file to it.
+             * @enum {string}
+             */
+            expect: "CANDIDATES" | "NO_MATCH";
+        };
+        /**
          * TalkingPointResponse
          * @description One thing to say in the room, and the sources that let the officer say it.
          */
@@ -5529,6 +5618,33 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    read_overview_v1_diaspora_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Searchable consented profiles by consent, and demo searches. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiasporaOverviewResponse"];
+                };
+            };
+            /** @description You do not hold read:diaspora_profile, or have no session. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

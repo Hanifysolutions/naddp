@@ -485,6 +485,22 @@ export type Jurisdiction = components['schemas']['Jurisdiction'];
  */
 export type KnowledgeAnswerRequest = components['schemas']['KnowledgeAnswerRequest'];
 
+/**
+ * `GET /v1/diaspora`: how much of the consented diaspora directory this caller may search, in
+ * counts - contactable and directory-only - with the selection rule and the role's demo searches.
+ * Profiles without consent are never loaded, so they are not counted here either.
+ */
+export type DiasporaOverview = components['schemas']['DiasporaOverviewResponse'];
+export type SuggestedSearch = components['schemas']['SuggestedSearchResponse'];
+export type DiasporaSelectionRule = components['schemas']['DiasporaSelectionRuleResponse'];
+
+/**
+ * `POST /v1/ai/diaspora/match`: a capability requirement. The envelope's result is a candidate set
+ * of consented profiles, or no candidates and the reason; both are HTTP 200. Candidates only: no
+ * contact or outreach route exists anywhere in the API.
+ */
+export type DiasporaMatchRequest = components['schemas']['DiasporaMatchRequest'];
+
 /* --- Domain enums, aliased so an exhaustive label map is a compile-time guarantee --- */
 export type CaseStatus = components['schemas']['CaseStatus'];
 export type ConsentStatus = components['schemas']['ConsentStatus'];

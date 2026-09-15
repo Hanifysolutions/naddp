@@ -123,7 +123,8 @@ class DiasporaMatchRequest(BaseModel):
     """A capability requirement for ``DIASPORA_MATCH``.
 
     Consent, not classification, is the gate on a diaspora profile
-    (``app.domain.enums.ConsentStatus``); the Gateway applies it during retrieval.
+    (``app.domain.enums.ConsentStatus``); the Gateway applies it inside the query that loads
+    profiles, before anything is ranked.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -136,7 +137,10 @@ class DiasporaMatchRequest(BaseModel):
     sector_codes: list[str] = Field(
         default_factory=list,
         max_length=8,
-        description="Optional sector codes narrowing retrieval.",
+        description=(
+            "Optional sector codes (data/taxonomy/sectors.json): only profiles whose primary "
+            "sector or an expertise tag is in these sectors are searched."
+        ),
     )
 
 
@@ -604,11 +608,16 @@ def match_diaspora(
     db: DbSession,
     payload: DiasporaMatchRequest,
 ) -> GatewayResult:
-    """Find diaspora members matching a capability requirement.
+    """Return consented diaspora candidates for a capability requirement. Candidates only.
 
-    Consent is the gate here, not classification: a profile is reachable only at the
-    consent status its owner recorded (``app.domain.enums.ConsentStatus``), and a withdrawn
-    profile is not matched however senior the caller.
+    Consent is the gate, not classification, and it runs inside the query (OPEN_QUESTIONS A-18):
+    the Gateway loads only profiles whose consent is GIVEN_DIRECTORY_ONLY or GIVEN_CONTACTABLE and
+    that are not tombstoned, within the caller's zones, before anything is ranked. A profile whose
+    consent is not given or withdrawn is never read, however well it would fit. Each candidate
+    carries expertise, sector, institution, coarse location (state and country, never the city)
+    and consent state. No contact or outreach action exists anywhere in this API: the mission
+    approaches people through its own process. A requirement nobody fits is a 200 with no
+    candidates and the reason.
     """
     envelope = generate(
         AiPurpose.DIASPORA_MATCH,

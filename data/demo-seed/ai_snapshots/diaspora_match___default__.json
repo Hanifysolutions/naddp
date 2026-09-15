@@ -3,7 +3,7 @@
   "purpose": "DIASPORA_MATCH",
   "scenario": "__default__",
   "approval_status": "NOT_REQUIRED",
-  "notes": "Default diaspora capability search. All profiles are synthetic (BUILD_BIBLE s11).",
+  "notes": "Reference answer only, NEVER SERVED. DIASPORA_MATCH takes a free-text requirement and returns people, so a cached answer would name people who are not in the directory for a requirement nobody asked. Its deterministic path is the consent-gated directory search, or a no-match result (W4.1, OPEN_QUESTIONS A-18). Kept so the ADR-0002 coverage checks and the citation audit still hold over it. All profiles are synthetic (BUILD_BIBLE s11).",
   "evidence_ids": [
     "abs-census-2021-quickstats-nigeria-born",
     "homeaffairs-immi-temporary-graduate-485",

@@ -52,8 +52,10 @@ __all__ = [
     "CITATION_FIELD_NAMES",
     "BriefItem",
     "ConsularTriageResult",
+    "DiasporaExpertiseRef",
     "DiasporaMatch",
     "DiasporaMatchResult",
+    "DiasporaNoMatch",
     "EvidenceRef",
     "FollowupCommitment",
     "GatewayContext",
@@ -599,23 +601,61 @@ class KnowledgeAnswerResult(GroundedResult):
 # ---------------------------------------------------------------------------
 
 
+class DiasporaExpertiseRef(BaseModel):
+    """One consented capability claim on a candidate: the taxonomy code, its label and depth."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    code: Label
+    label: Label
+    proficiency: Label | None = None
+
+
+class DiasporaNoMatch(BaseModel):
+    """Why a capability search returned nobody."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    reason: Prose
+
+
 class DiasporaMatch(GroundedResult):
-    """One matched diaspora profile.
+    """One consented diaspora candidate, carrying what a result may show and nothing else.
 
     ``consent_status`` is carried on every match and validated, because diaspora profiles
     are governed by consent rather than by classification
     (``app.domain.enums.ConsentStatus``). A profile that has not consented to appear in the
     directory may not be returned by a search at all, so a match carrying ``NOT_GIVEN`` or
     ``WITHDRAWN`` is refused here as well as in the query that produced it.
+
+    **No fine-grained or sensitive field exists.** Location is ``coarse_location`` -- state and
+    country, never a city -- and there is no language, narrative summary, address, email or
+    telephone field to populate; ``extra="forbid"`` refuses a model adding one. ``contactable``
+    states consent. It is not an action, and no contact action exists.
+
+    ``requires_citations`` is off: a candidate is grounded in the consented directory record
+    the in-query filter returned, and stage 8 checks it against that record. ``citations`` stays
+    available for context a live answer cites.
     """
+
+    requires_citations: ClassVar[bool] = False
 
     profile_ref: Label
     display_name: Label
-    expertise_tags: Annotated[list[Label], Field(min_length=1, max_length=8)]
+    headline: Label | None = None
+    expertise_tags: Annotated[list[Label], Field(default_factory=list, max_length=8)]
+    expertise: Annotated[list[DiasporaExpertiseRef], Field(default_factory=list, max_length=8)]
+    sector_code: Label | None = None
+    sector_label: Label | None = None
+    institution: Label | None = None
+    organisation: Label | None = None
+    coarse_location: Label | None = None
+    availability: Label | None = None
     why_matched: Prose
+    matched_terms: Annotated[list[Label], Field(default_factory=list, max_length=16)]
     consent_status: ConsentStatus
     contactable: bool
-    citations: CitationList
+    citations: Annotated[list[str], Field(default_factory=list, max_length=8)]
 
     @model_validator(mode="after")
     def _consent_permits_listing(self) -> DiasporaMatch:
@@ -637,12 +677,40 @@ class DiasporaMatch(GroundedResult):
 
 
 class DiasporaMatchResult(GroundedResult):
-    """Capability search across the diaspora. Hero beat returns both sides of the thread."""
+    """A candidate set of consented diaspora profiles, or a statement that nobody fits.
+
+    **Candidates only.** ``candidates_only`` is fixed true: the result is a list the mission
+    considers, never an outreach list, and nothing here or in the API contacts anyone. **Nobody
+    fitting is a result, not an error**: no matches, and ``no_match`` saying why. The hero beat
+    returns both sides of the thread -- a lithium-processing engineer and a migration-pathway
+    academic.
+    """
+
+    requires_citations: ClassVar[bool] = False
 
     query: Prose
-    matches: Annotated[list[DiasporaMatch], Field(min_length=1, max_length=10)]
+    matches: Annotated[list[DiasporaMatch], Field(default_factory=list, max_length=10)]
     rationale: Prose
     confidence: Confidence
+    candidates_only: Literal[True] = True
+    no_match: DiasporaNoMatch | None = None
+
+    def declines_to_answer(self) -> bool:
+        return not self.matches
+
+    @model_validator(mode="after")
+    def _candidates_or_a_reason(self) -> DiasporaMatchResult:
+        if self.matches and self.no_match is not None:
+            msg = "A result with candidates carries no no-match reason."
+            raise ValueError(msg)
+        if not self.matches and self.no_match is None:
+            msg = "A result with no candidates must say why."
+            raise ValueError(msg)
+        refs = [match.profile_ref for match in self.matches]
+        if len(set(refs)) != len(refs):
+            msg = "A candidate appears twice."
+            raise ValueError(msg)
+        return self
 
 
 def dump_result(result: BaseModel | None) -> dict[str, Any] | None:

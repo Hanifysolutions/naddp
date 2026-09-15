@@ -563,17 +563,20 @@ PROFILE_SPECS: Final[tuple[ProfileSpec, ...]] = (
         "Available for technical review",
         ("English", "Igbo"),
     ),
+    # A STRONG hero-search match whose consent was never recorded (W4.1). The consent-gated
+    # search must never load this profile however well it fits; tests/test_diaspora_search.py
+    # asserts it. The slug predates the change and is kept so seeded identifiers stay stable.
     ProfileSpec(
         "dia-gas-processing",
         "Abdulmalik Jibril",
-        "Gas processing and utilisation",
-        ("XP_GAS_PROCESSING",),
-        "EN_GAS",
+        "Process engineer, lithium carbonate and hydroxide refining",
+        ("XP_LITHIUM_PROCESSING_ENG", "XP_METALLURGY_TESTWORK"),
+        "CM_LITHIUM",
         "PRINCIPAL",
         20,
         "AU",
         "Perth",
-        "An LNG operator",
+        "A lithium chemicals producer",
         "MEng, Chemical Engineering",
         "A Nigerian federal university",
         ConsentStatus.NOT_GIVEN,
@@ -722,8 +725,9 @@ PROFILE_SPECS: Final[tuple[ProfileSpec, ...]] = (
         "dia-withdrawn-recent-one",
         "Adanna Chukwu",
         "Consent withdrawn; profile retained pending scrub",
-        ("XP_STEM_EDUCATION",),
-        "EDUCATION_SKILLS",
+        # A STRONG hero-search match who withdrew consent (W4.1): never loaded by the search.
+        ("XP_MIGRATION_PATHWAY_ACADEMIC", "XP_QUALIFICATION_ASSESSMENT"),
+        "ED_SKILLED_MIGRATION",
         "MID_CAREER",
         9,
         "AU",

@@ -50,7 +50,7 @@ Prompt: `PROMPT_W1_foundation.md`
 ---
 
 ## Week 4 — Unified Story + Hardening  ⬜
-- ⬜ Diaspora talent search (consent-filtered) — returns lithium engineer AND migration academic (winning moment #3 setup)
+- ✅ Diaspora talent search (consent-filtered) — returns lithium engineer AND migration academic (winning moment #3 setup)
 - ⬜ Unified Outcomes board (opportunity + stakeholder + diaspora + service metrics in one frame)
 - ⬜ `make demo-reset` + cached-fallback pass across every script beat
 - ⬜ Security pass (CSP, no secrets in bundle, RBAC audit, injection eval stubs)

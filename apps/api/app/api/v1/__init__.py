@@ -40,6 +40,7 @@ Mounted paths, which the web client and the Week 1 VERIFY block depend on exactl
     GET  /v1/consular/dashboard
     GET  /v1/consular/cases/{case_id}
     POST /v1/consular/cases/{case_id}/transition
+    GET  /v1/diaspora
     GET  /v1/knowledge
     GET  /v1/knowledge/articles/{slug}
     GET  /v1/audit/events
@@ -61,6 +62,7 @@ from app.api.v1.ai import router as ai_router
 from app.api.v1.audit import router as audit_router
 from app.api.v1.command import router as command_router
 from app.api.v1.consular import router as consular_router
+from app.api.v1.diaspora import router as diaspora_router
 from app.api.v1.intelligence import router as intelligence_router
 from app.api.v1.knowledge import router as knowledge_router
 from app.api.v1.meetings import router as meetings_router
@@ -79,6 +81,7 @@ router.include_router(stakeholders_router)
 router.include_router(meetings_router)
 router.include_router(consular_router)
 router.include_router(knowledge_router)
+router.include_router(diaspora_router)
 router.include_router(ai_router)
 router.include_router(audit_router)
 

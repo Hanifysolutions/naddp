@@ -185,7 +185,7 @@ def test_a_refusal_may_neither_cite_nor_quote_and_must_say_where_to_go() -> None
 def test_knowledge_is_never_answered_from_a_snapshot() -> None:
     assert PURPOSES[AiPurpose.KNOWLEDGE_ANSWER].snapshot_fallback is False
     others = {purpose for purpose, spec in PURPOSES.items() if not spec.snapshot_fallback}
-    assert others == {AiPurpose.KNOWLEDGE_ANSWER}
+    assert others == {AiPurpose.KNOWLEDGE_ANSWER, AiPurpose.DIASPORA_MATCH}
 
 
 def _live_settings() -> Settings:
