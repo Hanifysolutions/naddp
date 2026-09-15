@@ -51,13 +51,13 @@ Prompt: `PROMPT_W1_foundation.md`
 
 ## Week 4 — Unified Story + Hardening  ⬜
 - ✅ Diaspora talent search (consent-filtered) — returns lithium engineer AND migration academic (winning moment #3 setup)
-- ⬜ Unified Outcomes board (opportunity + stakeholder + diaspora + service metrics in one frame)
+- ✅ Unified Outcomes board (opportunity + stakeholder + diaspora + service metrics in one frame) — each domain counted under its own authorisation; the lithium/skilled-migration corridor traced across five contexts (winning moment #3)
 - ⬜ `make demo-reset` + cached-fallback pass across every script beat
 - ⬜ Security pass (CSP, no secrets in bundle, RBAC audit, injection eval stubs)
 - ⬜ Citation verification (clear all `TODO_VERIFY`)
 - ⬜ 10-minute script dry-run — no dead ends, all flows ≤3 clicks
 - ⬜ Deploy: web→Vercel, api+db→Railway · rehearsal
-- ⬜ `docs/W4_STATUS.md`
+- ⬜ `docs/W4_STATUS.md` — started: progress through W4.2, completed at week end
 
 **Exit condition:** Definition of Done (BUILD_BIBLE §13) fully met; live rehearsal clean on laptop + 1080p.
 
