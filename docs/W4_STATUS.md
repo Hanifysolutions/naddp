@@ -1,9 +1,10 @@
 # Week 4 — Unified Story + Hardening · Status (progress so far)
 
-**Date:** 2026-09-15 · **Branch:** `week4-unified` · **Scope so far:** `PROMPT_W4.1`–`PROMPT_W4.3`
+**Date:** 2026-09-15 · **Branch:** `week4-unified` · **Scope so far:** `PROMPT_W4.1`–`PROMPT_W4.4`
 **Verdict:** All three of the week's features are complete: diaspora capability search, the Unified
 Outcomes board (winning moment #3), and the Governance page, backed by an audit hash chain that
-can no longer fork. Every nav item is now live. The hardening half of the week has not started: the demo-reset
+can no longer fork. Every nav item is now live, and the polish pass has run across all nine
+surfaces. The hardening half of the week has not started: the demo-reset
 and fallback pass, the security pass, citation verification, the dry-run and deploy. This document
 is updated at the end of the week.
 
@@ -19,6 +20,7 @@ laptop + 1080p.* **Not yet met.** The feature scope for the three winning moment
 | W4.1 Diaspora search | `b2038b8` | Consent-gated capability search. The consent predicate sits in the WHERE clause of the only statement that loads profiles, so a profile without consent is never read, ranked or counted. Location is coarse (state and country), results are candidates only, and no contact or outreach route exists. The hero search returns both the lithium-processing engineer and the migration-pathway academic. The seed adds two strong skills matches whose consent is not given or has been withdrawn, which prove the exclusion. |
 | W4.2 Unified Outcomes | `0464ca0` | `GET /v1/outcomes` and the `/outcomes` board. Each of five domains is counted by its own module under its own authorisation, and the composer never queries. The lithium / skilled-migration corridor is traced across five contexts, from opportunity to stakeholder to meeting to diaspora experts to consular case. Withheld domains render as refusals, never as zeros. |
 | W4.3 Governance + chain hardening | `58537f8` | `/governance`: the append-only audit log in plain language (actor, action, object, Allowed or Denied, classification, time), filtered and keyset-paged by the API, with an on-demand "Verify audit chain" action. The chain can no longer fork: a unique link index, plus a writer that re-links on conflict, resolves `docs/W1_STATUS.md` §6 item 1. Every nav item is live. |
+| W4.4 Polish | `027fb31`, `348c238` | Cosmetic and UX only, no proven behaviour touched. One result card per query on Knowledge and Diaspora; amber reserved for what is genuinely at risk; command-tile labels wrap instead of clipping; the AI-proposed brief headline is sentence case; keyboard focus moves onto the approval block when a Send is refused; the diaspora depth floor rises to 65% so two generic terms no longer buy a place in the hero set. |
 
 **Tests:** 1566 API tests pass, including 42 in `tests/test_diaspora_search.py`, 35 in
 `tests/test_outcomes_board.py`, 6 in `tests/test_audit_chain_concurrency.py` and 2 in
@@ -63,6 +65,20 @@ Checked with `tests/test_audit_chain_concurrency.py`, `tests/test_audit_api.py` 
 | Plain-language actions, Allowed and Denied | Entries read "Role assumed", "Access refused", "Sensitive record read" and "Partnership concluded", and a denied entry gets a refused phrasing. The live log holds 446 Allowed and 34 Denied entries. The command-centre strip uses the same label map. |
 | Role scoping | AMBASSADOR, DEPUTY and ADMIN can read the log. TRADE_OFFICER, CONSULAR_OFFICER and DIASPORA_OFFICER get 403 `permission_denied`: a refusal, not a crash. A direct call as TRADE_OFFICER got 403, missing `read:audit`. |
 | Found while hardening | The test harness's session-scoped audit transaction (writes rolled back, never committed) stayed open for the whole run, so it held the chain's head throughout. The old lock let later writers fork past it; the unique index now refuses them. `tests/conftest.py` rolls it back after each test that used it, and its rows are still never committed. |
+
+### W4.4 — polish pass
+Checked with the full API suite, `tsc`, `next lint` and a `make demo-reset`:
+
+| Property | Result |
+|---|---|
+| No behaviour changed | The full API suite passes unchanged. The edits are result-card state, tone selection, label wrapping, focus management, one seed headline and one selection threshold. No permission, workflow, trace, consent or audit path was touched. |
+| One result per query | Knowledge and Diaspora each hold the current exchange or search, not a list, so a new ask or search replaces the previous card instead of stacking under it. |
+| Amber only on risk | "Never contacted" is neutral; "Resolved within the service level" and "High-influence stakeholders engaged" are neutral unless everything measured met its mark. Amber stays on follow-ups awaiting approval, cases due within 48 hours, dormant relationships and the open backlog when cases are due soon; --risk stays on breached and overdue. |
+| Labels are never clipped | Command-tile labels and hints wrap. "Overdue next action" and "sum of estimates, not probability-weighted" read in full at laptop and 1080p widths. |
+| Approval block | Focus moves onto the block when a Send is refused, so a keyboard reader lands on the refusal rather than the top of the document; the `role="status"` announcement is unchanged. "Request changes" is a real transition to `DRAFTED` (`meeting_followup.changes_requested`), and the discard sheet already says the draft is kept on record. |
+| Cleaner hero diaspora result | The corridor search returns 5 candidates rather than 6: Adaeze Onuoha, who matched only "migration" and "skills", falls below the 65% depth floor. Ijeoma Nwachukwu and Femi Balogun-Wright are both still returned, and the consent exclusions are unchanged. |
+| Seed freshness | Nothing to fix: every seeded timestamp is already derived from the database clock at seed time (`SeedContext.now`), like the audit history. After `make demo-reset` the brief is dated today, 10 signals fall inside the last seven days and 3 meetings inside the next seven. A database seeded on an earlier day drifts, which is what `make demo-reset` before a rehearsal is for; one seed-integrity test (the trailing-eight-week audit window) is the tripwire for exactly that drift. |
+| Consistency sweep | No all-caps eyebrows and no `A · B · C` meta strings outside comments and the verbatim section 4a badge. `:focus-visible` gives a 2px ring across the app. |
 
 ## 3. Decisions and assumptions recorded this week
 

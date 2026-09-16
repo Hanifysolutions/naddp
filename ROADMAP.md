@@ -54,6 +54,7 @@ Prompt: `PROMPT_W1_foundation.md`
 - ✅ Unified Outcomes board (opportunity + stakeholder + diaspora + service metrics in one frame) — each domain counted under its own authorisation; the lithium/skilled-migration corridor traced across five contexts (winning moment #3)
 - ✅ Governance page — append-only audit log in plain language, filterable and paged by the API, with on-demand hash-chain verification ("Chain intact over N events"); the Governance nav item is un-greyed, so every nav item is now live
 - ✅ Audit hash-chain hardening — the chain cannot fork under concurrent writes (unique index on `prev_event_hash`, NULLS NOT DISTINCT, plus re-link on conflict); **resolves `docs/W1_STATUS.md` §6 item 1**
+- ✅ Polish pass — one result card per query on Knowledge and Diaspora, amber reserved for what is at risk, labels that wrap instead of clipping, sentence-case brief headline, keyboard focus onto the approval block, and a tighter diaspora depth floor
 - ⬜ `make demo-reset` + cached-fallback pass across every script beat
 - ⬜ Security pass (CSP, no secrets in bundle, RBAC audit, injection eval stubs)
 - ⬜ Citation verification (clear all `TODO_VERIFY`)
