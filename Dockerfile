@@ -36,12 +36,12 @@ WORKDIR /build
 
 # Dependency layer: manifests only, so this layer is cached until dependencies actually change.
 COPY apps/api/pyproject.toml apps/api/uv.lock ./
-RUN --mount=type=cache,id=naddp-uv-deps,target=/root/.cache/uv \
+RUN \
     uv sync --frozen --no-dev --no-install-project
 
 # Application layer: source changes invalidate only from here down.
 COPY apps/api/ ./
-RUN --mount=type=cache,id=naddp-uv-app,target=/root/.cache/uv \
+RUN \
     uv sync --frozen --no-dev
 
 # ---------------------------------------------------------------------------
