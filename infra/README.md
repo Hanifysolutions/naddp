@@ -36,7 +36,7 @@ provider's dashboard.
 | Concern | Where | Notes |
 |---|---|---|
 | Web | Vercel | `apps/web`, built from the repository root of the pnpm workspace. |
-| API | Railway | Container built from `infra/railway/Dockerfile.api`. |
+| API | Railway | Container built from the repository-root `Dockerfile`. |
 | Database | Railway Postgres | `pgvector` enabled by the first Alembic migration, which runs `CREATE EXTENSION IF NOT EXISTS vector`. |
 | Object storage | The API container's filesystem | `storage/` — see `storage/README.md`. **Ephemeral on Railway**: it is lost on redeploy unless a volume is attached. Acceptable for a demo that is reseeded before each rehearsal; a real deployment substitutes S3/GCS. |
 | Secrets | Provider dashboards | `ANTHROPIC_API_KEY`, `DEMO_SESSION_SECRET`, `DATABASE_URL`. Never in this directory, never in the client bundle (`BUILD_BIBLE.md` §11). |
@@ -49,7 +49,7 @@ The browser talks only to Vercel and to the API's public URL. It never reaches P
 
 | File | Status | What it does |
 |---|---|---|
-| `railway/Dockerfile.api` | **Real, buildable** | Multi-stage uv build of `apps/api`. Built in CI and the artefact Railway deploys. Build context is the repository root. |
+| `../Dockerfile` | **Real, buildable** | Multi-stage uv build of `apps/api`, and the artefact Railway deploys. At the repository **root** because that is where Railway looks for a Dockerfile before falling back to Railpack; under `infra/` it was found only when `railway.json` was honoured, which a CLI `railway up` did not do. Build context is the repository root. Not built in CI — `make docker-build` or the command below is the check. |
 | `postgres/init/*.sql` | Real | Extensions and the non-owner application role, applied by Postgres on first start of a **local** volume. A managed database never runs these; the migration creates the extensions itself. |
 | `../railway.json` | Real, unexecuted | At the repository **root**, because that is the only place Railway reads it from. Dockerfile build, `alembic upgrade head` as the pre-deploy step, `/health/ready` as the health check. |
 | `../vercel.json` | Real, unexecuted | At the repository **root**, for the same reason. Install, build and output for `apps/web` inside the pnpm workspace, plus edge security headers. |
@@ -93,7 +93,10 @@ Not yet configured, and deliberately so:
 ### API → Railway
 
 1. New service from the repository. Railway reads `railway.json` from the repository root, and it
-   is already there: Dockerfile builder, `infra/railway/Dockerfile.api`, health check `/health/ready`.
+   is already there: Dockerfile builder, the root `Dockerfile`, health check `/health/ready`.
+   **Leave the service's Root Directory unset** (the repository root). Railway resolves
+   both `railway.json` and the Dockerfile relative to it, so pointing it at `apps/api`
+   hides both and the build falls back to Railpack.
 2. Set the variables in the table below. `APP_ENV=production` and a real `CORS_ORIGINS` are not
    optional — the API refuses to boot without them (see "The boot guard").
 3. Pin the region to match the audience's expectation about data residency — see
@@ -214,7 +217,7 @@ The one thing worth exercising locally is the container build, because it is the
 that can actually be wrong in an interesting way:
 
 ```bash
-docker build -f infra/railway/Dockerfile.api -t naddp-api:local .
+docker build -t naddp-api:local .
 docker run --rm -p 8000:8000 -e DATABASE_URL=... -e PORT=8000 naddp-api:local
 ```
 

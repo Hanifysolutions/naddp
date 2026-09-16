@@ -47,7 +47,7 @@ Making *all* DB handlers synchronous removes the category.
   `apps/api/pyproject.toml`, with `uv python install 3.12` providing it. The system's Python 3.14 is
   not used.
 - Production images use `ghcr.io/astral-sh/uv:python3.12-bookworm-slim` with
-  `uv sync --frozen --no-dev` (`infra/railway/Dockerfile.api`).
+  `uv sync --frozen --no-dev` (the repository-root `Dockerfile`).
 - CI uses the same `uv sync --frozen`, so a lockfile drift is a build failure rather than a surprise.
 
 ## Consequences
@@ -164,4 +164,4 @@ integrate with that far better than an ORM designed around a different framework
 
 - `BUILD_BIBLE.md` §0 (prime directive), §3 (config)
 - `CLAUDE.md` §5 (domain logic in services, not handlers)
-- `infra/railway/Dockerfile.api`
+- `Dockerfile` (repository root)

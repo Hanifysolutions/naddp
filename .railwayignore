@@ -1,0 +1,66 @@
+# What `railway up` must NOT upload.
+#
+# Two jobs. The first is size: the CLI uploads this directory, and node_modules alone is
+# larger than everything the API image needs. The second is detection: Railway builds with
+# a Dockerfile when it finds one and otherwise falls back to Railpack, which reads the
+# repository to guess a build. With the pnpm workspace in the upload, that guess was
+# "Node monorepo workspace" — the wrong build entirely, and the reason an earlier deploy
+# never touched the API Dockerfile. The Dockerfile now sits at the repository root where
+# Railway looks first; keeping the JavaScript workspace out of the upload removes the
+# fallback's input as well.
+#
+# The API image needs exactly two directories from this repository: apps/api (the service)
+# and data (seed, taxonomy, and the AI Gateway's deterministic fallback snapshots, which
+# app.core.config uses to locate the repository root inside the container).
+
+# --- The web app and its toolchain: nothing the API image builds from --------
+node_modules
+apps/web
+packages
+.next
+.turbo
+package.json
+pnpm-lock.yaml
+pnpm-workspace.yaml
+.npmrc
+vercel.json
+
+# --- Python host artefacts ---------------------------------------------------
+**/.venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+.coverage
+htmlcov
+
+# --- Secrets: never leave the machine ----------------------------------------
+.env
+.env.*
+!.env.example
+
+# --- Version control, CI, docs, local tooling --------------------------------
+.git
+.github
+docs
+evals
+docker-compose.yml
+Makefile
+make.ps1
+
+# Root prose only. NOT `*.md`: apps/api/pyproject.toml names apps/api/README.md as its
+# readme, and dropping a file a manifest points at is a build failure waiting for a
+# quiet afternoon.
+/*.md
+
+# --- Local object storage: demo document bytes, not application code ---------
+storage/*
+!storage/.gitkeep
+
+# --- Editor / OS -------------------------------------------------------------
+.vscode
+.idea
+.claude
+**/.DS_Store
+**/Thumbs.db

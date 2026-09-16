@@ -1,7 +1,16 @@
 # NADDP API — production container image
 #
-# Build context is the REPOSITORY ROOT, not this directory:
-#   docker build -f infra/railway/Dockerfile.api -t naddp-api:local .
+# WHY THIS FILE IS AT THE REPOSITORY ROOT, and not under infra/railway/ with the rest of
+# the deployment configuration: Railway builds with a Dockerfile when it finds one and
+# otherwise falls back to Railpack, which guesses a build by reading the repository. It
+# looks for that Dockerfile at the root of the service's source directory. Kept under
+# infra/, it was found only when railway.json was read and honoured — and on a CLI
+# `railway up` it was not, so Railpack guessed "pnpm workspace", built the wrong thing,
+# and this image was never used. At the root it is detected with or without railway.json.
+# railway.json still names it explicitly (build.dockerfilePath), so both paths agree.
+#
+# Build context is the REPOSITORY ROOT, which is also where this file sits:
+#   docker build -t naddp-api:local .
 #
 # Stage 1 resolves and installs dependencies with uv against the committed lockfile.
 # Stage 2 is a plain slim runtime that carries only the virtualenv and the application —
