@@ -52,7 +52,13 @@ MAX_CANDIDATES: Final[int] = 6
 MIN_MATCHED_TERMS: Final[int] = 2
 
 #: After the facets are covered, further candidates must reach this share of the best score.
-RELATIVE_FLOOR: Final[float] = 0.5
+#:
+#: 0.65 rather than 0.5 (W4.4): at half, a profile matching two generic terms of a six-term
+#: requirement -- "migration" and "skills" from the corridor search, say -- cleared the bar and
+#: sat in the hero set beside people who match the capability itself. The facets are still
+#: covered first, so raising the floor cannot cost the set a capability nobody else brings; it
+#: only drops the weakest of the profiles competing for the remaining places.
+RELATIVE_FLOOR: Final[float] = 0.65
 
 #: Lexemes that frame a capability request rather than say what capability is wanted. Removed
 #: before scoring and listed on the trace.

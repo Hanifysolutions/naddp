@@ -138,7 +138,11 @@ _COUNTER_ITEM = ItemSpec(
 _OPPORTUNITY_ITEM = ItemSpec(
     BriefItemType.OPPORTUNITY,
     "opp-au-lithium-ng-skills-corridor",
-    "AI-PROPOSED: a Nigeria-Australia lithium processing skills corridor",
+    # Sentence case: the item's AI-proposed badge, its violet tick and its lower
+    # confidence carry the provenance. A tracked-out caps prefix in the headline is the
+    # eyebrow DESIGN_SYSTEM.md rules out, and it shouted the one item that should read
+    # quietest (Q-17).
+    "A Nigeria-Australia lithium processing skills corridor",
     (
         "The platform proposes connecting the documented Australian processing-skills gap "
         "with Nigeria's stated policy of licensing conditioned on local value addition. "

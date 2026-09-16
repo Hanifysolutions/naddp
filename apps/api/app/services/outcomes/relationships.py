@@ -95,9 +95,9 @@ def relationships_section(session: Session, principal: Principal, now: datetime)
         ),
     )
 
-    engaged_tone: Tone = "neutral"
-    if high_total:
-        engaged_tone = "ok" if high_engaged == high_total else "warn"
+    # Engagement coverage is a fact about the map, not an alarm: neutral unless every
+    # high-influence stakeholder has been contacted inside the window, which earns --ok.
+    engaged_tone: Tone = "ok" if high_total and high_engaged == high_total else "neutral"
 
     return OutcomeSection(
         key="relationships",

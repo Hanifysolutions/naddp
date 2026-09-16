@@ -79,9 +79,11 @@ def citizen_service_section(
     due_soon = sum(1 for clock in running if clock.state is SlaState.DUE_SOON)
     paused = sum(1 for clock in running if clock.state is SlaState.PAUSED)
 
-    within_tone: Tone = "neutral"
-    if measured:
-        within_tone = "ok" if met == len(measured) else "warn"
+    # "N of M within the service level" is a statement of record, not a breach, so it is
+    # neutral unless every measured case met its budget -- and then it is a quiet --ok.
+    # What is genuinely at risk on this section is the open backlog and the cases already
+    # past their service level, below (DESIGN_SYSTEM.md: semantic colour is for STATE).
+    within_tone: Tone = "ok" if measured and met == len(measured) else "neutral"
 
     return OutcomeSection(
         key="citizen_service",

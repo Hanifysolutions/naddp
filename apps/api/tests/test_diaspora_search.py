@@ -143,7 +143,9 @@ def test_selection_covers_each_facet_before_adding_depth() -> None:
     assert [entry.key for entry in chosen] == ["a", "b", "c"]
     assert "d" not in {entry.key for entry in chosen}, "one shared term cannot qualify a profile"
     assert "c" in {entry.key for entry in chosen}, "the only migration match covers its facet"
-    assert "e" not in {entry.key for entry in chosen}, "depth needs half the best score"
+    assert "e" not in {entry.key for entry in chosen}, (
+        "depth needs RELATIVE_FLOOR of the best score"
+    )
 
 
 def test_selection_is_capped_and_needs_a_requirement() -> None:
