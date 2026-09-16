@@ -52,7 +52,7 @@ The browser talks only to Vercel and to the API's public URL. It never reaches P
 | `../Dockerfile` | **Real, buildable** | Multi-stage uv build of `apps/api`, and the artefact Railway deploys. At the repository **root** because that is where Railway looks for a Dockerfile before falling back to Railpack; under `infra/` it was found only when `railway.json` was honoured, which a CLI `railway up` did not do. Build context is the repository root. Not built in CI — `make docker-build` or the command below is the check. |
 | `postgres/init/*.sql` | Real | Extensions and the non-owner application role, applied by Postgres on first start of a **local** volume. A managed database never runs these; the migration creates the extensions itself. |
 | `../railway.json` | Real, unexecuted | At the repository **root**, because that is the only place Railway reads it from. Dockerfile build, `alembic upgrade head` as the pre-deploy step, `/health/ready` as the health check. |
-| `../vercel.json` | Real, unexecuted | At the repository **root**, for the same reason. Install, build and output for `apps/web` inside the pnpm workspace, plus edge security headers. |
+| `../apps/web/vercel.json` | Real, unexecuted | Beside the Next.js app, because Vercel reads `vercel.json` from the project's **Root Directory** — which is `apps/web`, the only place its framework detection finds `next` in a `package.json`. Framework, clean URLs and the edge security headers; install, build and output come from Vercel's Next preset. |
 
 ### What "unexecuted" means here
 
@@ -78,11 +78,16 @@ Not yet configured, and deliberately so:
 
 ### Web → Vercel
 
-1. Import the repository. Set **Root Directory** to the repository root (not `apps/web`) — the build
-   command filters to the web package, and the install must see the whole pnpm workspace.
-2. Nothing to copy: `vercel.json` is already at the repository root, which is the only place
-   Vercel reads it from. It pins the install, build and output directory, so the Build & Development
-   Settings can be left alone.
+1. Import the repository, then set **Root Directory** to `apps/web` (Settings → Build and
+   Deployment). This is not optional and it cannot be set from `vercel.json`: Vercel's framework
+   detection looks for `next` in the `package.json` **of the Root Directory**, and the root
+   manifest of this workspace has no `next` in it. Pointed at the repository root the deploy fails
+   before the build command runs, with "No Next.js version detected".
+2. Leave **Include source files outside of the Root Directory in the Build Step** enabled (the
+   default when a workspace is detected). It is what lets the install run at the workspace root, so
+   `@naddp/contracts` — a `workspace:*` source package this app compiles through
+   `transpilePackages` — resolves. Nothing else to copy: `apps/web/vercel.json` is already where
+   Vercel reads it from, and install, build and output come from its Next preset.
 3. Set `NEXT_PUBLIC_API_URL` to the Railway API's public URL, for the Production environment. It is
    compiled into the client bundle — a coordinate, not a secret, and nothing else about the API may
    be. Changing it later needs a **redeploy**, not just a restart.
@@ -192,8 +197,8 @@ The header set exists in **two** places, deliberately, with a clear owner for ea
 
 | Header | Owner | Why there |
 |---|---|---|
-| `Content-Security-Policy` | `apps/web/next.config.mjs` (authoritative) | A strict CSP for a Next.js app needs a per-request nonce for inline scripts, which only the Next runtime can generate. The copy in `vercel.json` is a coarser fallback that also covers responses served straight from Vercel's edge cache without touching the Next runtime. |
-| `Strict-Transport-Security` | `vercel.json` | Transport-level; belongs at the edge, applies to every response including static assets. |
+| `Content-Security-Policy` | `apps/web/next.config.mjs` (authoritative) | A strict CSP for a Next.js app needs a per-request nonce for inline scripts, which only the Next runtime can generate. The copy in `apps/web/vercel.json` is a coarser fallback that also covers responses served straight from Vercel's edge cache without touching the Next runtime. |
+| `Strict-Transport-Security` | `apps/web/vercel.json` | Transport-level; belongs at the edge, applies to every response including static assets. |
 | `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy`, `Cross-Origin-Opener-Policy` | Both | Cheap, static, and no reason for either layer to omit them. |
 
 **Keep them in sync.** If the CSP in `next.config.mjs` changes, change the fallback here in the same
@@ -201,7 +206,7 @@ commit. The Week 4 security pass includes a check that both files agree on direc
 both.
 
 CSP notes specific to this app: `connect-src` must include the API origin (`NEXT_PUBLIC_API_URL`),
-which differs per environment — the `vercel.json` fallback therefore permits `https:` for
+which differs per environment — the `apps/web/vercel.json` fallback therefore permits `https:` for
 `connect-src` while the Next config narrows it to the exact origin. `frame-ancestors 'none'` is the
 directive that actually prevents framing; `X-Frame-Options` is there for old user agents.
 
