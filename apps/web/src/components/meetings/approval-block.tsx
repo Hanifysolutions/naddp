@@ -28,7 +28,12 @@ import { Button } from '@/components/ui/button';
  * feature; a disabled Send with a lock, inside the block, is the refusal made visible. The
  * kit's disabled opacity is overridden so the measured contrast is the shipped contrast.
  *
- * `role="status"` so a screen reader announces the block when the Send it answers lands.
+ * `role="status"` so a screen reader announces the block when the Send it answers lands, and
+ * keyboard focus is moved onto it for the same event: the control the reader pressed has gone,
+ * and without this their focus would fall back to the top of the document, which reads as "the
+ * click did nothing" -- the opposite of what happened. The section takes `tabIndex={-1}` so it can
+ * hold focus without entering the tab order afterwards.
+ *
  * `refusal` is non-null only when this view is the fresh result of that 202, and carries the
  * server's own sentence, shown verbatim.
  */
@@ -40,15 +45,25 @@ export function ApprovalBlock({
   refusal: { detail: string | null } | null;
 }): React.JSX.Element {
   const headingId = React.useId();
+  const blockRef = React.useRef<HTMLElement>(null);
   const approvers = followup.approval.eligible_approvers;
   const submittedBy = followup.submitted_by ?? null;
   const submittedAt = followup.submitted_at ?? null;
 
+  // Only for the fresh 202: revisiting a follow-up that is already awaiting approval must
+  // not steal focus from whatever the reader was doing.
+  const isFreshRefusal = refusal !== null;
+  React.useEffect(() => {
+    if (isFreshRefusal) blockRef.current?.focus();
+  }, [isFreshRefusal]);
+
   return (
     <section
+      ref={blockRef}
+      tabIndex={-1}
       role="status"
       aria-labelledby={headingId}
-      className="tick-warn space-y-3.5 rounded-r-md bg-warn/5 py-4 pl-4 pr-4"
+      className="tick-warn space-y-3.5 rounded-r-md bg-warn/5 py-4 pl-4 pr-4 focus:outline-none"
     >
       <div className="flex items-start gap-3">
         <Clock aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-warn" />
@@ -89,7 +104,9 @@ export function ApprovalBlock({
           <ul className="space-y-1.5">
             {approvers.map((person) => (
               <li key={person.user_id} className="leading-snug">
-                <span className="block text-sm font-medium text-ink">{person.full_name}</span>
+                <span className="block text-sm font-medium text-ink">
+                  {person.full_name}
+                </span>
                 {person.title == null ? null : (
                   <span className="block text-label text-slate-700">{person.title}</span>
                 )}
@@ -127,7 +144,9 @@ export function ApprovalBlock({
         >
           <Lock aria-hidden="true" className="text-warn" />
           Send
-          <span className="sr-only">, locked until an authorised officer approves it</span>
+          <span className="sr-only">
+            , locked until an authorised officer approves it
+          </span>
         </Button>
       </div>
     </section>

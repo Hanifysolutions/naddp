@@ -6,7 +6,10 @@ import { AlertTriangle, Ban, BookOpen, Lock } from 'lucide-react';
 import { isApiError, type Jurisdiction, type KnowledgeOverview } from '@naddp/contracts';
 
 import { ArticleSheet } from '@/components/knowledge/article-sheet';
-import { KnowledgeExchange, type Exchange } from '@/components/knowledge/knowledge-answer';
+import {
+  KnowledgeExchange,
+  type Exchange,
+} from '@/components/knowledge/knowledge-answer';
 import { useDemoSession } from '@/components/layout/session-provider';
 import { PRIMARY_ACTION } from '@/components/meetings/action-styles';
 import { formatDate } from '@/components/meetings/meeting-format';
@@ -80,7 +83,9 @@ export function KnowledgeDesk(): React.JSX.Element {
     return (
       <Alert variant="warning" role="status">
         <Lock aria-hidden="true" />
-        <AlertTitle className="leading-snug text-warn-ink">No demo identity resolved</AlertTitle>
+        <AlertTitle className="leading-snug text-warn-ink">
+          No demo identity resolved
+        </AlertTitle>
         <AlertDescription>
           Choose a role to ask the knowledge base. Nothing is answered without one.
         </AlertDescription>
@@ -98,7 +103,9 @@ export function KnowledgeDesk(): React.JSX.Element {
         <h1 className="text-xl font-semibold text-ink">Knowledge</h1>
         <Alert variant={forbidden ? 'warning' : 'destructive'} role="status">
           {forbidden ? <Ban aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}
-          <AlertTitle className={forbidden ? 'leading-snug text-warn-ink' : 'leading-snug'}>
+          <AlertTitle
+            className={forbidden ? 'leading-snug text-warn-ink' : 'leading-snug'}
+          >
             {forbidden
               ? 'This role may not read the knowledge base'
               : 'The knowledge base could not be loaded'}
@@ -112,8 +119,8 @@ export function KnowledgeDesk(): React.JSX.Element {
             </p>
             {forbidden ? (
               <p className="mt-2">
-                The refusal was made by the API, not by this page, and it was written to the audit
-                log.
+                The refusal was made by the API, not by this page, and it was written to
+                the audit log.
               </p>
             ) : null}
           </AlertDescription>
@@ -128,7 +135,7 @@ export function KnowledgeDesk(): React.JSX.Element {
 function DeskBody({ overview }: { overview: KnowledgeOverview }): React.JSX.Element {
   const [question, setQuestion] = React.useState('');
   const [jurisdiction, setJurisdiction] = React.useState<Jurisdiction | ''>('');
-  const [exchanges, setExchanges] = React.useState<readonly Exchange[]>([]);
+  const [exchange, setExchange] = React.useState<Exchange | null>(null);
   const [openSlug, setOpenSlug] = React.useState<string | null>(null);
   const nextId = React.useRef(1);
   const ask = useMutation({ mutationFn: askKnowledge });
@@ -138,7 +145,7 @@ function DeskBody({ overview }: { overview: KnowledgeOverview }): React.JSX.Elem
   const jurisdictionId = React.useId();
   const suggestionsId = React.useId();
 
-  const busy = exchanges.some((exchange) => exchange.status === 'pending');
+  const busy = exchange?.status === 'pending';
   const articleCount = overview.articles.length;
 
   function submit(text: string): void {
@@ -147,34 +154,37 @@ function DeskBody({ overview }: { overview: KnowledgeOverview }): React.JSX.Elem
     const id = nextId.current;
     nextId.current += 1;
     const chosen = jurisdiction === '' ? null : jurisdiction;
-    setExchanges((current) => [
-      { id, question: asked, jurisdiction: chosen, status: 'pending', envelope: null, error: null },
-      ...current,
-    ]);
+    // The desk shows this question and its answer. A new ask replaces the last rather
+    // than stacking under it: two answers on screen invite reading the wrong one, and the
+    // refusal is only unmistakable when it is the only thing there.
+    setExchange({
+      id,
+      question: asked,
+      jurisdiction: chosen,
+      status: 'pending',
+      envelope: null,
+      error: null,
+    });
     ask.mutate(
       { question: asked, jurisdictions: chosen === null ? [] : [chosen] },
       {
         onSuccess: (envelope) =>
-          setExchanges((current) =>
-            current.map((exchange) =>
-              exchange.id === id ? { ...exchange, status: 'done', envelope } : exchange,
-            ),
+          setExchange((current) =>
+            current?.id === id ? { ...current, status: 'done', envelope } : current,
           ),
         onError: (failure) =>
-          setExchanges((current) =>
-            current.map((exchange) =>
-              exchange.id === id
-                ? {
-                    ...exchange,
-                    status: 'failed',
-                    error: isApiError(failure)
+          setExchange((current) =>
+            current?.id === id
+              ? {
+                  ...current,
+                  status: 'failed',
+                  error: isApiError(failure)
+                    ? failure.message
+                    : failure instanceof Error
                       ? failure.message
-                      : failure instanceof Error
-                        ? failure.message
-                        : 'The API did not answer.',
-                  }
-                : exchange,
-            ),
+                      : 'The API did not answer.',
+                }
+              : current,
           ),
       },
     );
@@ -186,9 +196,9 @@ function DeskBody({ overview }: { overview: KnowledgeOverview }): React.JSX.Elem
         <h1 className="text-xl font-semibold text-ink">Knowledge</h1>
         <p className="tabular max-w-[80ch] text-sm leading-relaxed text-slate-700">
           Answers come only from the {articleCount} approved, in-date{' '}
-          {articleCount === 1 ? 'article' : 'articles'} written for your role, quoted and cited.
-          When none of them supports a question, the answer is a refusal that says so and names who
-          to ask - never an improvised answer.
+          {articleCount === 1 ? 'article' : 'articles'} written for your role, quoted and
+          cited. When none of them supports a question, the answer is a refusal that says
+          so and names who to ask - never an improvised answer.
         </p>
       </header>
 
@@ -222,13 +232,18 @@ function DeskBody({ overview }: { overview: KnowledgeOverview }): React.JSX.Elem
             />
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div className="space-y-1">
-                <label htmlFor={jurisdictionId} className="block text-label text-slate-700">
+                <label
+                  htmlFor={jurisdictionId}
+                  className="block text-label text-slate-700"
+                >
                   Jurisdiction of the source
                 </label>
                 <select
                   id={jurisdictionId}
                   value={jurisdiction}
-                  onChange={(event) => setJurisdiction(event.target.value as Jurisdiction | '')}
+                  onChange={(event) =>
+                    setJurisdiction(event.target.value as Jurisdiction | '')
+                  }
                   className="block rounded-md border border-input bg-background p-1.5 text-sm"
                 >
                   <option value="">Any jurisdiction</option>
@@ -280,19 +295,13 @@ function DeskBody({ overview }: { overview: KnowledgeOverview }): React.JSX.Elem
           )}
 
           <section aria-label="Answers" aria-live="polite" className="space-y-4">
-            {exchanges.length === 0 ? (
+            {exchange === null ? (
               <p className="rounded-lg border border-dashed border-input px-4 py-6 text-center text-sm text-slate-700">
-                Ask a question, or try one above. An answer shows the approved article it quotes; a
-                refusal says why none applies.
+                Ask a question, or try one above. An answer shows the approved article it
+                quotes; a refusal says why none applies.
               </p>
             ) : (
-              exchanges.map((exchange) => (
-                <KnowledgeExchange
-                  key={exchange.id}
-                  exchange={exchange}
-                  onOpenArticle={setOpenSlug}
-                />
-              ))
+              <KnowledgeExchange exchange={exchange} onOpenArticle={setOpenSlug} />
             )}
           </section>
         </div>
@@ -316,26 +325,33 @@ function CorpusCard({
 }): React.JSX.Element {
   const headingId = React.useId();
   const { articles, audiences, support_threshold: threshold } = overview;
-  const audienceNames = audiences.map((audience) => KNOWLEDGE_AUDIENCE_LABELS[audience]).join(', ');
+  const audienceNames = audiences
+    .map((audience) => KNOWLEDGE_AUDIENCE_LABELS[audience])
+    .join(', ');
 
   return (
     <Card aria-labelledby={headingId}>
       <CardHeader className="gap-1 pb-2">
-        <h2 id={headingId} className="flex items-center gap-2 text-base font-semibold text-ink">
+        <h2
+          id={headingId}
+          className="flex items-center gap-2 text-base font-semibold text-ink"
+        >
           <BookOpen aria-hidden="true" className="h-4 w-4 text-slate-700" />
           What answers can come from
         </h2>
         <p className="text-label leading-snug text-slate-700">
-          {articles.length} approved, in-date {articles.length === 1 ? 'article' : 'articles'}{' '}
-          written for {audienceNames}. An article grounds an answer only if it holds at least{' '}
-          {Math.round(threshold.min_weighted_coverage * 100)}% of a question&apos;s key terms,
-          weighted by rarity, and at least {threshold.min_matched_terms} of them.
+          {articles.length} approved, in-date{' '}
+          {articles.length === 1 ? 'article' : 'articles'} written for {audienceNames}. An
+          article grounds an answer only if it holds at least{' '}
+          {Math.round(threshold.min_weighted_coverage * 100)}% of a question&apos;s key
+          terms, weighted by rarity, and at least {threshold.min_matched_terms} of them.
         </p>
       </CardHeader>
       <CardContent>
         {articles.length === 0 ? (
           <p className="text-sm text-slate-700">
-            No approved article is written for your role, so every question will be refused.
+            No approved article is written for your role, so every question will be
+            refused.
           </p>
         ) : (
           <ul className="divide-y divide-line">
@@ -357,9 +373,13 @@ function CorpusCard({
                       : `Approved by ${article.approved_by_name}`}
                   </span>
                   {article.valid_until === null ? null : (
-                    <span className="tabular">Until {formatDate(article.valid_until)}</span>
+                    <span className="tabular">
+                      Until {formatDate(article.valid_until)}
+                    </span>
                   )}
-                  {article.citation_id === null ? <span>No cited source: cannot ground</span> : null}
+                  {article.citation_id === null ? (
+                    <span>No cited source: cannot ground</span>
+                  ) : null}
                 </p>
               </li>
             ))}

@@ -141,7 +141,7 @@ function DeskBody({
   maySearch: boolean;
 }): React.JSX.Element {
   const [requirement, setRequirement] = React.useState('');
-  const [searches, setSearches] = React.useState<readonly Search[]>([]);
+  const [search, setSearch] = React.useState<Search | null>(null);
   const nextId = React.useRef(1);
   const run = useMutation({ mutationFn: searchDiaspora });
 
@@ -149,7 +149,7 @@ function DeskBody({
   const countId = React.useId();
   const suggestionsId = React.useId();
 
-  const busy = searches.some((search) => search.status === 'pending');
+  const busy = search?.status === 'pending';
   const {
     searchable_count: searchable,
     contactable_count: contactable,
@@ -161,34 +161,29 @@ function DeskBody({
     if (!maySearch || asked.length < REQUIREMENT_MIN || busy) return;
     const id = nextId.current;
     nextId.current += 1;
-    setSearches((current) => [
-      { id, requirement: asked, status: 'pending', envelope: null, error: null },
-      ...current,
-    ]);
+    // One requirement, one candidate set. A new search replaces the last rather than
+    // stacking under it, so the candidates on screen always answer the question above them.
+    setSearch({ id, requirement: asked, status: 'pending', envelope: null, error: null });
     run.mutate(
       { requirement: asked, sector_codes: [] },
       {
         onSuccess: (envelope) =>
-          setSearches((current) =>
-            current.map((search) =>
-              search.id === id ? { ...search, status: 'done', envelope } : search,
-            ),
+          setSearch((current) =>
+            current?.id === id ? { ...current, status: 'done', envelope } : current,
           ),
         onError: (failure) =>
-          setSearches((current) =>
-            current.map((search) =>
-              search.id === id
-                ? {
-                    ...search,
-                    status: 'failed',
-                    error: isApiError(failure)
+          setSearch((current) =>
+            current?.id === id
+              ? {
+                  ...current,
+                  status: 'failed',
+                  error: isApiError(failure)
+                    ? failure.message
+                    : failure instanceof Error
                       ? failure.message
-                      : failure instanceof Error
-                        ? failure.message
-                        : 'The API did not answer.',
-                  }
-                : search,
-            ),
+                      : 'The API did not answer.',
+                }
+              : current,
           ),
       },
     );
@@ -283,15 +278,13 @@ function DeskBody({
           )}
 
           <section aria-label="Search results" aria-live="polite" className="space-y-4">
-            {searches.length === 0 ? (
+            {search === null ? (
               <p className="rounded-lg border border-dashed border-input px-4 py-6 text-center text-sm text-slate-700">
                 Search for a capability, or try one above. Results are consented
                 candidates only - the platform contacts no one.
               </p>
             ) : (
-              searches.map((search) => (
-                <DiasporaSearchOutcome key={search.id} search={search} />
-              ))
+              <DiasporaSearchOutcome search={search} />
             )}
           </section>
         </div>

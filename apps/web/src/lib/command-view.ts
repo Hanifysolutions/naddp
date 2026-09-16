@@ -230,7 +230,8 @@ export const TILE_DEFINITIONS: readonly TileDefinition[] = [
   {
     id: 'citizen-service-health',
     title: 'Citizen Service Health',
-    description: 'Consular caseload, service-level risk and what is paused on the citizen.',
+    description:
+      'Consular caseload, service-level risk and what is paused on the citizen.',
     span: 'md:col-span-3 xl:col-span-3 desk:col-span-4',
     metricGridClass: NARROW_METRICS,
     sources: ['consular'],
@@ -512,9 +513,10 @@ function stakeholderContent(tile: StakeholderTile): TileContent {
       metric('Contacts', tile.total, {
         hint: `across ${formatCount(tile.organisations)} organisations`,
       }),
-      metric('Never contacted', tile.never_contacted, {
-        tone: riskTone(tile.never_contacted, 'warning'),
-      }),
+      // A plain coverage count, not a risk: it takes --ink like any other figure.
+      // Amber stays for what is actually at risk, which on this tile is the dormant
+      // relationships beneath it (DESIGN_SYSTEM.md, "reserved for STATE only").
+      metric('Never contacted', tile.never_contacted),
       // Distinct from 'never contacted', and the distinction is the point: a relationship
       // that has gone quiet and one that was never started need different work.
       metric('Dormant 90 days', tile.dormant, {

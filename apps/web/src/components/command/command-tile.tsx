@@ -327,9 +327,13 @@ function Metric({
   return (
     <div className="flex min-w-0 flex-col-reverse gap-1">
       <dt className="min-w-0">
-        <span className="block truncate text-label text-slate-700">{metric.label}</span>
+        {/* Wraps rather than truncates: a clipped label ("Overdue next ...") is a figure
+            nobody can name, and these tiles are read at arm's length across a table. */}
+        <span className="block text-label leading-snug text-slate-700">
+          {metric.label}
+        </span>
         {metric.hint === undefined ? null : (
-          <span className="mt-0.5 block truncate text-2xs text-slate-700">
+          <span className="mt-0.5 block text-2xs leading-snug text-slate-700">
             {metric.hint}
           </span>
         )}
