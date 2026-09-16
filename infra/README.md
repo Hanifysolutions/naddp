@@ -49,17 +49,18 @@ The browser talks only to Vercel and to the API's public URL. It never reaches P
 
 | File | Status | What it does |
 |---|---|---|
-| `vercel/vercel.json` | Stub, valid | Build and install commands for `apps/web` inside the pnpm workspace, plus edge security headers. |
-| `railway/railway.json` | Stub, valid | Tells Railway to build the API from the Dockerfile, start uvicorn, and health-check `/health`. |
-| `railway/Dockerfile.api` | **Real, buildable** | Multi-stage uv build of `apps/api`. This one is not a stub — it is built in CI and is the artefact Railway deploys. |
+| `railway/Dockerfile.api` | **Real, buildable** | Multi-stage uv build of `apps/api`. Built in CI and the artefact Railway deploys. Build context is the repository root. |
+| `postgres/init/*.sql` | Real | Extensions and the non-owner application role, applied by Postgres on first start of a **local** volume. A managed database never runs these; the migration creates the extensions itself. |
+| `../railway.json` | Real, unexecuted | At the repository **root**, because that is the only place Railway reads it from. Dockerfile build, `alembic upgrade head` as the pre-deploy step, `/health/ready` as the health check. |
+| `../vercel.json` | Real, unexecuted | At the repository **root**, for the same reason. Install, build and output for `apps/web` inside the pnpm workspace, plus edge security headers. |
 
-### What "stub" means here
+### What "unexecuted" means here
 
-`vercel.json` and `railway.json` are syntactically valid and semantically correct for the intended
-deployment, but have **not been executed against the providers**. Expect the first real deploy to
-surface: the exact Vercel Root Directory setting, whether Railway's Nixpacks detection needs
-overriding beyond the `builder` field, and the region pin. None of these change the shape of the
-files.
+Both provider files are syntactically valid and semantically correct for the intended deployment,
+and neither has been **run against the provider**. Expect the first real deploy to surface: the
+Vercel Root Directory setting, whether Railway picks up the root `railway.json` without also being
+pointed at the Dockerfile in the service settings, the region pin, and whether the managed Postgres
+permits `CREATE EXTENSION vector`. None of those change the shape of these files.
 
 Not yet configured, and deliberately so:
 
@@ -79,33 +80,106 @@ Not yet configured, and deliberately so:
 
 1. Import the repository. Set **Root Directory** to the repository root (not `apps/web`) — the build
    command filters to the web package, and the install must see the whole pnpm workspace.
-2. Apply `infra/vercel/vercel.json` by copying it to the repository root as `vercel.json`, or by
-   entering the same commands in the project's Build & Development Settings. Vercel only reads
-   `vercel.json` from the project root, which is why the canonical copy lives here and is copied out.
-3. Set `NEXT_PUBLIC_API_URL` to the Railway API's public URL. This value is compiled into the client
-   bundle — it is a coordinate, not a secret, and nothing else about the API may be.
+2. Nothing to copy: `vercel.json` is already at the repository root, which is the only place
+   Vercel reads it from. It pins the install, build and output directory, so the Build & Development
+   Settings can be left alone.
+3. Set `NEXT_PUBLIC_API_URL` to the Railway API's public URL, for the Production environment. It is
+   compiled into the client bundle — a coordinate, not a secret, and nothing else about the API may
+   be. Changing it later needs a **redeploy**, not just a restart.
 4. Confirm no other `NEXT_PUBLIC_*` variable exists. Anything with that prefix is public.
+5. The toolchain is pinned by the repository: `packageManager` is `pnpm@9.15.4` and `engines.node`
+   is `>=22`, so Vercel resolves both without project-level overrides.
 
 ### API → Railway
 
-1. New service from the repository. Railway reads `railway.json` from the repository root, so copy
-   `infra/railway/railway.json` there (same reason as above), or set the equivalent fields in the
-   service settings.
-2. Set variables: `DATABASE_URL` (from the Postgres service's private URL, with the scheme rewritten
-   to `postgresql+psycopg://`), `ANTHROPIC_API_KEY`, `DEMO_SESSION_SECRET` (32+ random bytes,
-   generated per environment), `DEMO_MODE=true`, `CORS_ALLOWED_ORIGINS` set to the Vercel URL only.
+1. New service from the repository. Railway reads `railway.json` from the repository root, and it
+   is already there: Dockerfile builder, `infra/railway/Dockerfile.api`, health check `/health/ready`.
+2. Set the variables in the table below. `APP_ENV=production` and a real `CORS_ORIGINS` are not
+   optional — the API refuses to boot without them (see "The boot guard").
 3. Pin the region to match the audience's expectation about data residency — see
    `docs/OPEN_QUESTIONS.md` Q-14. Do not accept the default silently.
-4. Migrations run as a **pre-deploy / release step**, not in the container's `CMD`:
-   `uv run alembic upgrade head`. Running migrations from the start command means every replica races
-   to migrate; the demo has one replica, but the habit is wrong and the failure is confusing.
-5. Seed once after the first successful deploy: `uv run python -m data.demo_seed.seed`.
+4. Migrations run as a **pre-deploy step**, not in the container's `CMD`: `railway.json` sets
+   `preDeployCommand: alembic upgrade head`. The image has `alembic` (a runtime dependency) and
+   `alembic.ini` at `/app`, and `alembic/env.py` reads the URL from `DATABASE_URL`. Running
+   migrations from the start command instead would have every replica race to migrate.
+5. Attach a volume at `/app/storage` if seeded document bytes must survive a redeploy. Without one
+   the object store is ephemeral, which is acceptable for a demo that is reseeded before a rehearsal.
+6. Seed once after the first successful deploy, from a one-off command on the service:
+
+   ```bash
+   python data/demo-seed/seed.py     # the synthetic dataset, including the audit history
+   python -m app.cli.ingest          # chunk and embed the corpus into the retrieval tables
+   python -m app.cli.prewarm         # warm the hero briefs so the on-stage brief is a DB read
+   ```
+
+   The image's working directory is `/app` and the virtualenv is on `PATH`, so these run as written.
+   Reseeding later is the same three commands; there is no `demo-reset` inside the container, and a
+   reset that drops the schema is a migration concern, not a seeding one.
 
 ### Postgres → Railway
 
-Provision Postgres 16 with a volume. `pgvector` is created by the first migration; if the managed
-image does not permit `CREATE EXTENSION`, this is a blocker to raise immediately, because
-`vector(1536)` columns are in the initial migration.
+Provision Postgres 16 with a volume. The first migration runs `CREATE EXTENSION IF NOT EXISTS
+vector`, `pg_trgm` and `uuid-ossp` itself, so nothing under `infra/postgres/` is used in production —
+those scripts only run for a local Docker volume. **Verify at deploy time** that the managed image
+ships pgvector and that the connecting role may create extensions: if `CREATE EXTENSION vector` is
+refused the initial migration cannot apply at all, because `vector(1536)` columns are in it. If
+Railway's default Postgres refuses, deploy its pgvector image instead. This is the one item in this
+document nobody can confirm from the repository.
+
+`DATABASE_URL` must name the psycopg 3 driver. Managed providers hand out `postgres://…` or
+`postgresql://…`; the API rewrites either onto `postgresql+psycopg://…` at startup
+(`app/core/config.py`), so the provider's value can be pasted verbatim. Prefer the **private**
+network URL: the API and the database are in the same project.
+
+---
+
+## Environment variables
+
+Nothing here is read from a file in production. Every value is set in the provider's dashboard, and
+the ones marked **secret** must never be committed, logged, or given a `NEXT_PUBLIC_` prefix.
+
+### API — Railway service
+
+| Variable | Secret | Required | Value for the deployed demo |
+|---|---|---|---|
+| `APP_ENV` | no | **yes** | `production`. Anything other than `local`/`test` arms the boot guard below. |
+| `DATABASE_URL` | **yes** | **yes** | The Postgres service's private URL. `postgres://` and `postgresql://` are rewritten to `postgresql+psycopg://` on startup. |
+| `DEMO_SESSION_SECRET` | **yes** | **yes** | 32+ characters, generated per environment: `python -c "import secrets; print(secrets.token_urlsafe(48))"`. The API refuses to boot with the committed placeholder. |
+| `CORS_ORIGINS` | no | **yes** | The Vercel origin only, e.g. `https://naddp-demo.vercel.app`. Comma-separated if there is more than one. Never a loopback origin, never `*` (a wildcard silently disables credentials, and the role-picker cookie stops working). |
+| `ANTHROPIC_API_KEY` | **yes** | only for live AI | `sk-ant-…`. Unset is fine while `AI_GATEWAY_LIVE=false`: the Gateway then serves its deterministic snapshots. |
+| `AI_GATEWAY_LIVE` | no | no (default `false`) | **The flag that turns live AI on.** `false` is the rehearsed state; the trace drawer says `fallback=true (LIVE_DISABLED)` on every call. A live call needs this `true` **and** a key. |
+| `AI_GATEWAY_TIMEOUT_SECONDS` | no | no (default `4`) | Hard timeout before the deterministic fallback is served. |
+| `ANTHROPIC_MODEL` | no | no | Strong tier (briefs, meeting prep, grounded answers). Defaults to `claude-sonnet-5`. |
+| `ANTHROPIC_MODEL_FAST` | no | no | Fast tier (scoring, matching). Defaults to `claude-haiku-4-5`. |
+| `DEMO_MODE` | no | no (default `true`) | Keeps the DEMO / SYNTHETIC badge on every screen. Leave it `true`. |
+| `LOG_LEVEL` | no | no (default `INFO`) | `DEBUG` only while diagnosing. |
+| `STORAGE_DIR` | no | no | Defaults to `<repo root>/storage`, which is `/app/storage` in the image. Set it only if the volume is mounted elsewhere. |
+| `PORT` | no | injected | Railway sets it; the container binds it. Do not set it by hand. |
+| `NADDP_REPO_ROOT` | no | no | Escape hatch for repo-root discovery. The image needs none: `data/` is copied to `/app/data`. |
+
+### Web — Vercel project
+
+| Variable | Secret | Required | Value for the deployed demo |
+|---|---|---|---|
+| `NEXT_PUBLIC_API_URL` | no — **public by construction** | **yes** | The Railway service's public URL, e.g. `https://naddp-api.up.railway.app`. Compiled into the client bundle and into the CSP `connect-src`, so it takes effect on **redeploy**, not on restart. |
+
+No other variable belongs in the Vercel project. `ANTHROPIC_API_KEY`, `DATABASE_URL` and
+`DEMO_SESSION_SECRET` are API-side only; the web app never sees them (`BUILD_BIBLE.md` §11).
+
+### The boot guard
+
+`app/core/config.py` refuses to start a non-local environment that is still carrying development
+values, so a half-configured deploy fails at boot with a named fix rather than serving quietly:
+
+- **`CORS_ORIGINS`** — if it still contains any of the loopback defaults
+  (`http://localhost:3000`, `http://127.0.0.1:3000`, `http://[::1]:3000`) while `APP_ENV` is not
+  `local`/`test`, startup fails: *"A deployed API must not trust pages served from a reader's own
+  machine."* **`CORS_ORIGINS` is the variable that must carry the real Vercel origin.**
+- **`DEMO_SESSION_SECRET`** — the committed placeholders and anything under 32 characters are
+  refused outside a local environment.
+- An empty `CORS_ORIGINS` is refused in every environment.
+
+Both rules are covered by `apps/api/tests/test_config.py`.
 
 ---
 

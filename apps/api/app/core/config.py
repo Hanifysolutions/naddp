@@ -189,6 +189,26 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _normalise_database_driver(cls, value: object) -> object:
+        """Pin the psycopg 3 driver onto a driverless URL.
+
+        Managed Postgres hands out ``postgres://`` or ``postgresql://``. SQLAlchemy reads the
+        scheme as the dialect and driver, so the first is rejected outright and the second
+        selects psycopg2, which this project does not install -- both fail at engine
+        construction, on boot, in a provider dashboard where the traceback is least
+        convenient. The URL is otherwise untouched: host, credentials, database and query
+        string are the provider's.
+        """
+        if not isinstance(value, str):
+            return value
+        url = value.strip()
+        for scheme in ("postgres://", "postgresql://"):
+            if url.startswith(scheme):
+                return f"postgresql+psycopg://{url[len(scheme) :]}"
+        return url
+
     @field_validator("anthropic_api_key", mode="before")
     @classmethod
     def _blank_key_is_none(cls, value: object) -> object:

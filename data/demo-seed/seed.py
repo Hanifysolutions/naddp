@@ -44,13 +44,16 @@ from pathlib import Path
 # Import bootstrap. `uv run --project apps/api python data/demo-seed/seed.py` puts THIS
 # directory on sys.path and not `apps/api`, so `app` is not importable without help. The
 # project is declared `package = false` (a deployed application, not a distributable), so
-# there is no installed distribution to fall back on either. Both paths are added before
+# there is no installed distribution to fall back on either. Three paths are added before
 # any first-party import: this directory so `seed_parts` resolves when the script is run
-# from elsewhere, and `apps/api` so `app` does.
+# from elsewhere, `apps/api` so `app` does in the source tree, and the root above this
+# file so `app` does in the container -- infra/railway/Dockerfile.api flattens `apps/api/`
+# onto `/app` and copies `data/` beside it, so there is no `apps/api` there and the
+# package sits at `/app/app`. Seeding a deployed demo runs this same script.
 # --------------------------------------------------------------------------------------
 _HERE = Path(__file__).resolve().parent
 _REPO_ROOT = _HERE.parent.parent
-for _path in (_HERE, _REPO_ROOT / "apps" / "api"):
+for _path in (_HERE, _REPO_ROOT / "apps" / "api", _REPO_ROOT):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 

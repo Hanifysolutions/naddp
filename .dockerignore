@@ -50,7 +50,8 @@ storage/*
 # --- Docs and tooling that do not belong in a runtime image ----------------
 docs
 evals
-infra/vercel
+vercel.json
+railway.json
 Makefile
 make.ps1
 README.md
