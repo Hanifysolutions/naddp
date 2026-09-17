@@ -16,21 +16,24 @@ in its purest form -- no valid session, no answer. The route-coverage test in AD
 enforcement table must allowlist exactly these three alongside ``/health`` and the OpenAPI
 schema.
 
-**Cookie flags.** ``httponly`` (script cannot read it), ``samesite=lax`` and ``secure``
-outside a local environment. One caveat worth stating rather than discovering during the
-deploy rehearsal: ``lax`` works for the local demo because ``localhost:3000`` and
-``localhost:8000`` are the same site -- SameSite ignores the port -- but a split deployment
-across two registrable domains (Vercel and Railway) is cross-site, and the cookie will not
-be sent. That deployment needs ``SameSite=None; Secure`` plus explicit CORS credentials, or
-the two surfaces behind one domain. Escalated in this track's handoff and owed an
-``docs/OPEN_QUESTIONS.md`` entry before the Week 4 deploy; the flag is deliberately left as
-``lax`` here rather than pre-emptively widened, because ``None`` on a same-site demo is a
-weaker cookie for no benefit.
+**Cookie flags.** ``httponly`` (script cannot read it), plus a ``samesite``/``secure``
+pair that follows the environment -- see ``_cookie_policy``. Local and test runs serve the
+web app and this API from ``localhost:3000`` and ``localhost:8000``, which are the same
+site (SameSite ignores the port), so ``lax`` is the stronger choice there and ``Secure``
+would only stop the cookie working over plain http.
+
+The deployed demo splits the two across registrable domains -- Vercel and Railway -- which
+is cross-site. A ``lax`` cookie is accepted by the browser on the way in and then never
+sent back, so ``assume-role`` returns 200, the following ``me`` call arrives anonymous, and
+the role silently fails to stick. That deployment needs ``SameSite=None; Secure`` together
+with credentialed CORS, which ``app.main`` already allows. This was not theoretical: on
+2026-09-17 the deployed API was observed issuing ``SameSite=lax; Secure`` and losing every
+cross-site session, which is what this policy fixes.
 """
 
 from __future__ import annotations
 
-from typing import Annotated, Final
+from typing import Annotated, Final, Literal
 
 from fastapi import APIRouter, Depends, Response, status
 from pydantic import BaseModel, Field
@@ -152,15 +155,26 @@ def _user_agent(request: Request) -> str | None:
     return raw[:_USER_AGENT_MAX_LENGTH] if raw else None
 
 
+def _cookie_policy() -> tuple[Literal["lax", "none"], bool]:
+    """The ``(samesite, secure)`` pair this environment's session cookie must carry.
+
+    Kept in one place because a deletion has to repeat the flags the cookie was set with,
+    and two literals that must agree are two literals that will eventually disagree. See
+    the module docstring for why the deployed demo cannot use ``lax``.
+    """
+    return ("lax", False) if get_settings().is_local else ("none", True)
+
+
 def _set_session_cookie(response: Response, role: RoleCode) -> None:
     """Attach the signed demo session cookie. See the module docstring on ``samesite``."""
+    samesite, secure = _cookie_policy()
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=issue_session(role),
         max_age=SESSION_MAX_AGE_SECONDS,
         httponly=True,
-        samesite="lax",
-        secure=not get_settings().is_local,
+        samesite=samesite,
+        secure=secure,
         path="/",
     )
 
@@ -238,10 +252,11 @@ def end_session(response: Response, principal: CurrentPrincipal) -> None:
     decision, but it is the vocabulary module's to make, not this handler's.
     """
     _ = principal  # the dependency is the gate; the value is not otherwise needed
+    samesite, secure = _cookie_policy()
     response.delete_cookie(
         key=SESSION_COOKIE_NAME,
         httponly=True,
-        samesite="lax",
-        secure=not get_settings().is_local,
+        samesite=samesite,
+        secure=secure,
         path="/",
     )

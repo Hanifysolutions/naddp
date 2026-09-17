@@ -16,12 +16,14 @@ while the enclosing transaction still discards everything.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.api.v1 import session as session_routes
 from app.domain.enums import PolicyResult, RoleCode
 from app.models.governance import AuditEvent, User
 from app.security.matrix import ROLE_PERMISSIONS
@@ -237,6 +239,22 @@ def test_assume_role_sets_a_hardened_cookie_and_returns_the_session(
 
     # The cookie now authenticates a subsequent call.
     assert api.get(ME_URL).json()["role"] == "DEPUTY"
+
+
+def test_cookie_policy_follows_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A deployed demo is cross-site, and only ``SameSite=None; Secure`` survives that.
+
+    Pinned as a unit test because this suite runs with ``APP_ENV=test``, where ``lax`` is
+    the correct answer -- so the integration assertion above exercises the local branch
+    only and can never catch a regression in the deployed one. Vercel and Railway are
+    different registrable domains: a ``lax`` cookie is accepted on the way in and then
+    never sent back, which presents as a role picker that appears to do nothing.
+    """
+    monkeypatch.setattr(session_routes, "get_settings", lambda: SimpleNamespace(is_local=False))
+    assert session_routes._cookie_policy() == ("none", True)
+
+    monkeypatch.setattr(session_routes, "get_settings", lambda: SimpleNamespace(is_local=True))
+    assert session_routes._cookie_policy() == ("lax", False)
 
 
 @pytest.mark.integration
