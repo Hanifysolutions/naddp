@@ -8,7 +8,7 @@ import {
   type SessionSummary,
 } from '@naddp/contracts';
 
-import { API_BASE_URL } from '@/lib/api';
+import { SERVER_API_BASE_URL } from '@/lib/api';
 
 /**
  * Server-side resolution of the current demo identity.
@@ -82,7 +82,7 @@ export async function getDemoSession(): Promise<DemoSession> {
 
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}${SESSION_ENDPOINT}`, {
+    response = await fetch(`${SERVER_API_BASE_URL}${SESSION_ENDPOINT}`, {
       method: 'GET',
       headers:
         cookieHeader.length > 0
@@ -94,7 +94,7 @@ export async function getDemoSession(): Promise<DemoSession> {
     });
   } catch (failure) {
     return NO_SESSION(
-      `The API at ${API_BASE_URL} could not be reached (${
+      `The API at ${SERVER_API_BASE_URL} could not be reached (${
         failure instanceof Error ? failure.message : 'unknown network failure'
       }).`,
     );

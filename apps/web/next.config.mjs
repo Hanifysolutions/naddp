@@ -12,9 +12,9 @@
 const isDev = process.env.NODE_ENV !== 'production';
 
 /**
- * The API origin the browser is allowed to talk to. Resolved at build time so the CSP
- * `connect-src` is accurate for whichever environment we ship. Falls back to the locked
- * local port from the repo contract.
+ * The API's absolute origin. The browser never sees it: it is the destination of the
+ * `/api` rewrite below, and the base `lib/session.ts` uses for server-side calls.
+ * Resolved at build time, falling back to the locked local port from the repo contract.
  */
 const apiOrigin = (() => {
   const raw = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -51,8 +51,9 @@ const apiOrigin = (() => {
  *  - `style-src` carries `'unsafe-inline'` because Next injects critical CSS inline and
  *    `next/font` writes inline @font-face declarations.
  *
- *  - `connect-src` is pinned to self plus the resolved API origin; in dev it also allows
- *    the webpack HMR websocket.
+ *  - `connect-src` is `'self'` and nothing more. The browser only ever calls `/api` on
+ *    this origin and the rewrite forwards it, so no external origin belongs here. In dev
+ *    it also allows the webpack HMR websocket.
  *
  *  - `frame-ancestors 'none'` is the CSP-level equivalent of X-Frame-Options: DENY and is
  *    the one browsers actually honour for nested contexts.
@@ -67,7 +68,7 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  `connect-src 'self' ${apiOrigin}${isDev ? ' ws: wss:' : ''}`,
+  `connect-src 'self'${isDev ? ' ws: wss:' : ''}`,
   "manifest-src 'self'",
   "worker-src 'self' blob:",
   ...(isDev ? [] : ['upgrade-insecure-requests']),
@@ -119,6 +120,18 @@ const nextConfig = {
   // any JS runs; page.tsx stays as the fallback for anything this rule does not match.
   async redirects() {
     return [{ source: '/', destination: '/command', permanent: false }];
+  },
+
+  // Every browser call goes to same-origin `/api` and is proxied from here, so the demo
+  // session cookie stays same-site and no CORS preflight ever happens.
+  //
+  // Defined in this file rather than vercel.json on purpose: vercel.json is not read by
+  // `next dev`, and the whole point of the proxy is that local and deployed behave the
+  // same way. Next compiles rewrites into Vercel's routing layer, so the hop costs no
+  // function invocation. There are no route handlers under app/api to shadow, and the
+  // default (afterFiles) would yield to them if any were ever added.
+  async rewrites() {
+    return [{ source: '/api/:path*', destination: `${apiOrigin}/:path*` }];
   },
 
   async headers() {

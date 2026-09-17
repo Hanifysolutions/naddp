@@ -18,8 +18,29 @@ import { createApiClient, type ApiClient } from '@naddp/contracts';
  * a variable or a helper - Next's build-time substitution only works on the static
  * member expression.
  * ===========================================================================
+ *
+ * TWO BASES, because this app calls the API from two places that need different answers:
+ *
+ *  - The BROWSER calls `/api`, a same-origin path that `next.config.mjs` rewrites to the
+ *    API. Same-origin is what keeps `naddp_demo_session` same-site. Split across two
+ *    registrable domains (Vercel and Railway) the cookie was cross-site, and a cross-site
+ *    cookie is at the mercy of each browser's third-party cookie policy - Safari drops it
+ *    outright. The proxy ends the question rather than negotiating with it.
+ *
+ *  - The SERVER calls the API directly. `lib/session.ts` resolves identity during SSR,
+ *    where a relative URL has no origin to resolve against and Node's fetch throws
+ *    `Failed to parse URL`. Nothing about SameSite applies to a server-to-server call,
+ *    and hairpinning back out through our own edge would only add a hop.
  */
-export const API_BASE_URL: string =
+export const API_BASE_URL: string = '/api';
+
+/**
+ * The API's absolute origin: the rewrite target, and the base for server-side calls.
+ *
+ * Never reach for this from code that runs in the browser. Doing so leaves same-origin
+ * and reintroduces the cross-site cookie problem the proxy exists to end.
+ */
+export const SERVER_API_BASE_URL: string =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 /**
