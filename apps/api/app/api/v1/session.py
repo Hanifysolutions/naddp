@@ -22,13 +22,15 @@ web app and this API from ``localhost:3000`` and ``localhost:8000``, which are t
 site (SameSite ignores the port), so ``lax`` is the stronger choice there and ``Secure``
 would only stop the cookie working over plain http.
 
-The deployed demo splits the two across registrable domains -- Vercel and Railway -- which
-is cross-site. A ``lax`` cookie is accepted by the browser on the way in and then never
-sent back, so ``assume-role`` returns 200, the following ``me`` call arrives anonymous, and
-the role silently fails to stick. That deployment needs ``SameSite=None; Secure`` together
-with credentialed CORS, which ``app.main`` already allows. This was not theoretical: on
-2026-09-17 the deployed API was observed issuing ``SameSite=lax; Secure`` and losing every
-cross-site session, which is what this policy fixes.
+The deployed demo used to split the two across registrable domains -- Vercel and Railway --
+which is cross-site, and on 2026-09-17 the deployed API was observed issuing
+``SameSite=lax; Secure`` and losing every session: ``assume-role`` returned 200, the
+following ``me`` call arrived anonymous, and the role never stuck. ``SameSite=None; Secure``
+would have papered over that, but a cross-site cookie survives only at each browser's
+discretion -- Safari blocks third-party cookies outright, and Chrome is headed the same
+way. The web app now proxies ``/api`` to this service from its own origin (see
+``apps/web/next.config.mjs``), so the browser is same-site again and ``lax`` is correct
+everywhere. Do not widen this to ``None`` without first removing that proxy.
 """
 
 from __future__ import annotations
@@ -155,14 +157,18 @@ def _user_agent(request: Request) -> str | None:
     return raw[:_USER_AGENT_MAX_LENGTH] if raw else None
 
 
-def _cookie_policy() -> tuple[Literal["lax", "none"], bool]:
+def _cookie_policy() -> tuple[Literal["lax"], bool]:
     """The ``(samesite, secure)`` pair this environment's session cookie must carry.
 
     Kept in one place because a deletion has to repeat the flags the cookie was set with,
-    and two literals that must agree are two literals that will eventually disagree. See
-    the module docstring for why the deployed demo cannot use ``lax``.
+    and two literals that must agree are two literals that will eventually disagree.
+
+    ``samesite`` is ``lax`` everywhere -- the browser reaches this API through the web
+    app's own origin, so every request is same-site (see the module docstring). ``secure``
+    is the half that still varies: a local run serves plain http, where the browser would
+    refuse to store a ``Secure`` cookie at all.
     """
-    return ("lax", False) if get_settings().is_local else ("none", True)
+    return ("lax", not get_settings().is_local)
 
 
 def _set_session_cookie(response: Response, role: RoleCode) -> None:

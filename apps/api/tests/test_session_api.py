@@ -242,16 +242,18 @@ def test_assume_role_sets_a_hardened_cookie_and_returns_the_session(
 
 
 def test_cookie_policy_follows_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A deployed demo is cross-site, and only ``SameSite=None; Secure`` survives that.
+    """``samesite`` is ``lax`` everywhere; only ``secure`` follows the environment.
 
-    Pinned as a unit test because this suite runs with ``APP_ENV=test``, where ``lax`` is
-    the correct answer -- so the integration assertion above exercises the local branch
-    only and can never catch a regression in the deployed one. Vercel and Railway are
-    different registrable domains: a ``lax`` cookie is accepted on the way in and then
-    never sent back, which presents as a role picker that appears to do nothing.
+    The web app proxies ``/api`` to this service from its own origin, so the browser is
+    same-site and ``lax`` holds in a deployment too. ``Secure`` cannot be constant: a
+    local run serves plain http, where the browser would refuse to store the cookie.
+
+    Pinned as a unit test because this suite runs with ``APP_ENV=test``, so the
+    integration assertion above exercises the local branch only and would not notice the
+    deployed one regressing.
     """
     monkeypatch.setattr(session_routes, "get_settings", lambda: SimpleNamespace(is_local=False))
-    assert session_routes._cookie_policy() == ("none", True)
+    assert session_routes._cookie_policy() == ("lax", True)
 
     monkeypatch.setattr(session_routes, "get_settings", lambda: SimpleNamespace(is_local=True))
     assert session_routes._cookie_policy() == ("lax", False)
