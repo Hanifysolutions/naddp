@@ -30,19 +30,20 @@ three weeks later (Q-13, and ``data/demo-seed/README.md`` section 6).
 
 from __future__ import annotations
 
-import hashlib
 import json
 import random
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final, TypeVar
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from ulid import ULID
+
+from app.core.ids import SEED_ID_NAMESPACE, seed_id
 
 __all__ = [
     "FIXED_SEED",
@@ -57,24 +58,16 @@ __all__ = [
 #: The one random seed. Changing it changes every sampled value in the dataset.
 FIXED_SEED: Final[int] = 20260907
 
-#: Domain separation for :func:`mint_id`. Bumping it re-mints every primary key, which is
-#: a schema-drop-level change -- do it only alongside ``make demo-reset``.
-ID_NAMESPACE: Final[str] = "naddp.seed.ids.v1"
+#: Domain separation for :func:`mint_id`. Defined in ``app.core.ids`` because the running
+#: API needs the same answer to find a seeded row again, and re-exported here under the
+#: name the seed has always used. Bumping it re-mints every primary key, which is a
+#: schema-drop-level change -- do it only alongside ``make demo-reset``.
+ID_NAMESPACE: Final[str] = SEED_ID_NAMESPACE
 
 #: Written into ``audit_events.payload.seed_marker`` so seeded history is distinguishable
 #: from rows the running API appended. The seed counts and skips on this, which is what
 #: makes the append-only audit block re-runnable.
 SEED_MARKER: Final[str] = "naddp-demo-seed-v1"
-
-#: Millisecond epoch for the synthetic ULID prefix. An arbitrary fixed instant: the ULID
-#: timestamp of a *seeded* row records nothing real, and pretending otherwise by using the
-#: run clock would make ids move on every run.
-_ID_EPOCH: Final[datetime] = datetime(2026, 1, 1, tzinfo=UTC)
-_ID_EPOCH_MS: Final[int] = int(_ID_EPOCH.timestamp() * 1000)
-
-#: Width of the synthetic timestamp spread, in milliseconds. One day, so seeded ids sort
-#: into a stable pseudo-random order rather than all sharing one millisecond prefix.
-_ID_SPREAD_MS: Final[int] = 86_400_000
 
 T = TypeVar("T")
 
@@ -83,17 +76,15 @@ def mint_id(slug: str) -> uuid.UUID:
     """Return the deterministic ULID-shaped primary key for ``slug``.
 
     A pure function: the same slug yields the same id on every machine and every run,
-    which is what lets ``make seed`` upsert instead of duplicating, and what lets
-    ``manifest.json`` name a row by slug rather than by an id that moves.
+    which is what lets ``make seed`` upsert instead of duplicating, and what lets anything
+    else name a seeded row by slug rather than by an id that moves.
 
-    The layout is ADR-0007's -- six bytes of millisecond timestamp then ten bytes of
-    entropy -- so the value is a well-formed ULID and ``ORDER BY id`` remains meaningful.
-    The timestamp is synthetic and derived from the slug, because a seeded row has no
-    honest creation instant to encode.
+    Delegates to :func:`app.core.ids.seed_id`, which is where the implementation now lives.
+    The seeder is no longer its only caller: ``app.services.outcomes.anchors`` resolves the
+    hero thread's slugs the same way, at request time, and the two must not be able to
+    disagree about the row the seeder wrote.
     """
-    digest = hashlib.blake2b(f"{ID_NAMESPACE}:{slug}".encode(), digest_size=16).digest()
-    moment = _ID_EPOCH_MS + int.from_bytes(digest[:4], "big") % _ID_SPREAD_MS
-    return uuid.UUID(bytes=moment.to_bytes(6, "big") + digest[6:16])
+    return seed_id(slug)
 
 
 def ulid_str(value: uuid.UUID) -> str:

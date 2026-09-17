@@ -11,6 +11,14 @@ Two *deliberately unrelated* kinds of identifier exist in this system:
     The externally visible reference, e.g. the consular case number a citizen
     is given over the phone (``NADDP-7F3K9QX2-4M2W``).
 
+``seed_id()``
+    The primary key of a *seeded* row: a pure function of the row's stable slug,
+    so the same slug yields the same id on every machine and every run. It lives
+    here rather than in the seeder because two callers need the same answer --
+    ``data/demo-seed`` when it writes the row, and ``app.services.outcomes``
+    when it needs to find that row again. One implementation, so they cannot
+    drift apart.
+
 WHY THE PUBLIC REFERENCE MUST NEVER BE DERIVED FROM THE PRIMARY KEY
 -------------------------------------------------------------------
 A ULID encodes its creation timestamp and is monotonic within a millisecond.
@@ -41,8 +49,10 @@ Knowing a ``public_ref`` is a locator, not a credential (ADR-0007).
 
 from __future__ import annotations
 
+import hashlib
 import secrets
 import uuid
+from datetime import UTC, datetime
 from typing import Final
 
 from ulid import ULID
@@ -66,10 +76,44 @@ PUBLIC_REF_ENTROPY_BITS: Final[int] = 60
 
 _ALPHABET_SIZE: Final[int] = len(PUBLIC_REF_ALPHABET)
 
+#: Domain separation for :func:`seed_id`. Bumping it re-mints every seeded primary
+#: key, which is a schema-drop-level change — do it only alongside ``make demo-reset``.
+SEED_ID_NAMESPACE: Final[str] = "naddp.seed.ids.v1"
+
+#: Millisecond epoch for a seeded id's synthetic ULID prefix. An arbitrary fixed
+#: instant: the ULID timestamp of a seeded row records nothing real, and taking it
+#: from the run clock would make every id move on every run.
+_SEED_ID_EPOCH: Final[datetime] = datetime(2026, 1, 1, tzinfo=UTC)
+_SEED_ID_EPOCH_MS: Final[int] = int(_SEED_ID_EPOCH.timestamp() * 1000)
+
+#: Width of the synthetic timestamp spread, in milliseconds. One day, so seeded ids
+#: sort into a stable pseudo-random order rather than sharing one prefix.
+_SEED_ID_SPREAD_MS: Final[int] = 86_400_000
+
 
 def new_id() -> uuid.UUID:
     """Return a time-sortable ULID rendered as a UUID, for use as a primary key."""
     return ULID().to_uuid()
+
+
+def seed_id(slug: str) -> uuid.UUID:
+    """Return the deterministic ULID-shaped primary key for a seed ``slug``.
+
+    A pure function: the same slug yields the same id on every machine and every
+    run. That is what lets ``make seed`` upsert instead of duplicating, and what
+    lets anything outside the seeder name a seeded row by slug.
+
+    The layout is ADR-0007's -- six bytes of millisecond timestamp then ten bytes
+    of entropy -- so the value is a well-formed ULID and ``ORDER BY id`` stays
+    meaningful. The timestamp is synthetic and derived from the slug, because a
+    seeded row has no honest creation instant to encode.
+
+    Unrelated to :func:`new_public_ref` by construction, for the reasons above:
+    this is derivable from a slug, so it must never be used as a public locator.
+    """
+    digest = hashlib.blake2b(f"{SEED_ID_NAMESPACE}:{slug}".encode(), digest_size=16).digest()
+    moment = _SEED_ID_EPOCH_MS + int.from_bytes(digest[:4], "big") % _SEED_ID_SPREAD_MS
+    return uuid.UUID(bytes=moment.to_bytes(6, "big") + digest[6:16])
 
 
 def new_public_ref() -> str:

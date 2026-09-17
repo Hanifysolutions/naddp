@@ -38,6 +38,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import event, func, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.ids import seed_id
 from app.domain.enums import (
     CaseStatus,
     Classification,
@@ -210,6 +211,34 @@ def test_the_thread_names_five_anchors_and_two_capabilities() -> None:
     ]
 
 
+def test_the_thread_resolves_its_anchors_from_the_repository_alone() -> None:
+    """The corridor has to survive a redeploy, not merely a restart.
+
+    These anchors resolved through ``data/demo-seed/manifest.json`` until that file's
+    absence took the closing screen down in production. The manifest is written by
+    ``make seed`` and git-ignored, so it was never in the deployed image: it existed only
+    on the container's ephemeral filesystem, written by a seed run in a shell. A redeploy
+    replaced that filesystem, Postgres kept every row, and all five steps went to
+    "not found" while every other surface carried on working.
+
+    Each anchor is now computed from its committed slug, so the only inputs are
+    ``hero_thread.json`` and :func:`app.core.ids.seed_id` -- both of which are in the
+    image by construction. Asserted against ``seed_id`` rather than against pasted UUIDs:
+    a literal here would keep passing while quietly disagreeing with what the seeder wrote.
+    """
+    spec = thread_spec()
+    thread = hero_thread()
+    resolved = {
+        "opportunity": thread.opportunity_id,
+        "stakeholder": thread.stakeholder_id,
+        "meeting": thread.meeting_id,
+        "case": thread.case_id,
+    }
+
+    assert all(value is not None for value in resolved.values())
+    assert resolved == {kind: seed_id(spec.anchor_slugs[kind]) for kind in resolved}
+
+
 # ---------------------------------------------------------------------------
 # Part 2: the seeded mission (Postgres)
 # ---------------------------------------------------------------------------
@@ -220,8 +249,6 @@ def db(database_available: bool) -> Iterator[Session]:
     """A session whose enclosing transaction is always rolled back."""
     if not database_available:
         pytest.skip("no database reachable; start it with `docker compose up db`")
-    if hero_thread().opportunity_id is None:
-        pytest.skip("seed manifest missing; run `make demo-reset`")
 
     from app.core.db import get_engine
 
@@ -229,6 +256,12 @@ def db(database_available: bool) -> Iterator[Session]:
     transaction = connection.begin()
     session = Session(bind=connection, join_transaction_mode="create_savepoint")
     try:
+        # The anchors always resolve now, so an id no longer tells us whether the dataset
+        # is actually loaded -- that check used to double as the "is it seeded" guard. Ask
+        # the database directly instead: an empty schema must skip these tests, not fail
+        # them one confusing assertion at a time.
+        if session.get(Opportunity, hero_thread().opportunity_id) is None:
+            pytest.skip("dataset not loaded; run `make demo-reset`")
         yield session
     finally:
         session.close()

@@ -1,10 +1,16 @@
 """The hero thread's anchors: seed slugs, resolved to the loaded dataset's keys.
 
 ``data/demo-seed/hero_thread.json`` names the corridor the board follows -- one opportunity,
-stakeholder, meeting, diaspora search and consular case -- by stable seed slug.
-``data/demo-seed/manifest.json`` (written by ``make seed``, git-ignored) maps those slugs to the
-keys of the dataset actually loaded, which is the documented way for anything outside the seed to
-name a seeded record (``data/demo-seed/README.md``).
+stakeholder, meeting, diaspora search and consular case -- by stable seed slug. Each slug is
+turned into the seeded row's primary key by :func:`app.core.ids.seed_id`, the same pure
+function the seeder used to mint it.
+
+**Computed, not looked up, and that is the point.** This used to read the slug-to-key mapping
+out of ``data/demo-seed/manifest.json`` at request time. That file is written by ``make seed``
+and git-ignored, so it is not in the deployed image: it existed only on the container's
+ephemeral filesystem, written by a seed run inside a shell. A redeploy replaced that filesystem
+while Postgres kept every row, and the whole thread went to "not found" on the closing screen of
+the demo. An id that is a pure function of a committed slug cannot be lost that way.
 
 **An anchor grants nothing.** Knowing an id is not permission to read the row behind it: each
 context module checks its own permission and applies the caller's clearance in the WHERE clause
@@ -18,16 +24,14 @@ import json
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
-from functools import cache, lru_cache
-from pathlib import Path
+from functools import cache
 from typing import Final
 
 from app.core.config import seed_path
-from app.core.logging import get_logger
+from app.core.ids import seed_id
 
 __all__ = [
     "HERO_THREAD_FILE",
-    "SEED_MANIFEST_FILE",
     "DiasporaFacet",
     "HeroThread",
     "ThreadSpec",
@@ -36,11 +40,8 @@ __all__ = [
 ]
 
 HERO_THREAD_FILE: Final[str] = "hero_thread.json"
-SEED_MANIFEST_FILE: Final[str] = "manifest.json"
 
 _ANCHOR_KINDS: Final[tuple[str, ...]] = ("opportunity", "stakeholder", "meeting", "case")
-
-_logger = get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,53 +100,23 @@ def thread_spec() -> ThreadSpec:
         raise RuntimeError(msg) from exc
 
 
-@lru_cache(maxsize=4)
-def _manifest_entries(path: Path, modified_ns: int) -> Mapping[str, Mapping[str, str]]:
-    """The manifest's ``entries``, re-read whenever ``make seed`` rewrites the file."""
-    try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        _logger.warning(
-            "outcomes.manifest_unreadable", path=str(path), modified_ns=modified_ns, error=str(exc)
-        )
-        return {}
-    entries = document.get("entries") if isinstance(document, dict) else None
-    return entries if isinstance(entries, dict) else {}
-
-
-def _manifest() -> Mapping[str, Mapping[str, str]]:
-    path = seed_path(SEED_MANIFEST_FILE)
-    try:
-        modified = path.stat().st_mtime_ns
-    except OSError as exc:
-        _logger.warning("outcomes.manifest_missing", path=str(path), error=str(exc))
-        return {}
-    return _manifest_entries(path, modified)
-
-
-def _resolve(entries: Mapping[str, Mapping[str, str]], kind: str, slug: str) -> uuid.UUID | None:
-    rows = entries.get(kind)
-    raw = rows.get(slug) if isinstance(rows, Mapping) else None
-    if not isinstance(raw, str):
-        return None
-    try:
-        return uuid.UUID(raw)
-    except ValueError as exc:
-        _logger.warning("outcomes.anchor_malformed", kind=kind, slug=slug, error=str(exc))
-        return None
-
-
 def hero_thread() -> HeroThread:
-    """Resolve the committed thread against the loaded dataset."""
+    """Resolve the committed thread against the seeded dataset.
+
+    Touches no filesystem beyond the committed ``hero_thread.json`` that
+    :func:`thread_spec` caches, so a restart, a redeploy or a fresh container cannot
+    change the answer. The fields stay optional because a caller may still be unable to
+    *read* an anchored row -- that refusal is the context module's to make, in its own
+    WHERE clause, and it is not this function's business.
+    """
     spec = thread_spec()
-    entries = _manifest()
     return HeroThread(
         id=spec.id,
         title=spec.title,
-        opportunity_id=_resolve(entries, "opportunity", spec.anchor_slugs["opportunity"]),
-        stakeholder_id=_resolve(entries, "stakeholder", spec.anchor_slugs["stakeholder"]),
-        meeting_id=_resolve(entries, "meeting", spec.anchor_slugs["meeting"]),
-        case_id=_resolve(entries, "case", spec.anchor_slugs["case"]),
+        opportunity_id=seed_id(spec.anchor_slugs["opportunity"]),
+        stakeholder_id=seed_id(spec.anchor_slugs["stakeholder"]),
+        meeting_id=seed_id(spec.anchor_slugs["meeting"]),
+        case_id=seed_id(spec.anchor_slugs["case"]),
         diaspora_search_id=spec.diaspora_search_id,
         diaspora_facets=spec.diaspora_facets,
     )
