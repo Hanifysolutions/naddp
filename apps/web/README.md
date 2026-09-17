@@ -50,7 +50,7 @@ violation of BUILD_BIBLE §11 ("no secrets in client bundle").
 
 | Variable | Reaches browser | Owner |
 | --- | --- | --- |
-| `NEXT_PUBLIC_API_URL` | yes | web |
+| `NEXT_PUBLIC_API_URL` | inlined, but unused there — the browser calls `/api` | web |
 | `ANTHROPIC_API_KEY` | **never** | API, behind the AI Gateway only |
 | `DEMO_SESSION_SECRET` | **never** | API (signs the demo session cookie) |
 | `DATABASE_URL` | **never** | API |

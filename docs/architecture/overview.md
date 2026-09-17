@@ -25,7 +25,8 @@ and citation registry), `storage/` (local object store), `evals/` (grounding and
 `infra/` (deployment configuration), `docs/` (this).
 
 The web app never talks to the database. The API is the only thing holding a connection string, an API
-key, or a permission matrix. `NEXT_PUBLIC_API_URL` is the only backend coordinate the browser knows.
+key, or a permission matrix. The browser knows no backend coordinate at all: it calls `/api` on its
+own origin, which `apps/web/next.config.mjs` rewrites to the API (`NEXT_PUBLIC_API_URL`).
 
 ---
 

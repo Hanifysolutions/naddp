@@ -17,7 +17,7 @@ provider's dashboard.
                     │ Next.js 14 App Router        │
                     │ static + edge + node runtime │
                     └───────────────┬──────────────┘
-                                    │ HTTPS, NEXT_PUBLIC_API_URL
+                                    │ HTTPS, /api rewrite → NEXT_PUBLIC_API_URL
                                     ▼
                     ┌──────────────────────────────┐
                     │ Railway — apps/api           │
@@ -89,8 +89,10 @@ Not yet configured, and deliberately so:
    `transpilePackages` — resolves. Nothing else to copy: `apps/web/vercel.json` is already where
    Vercel reads it from, and install, build and output come from its Next preset.
 3. Set `NEXT_PUBLIC_API_URL` to the Railway API's public URL, for the Production environment. It is
-   compiled into the client bundle — a coordinate, not a secret, and nothing else about the API may
-   be. Changing it later needs a **redeploy**, not just a restart.
+   the destination of the `/api` rewrite in `next.config.mjs` and the base for server-side calls;
+   the browser never calls it directly, it calls `/api` on this origin. Still compiled into the
+   client bundle — a coordinate, not a secret, and nothing else about the API may be. Changing it
+   later needs a **redeploy**, not just a restart.
 4. Confirm no other `NEXT_PUBLIC_*` variable exists. Anything with that prefix is public.
 5. The toolchain is pinned by the repository: `packageManager` is `pnpm@9.15.4` and `engines.node`
    is `>=22`, so Vercel resolves both without project-level overrides.
@@ -169,7 +171,7 @@ the ones marked **secret** must never be committed, logged, or given a `NEXT_PUB
 
 | Variable | Secret | Required | Value for the deployed demo |
 |---|---|---|---|
-| `NEXT_PUBLIC_API_URL` | no — **public by construction** | **yes** | The Railway service's public URL, e.g. `https://naddp-api.up.railway.app`. Compiled into the client bundle and into the CSP `connect-src`, so it takes effect on **redeploy**, not on restart. |
+| `NEXT_PUBLIC_API_URL` | no — **public by construction** | **yes** | The Railway service's public URL, e.g. `https://naddp-api.up.railway.app`. The `/api` rewrite target and the server-side fetch base; the browser calls `/api` on the web origin instead. Takes effect on **redeploy**, not on restart. |
 
 No other variable belongs in the Vercel project. `ANTHROPIC_API_KEY`, `DATABASE_URL` and
 `DEMO_SESSION_SECRET` are API-side only; the web app never sees them (`BUILD_BIBLE.md` §11).
@@ -205,9 +207,9 @@ The header set exists in **two** places, deliberately, with a clear owner for ea
 commit. The Week 4 security pass includes a check that both files agree on directives that appear in
 both.
 
-CSP notes specific to this app: `connect-src` must include the API origin (`NEXT_PUBLIC_API_URL`),
-which differs per environment — the `apps/web/vercel.json` fallback therefore permits `https:` for
-`connect-src` while the Next config narrows it to the exact origin. `frame-ancestors 'none'` is the
+CSP notes specific to this app: `connect-src` is `'self'` in both files and needs no external
+origin, because the browser only ever calls `/api` on the web app's own origin and the rewrite in
+`next.config.mjs` forwards it to the API. `frame-ancestors 'none'` is the
 directive that actually prevents framing; `X-Frame-Options` is there for old user agents.
 
 ---
