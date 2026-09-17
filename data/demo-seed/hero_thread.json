@@ -1,6 +1,6 @@
 {
   "$schema_version": "1.0",
-  "notes": "The hero thread the Unified Outcomes board follows (BUILD_BIBLE s2): one corridor traced across five bounded contexts. Anchors are seed slugs, resolved to the loaded dataset's keys through manifest.json (written by make seed). Naming an anchor here grants nothing: each step is read by its own context, under its own permission and the caller's clearance, and an anchor the caller may not read renders as withheld or not found. Synthetic data only.",
+  "notes": "The hero thread the Unified Outcomes board follows (BUILD_BIBLE s2): one corridor traced across five bounded contexts. Anchors are seed slugs; the board turns each one into the seeded row's primary key with app.core.ids.seed_id, the same pure function the seeder used to mint it, so the thread resolves from this committed file alone and cannot be broken by a redeploy. Naming an anchor here grants nothing: each step is read by its own context, under its own permission and the caller's clearance, and an anchor the caller may not read renders as withheld or not found. Synthetic data only.",
   "id": "lithium-skills-corridor",
   "title": "Lithium processing skills and skilled-migration corridor",
   "anchors": {
