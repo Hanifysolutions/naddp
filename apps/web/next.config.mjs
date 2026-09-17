@@ -113,6 +113,14 @@ const nextConfig = {
     ignoreBuildErrors: false,
   },
 
+  // `/` renders app/page.tsx, which calls redirect('/command'). Prerendered, that ships an
+  // HTML shell which only navigates once React has hydrated, so the first paint is an
+  // unstyled error shell. A routing-layer rule answers with a real 307 + Location before
+  // any JS runs; page.tsx stays as the fallback for anything this rule does not match.
+  async redirects() {
+    return [{ source: '/', destination: '/command', permanent: false }];
+  },
+
   async headers() {
     return [
       {
