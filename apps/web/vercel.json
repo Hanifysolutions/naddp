@@ -45,7 +45,7 @@
         },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; base-uri 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https:; frame-src 'none'; frame-ancestors 'none'; object-src 'none'; form-action 'self'; manifest-src 'self'; worker-src 'self' blob:; upgrade-insecure-requests"
+          "value": "default-src 'self'; base-uri 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://naddp-api-production.up.railway.app; frame-src 'none'; frame-ancestors 'none'; object-src 'none'; form-action 'self'; manifest-src 'self'; worker-src 'self' blob:; upgrade-insecure-requests"
         }
       ]
     },
